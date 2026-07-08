@@ -1,0 +1,17 @@
+{
+  "name": "sugi-cmms-system",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sugi CMMS foundation with React PWA, Express API, SQLite, and work order MVP.",
+  "scripts": {
+    "dev": "pnpm --filter @sugi-cmms/shared build && concurrently -n API,WEB -c cyan,green \"pnpm --filter @sugi-cmms/api dev\" \"pnpm --filter @sugi-cmms/web dev\"",
+    "build": "pnpm --filter @sugi-cmms/shared build && pnpm --filter @sugi-cmms/api build && pnpm --filter @sugi-cmms/web build",
+    "typecheck": "pnpm --filter @sugi-cmms/shared typecheck && pnpm --filter @sugi-cmms/api typecheck && pnpm --filter @sugi-cmms/web typecheck",
+    "start": "pnpm --filter @sugi-cmms/api start"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.8.3"
+  },
+  "packageManager": "pnpm@11.7.0"
+}

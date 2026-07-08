@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+
+# Local development data
+apps/api/data/
+apps/api/uploads/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
