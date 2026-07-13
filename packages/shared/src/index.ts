@@ -394,6 +394,146 @@ export interface DeleteWorkOrderInput {
   actorId: string;
 }
 
+export type PmScheduleStatus = "scheduled" | "in_progress" | "submitted" | "verified";
+export type PmResultCode = "pass" | "fail" | "adjusted" | "not_applicable";
+export type PmDataType = "marking" | "value";
+export type PmMaintenanceType = "preventive" | "predictive";
+
+export interface PmChecklistItem {
+  id: string;
+  templateId: string;
+  sortOrder: number;
+  groupName: string;
+  description: string;
+  specification: string;
+  inspectionMethod: string;
+  frequency: string;
+  dataType: PmDataType;
+  maintenanceType: PmMaintenanceType;
+  required: boolean;
+}
+
+export interface PmChecklistTemplate {
+  id: string;
+  machineName: string;
+  title: string;
+  documentNumber: string;
+  revisionNumber: string;
+  effectiveDate: string;
+  version: number;
+  active: boolean;
+  itemCount: number;
+  updatedAt: string;
+  items: PmChecklistItem[];
+}
+
+export interface PmPlan {
+  id: string;
+  mainMachine: string;
+  machineName: string;
+  frequencyLabel: string;
+  frequencyMonths: number;
+  occurrencesPerMonth: number;
+  technicianId: string;
+  technicianName: string;
+  templateId: string | null;
+  active: boolean;
+}
+
+export interface PmScheduleItem {
+  id: string;
+  planId: string;
+  scheduledDate: string;
+  year: number;
+  month: number;
+  weekOfMonth: number;
+  status: PmScheduleStatus;
+  startedAt: string | null;
+  submittedAt: string | null;
+  verifiedAt: string | null;
+  remarks: string;
+  machineName: string;
+  mainMachine: string;
+  frequencyLabel: string;
+  technicianId: string;
+  technicianName: string;
+  templateId: string | null;
+  templateTitle: string | null;
+  checklistItemCount: number;
+  completedItemCount: number;
+  failedItemCount: number;
+  overdue: boolean;
+}
+
+export interface PmChecklistResult {
+  itemId: string;
+  resultCode: PmResultCode | null;
+  readingValue: string;
+  note: string;
+  completedAt: string | null;
+}
+
+export interface PmScheduleDetail extends PmScheduleItem {
+  template: PmChecklistTemplate | null;
+  results: PmChecklistResult[];
+  verifiedByName: string | null;
+}
+
+export interface PmSummary {
+  scheduledThisMonth: number;
+  dueThisWeek: number;
+  overdue: number;
+  completedThisMonth: number;
+  compliancePercent: number;
+  checklistCoveragePercent: number;
+}
+
+export interface PmDashboardResponse {
+  summary: PmSummary;
+  schedules: PmScheduleItem[];
+  plans: PmPlan[];
+  templates: PmChecklistTemplate[];
+}
+
+export interface SavePmResultInput {
+  actorId: string;
+  itemId: string;
+  resultCode: PmResultCode | null;
+  readingValue?: string;
+  note?: string;
+}
+
+export interface SubmitPmScheduleInput {
+  actorId: string;
+  remarks?: string;
+}
+
+export interface SavePmTemplateInput {
+  actorId: string;
+  machineName: string;
+  title: string;
+  documentNumber?: string;
+  revisionNumber?: string;
+  effectiveDate?: string;
+  active?: boolean;
+  items: Array<{
+    id?: string;
+    groupName: string;
+    description: string;
+    specification: string;
+    inspectionMethod: string;
+    frequency: string;
+    dataType: PmDataType;
+    maintenanceType: PmMaintenanceType;
+    required?: boolean;
+  }>;
+}
+
+export interface AssignPmTemplateInput {
+  actorId: string;
+  templateId: string | null;
+}
+
 export const workOrderStatusLabels: Record<WorkOrderStatus, string> = {
   open: "Open",
   acknowledged: "Acknowledged",

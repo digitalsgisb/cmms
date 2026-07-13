@@ -6,6 +6,7 @@ import { CreateWorkOrderPage } from "./pages/CreateWorkOrderPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { LoginPage } from "./pages/LoginPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
+import { PreventiveMaintenancePage } from "./pages/PreventiveMaintenancePage";
 import { PublicRequesterPage } from "./pages/PublicRequesterPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SparePartsPage } from "./pages/SparePartsPage";
@@ -44,7 +45,7 @@ export function App() {
         <Route path="/spare-parts/setup" element={<SparePartsPage />} />
         <Route path="/spare-parts/issue/:itemNo" element={<SparePartsPage />} />
         <Route path="/spare-parts/:itemNo" element={<SparePartsPage />} />
-        <Route path="/preventive-maintenance" element={<PlaceholderPage title="Preventive Maintenance" module="Scheduled PM" />} />
+        <Route path="/preventive-maintenance/*" element={<PreventiveMaintenancePage />} />
         <Route path="/performance" element={<PlaceholderPage title="Performance" module="Technician and maintenance KPIs" />} />
         <Route path="/reports" element={<PlaceholderPage title="Reports" module="Maintenance reporting" />} />
         <Route path="/users" element={<AdminPage />} />

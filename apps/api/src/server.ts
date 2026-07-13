@@ -9,6 +9,7 @@ import {
   addAttachment,
   addComment,
   adjustSparePart,
+  assignPmTemplate,
   assignWorkOrder,
   claimWorkOrder,
   createIssueCategory,
@@ -17,6 +18,8 @@ import {
   createWorkOrder,
   dashboardSummary,
   deleteWorkOrder,
+  getPmDashboard,
+  getPmScheduleDetail,
   getWorkOrderDetail,
   importMachines,
   importSpareParts,
@@ -26,6 +29,7 @@ import {
   listMasterData,
   loginUser,
   listNotifications,
+  listPmTemplates,
   listRequesterWorkOrders,
   listSpareInventory,
   listSparePartMovements,
@@ -38,7 +42,11 @@ import {
   pullSparePartsFromSheet,
   publicRequesterIdForUploads,
   retrySpareSync,
+  savePmResult,
+  savePmTemplate,
   seed,
+  startPmSchedule,
+  submitPmSchedule,
   updateIssueCategory,
   updateMachine,
   updateSpareSyncSettings,
@@ -47,7 +55,8 @@ import {
   updateWorkOrderStatus,
   uploadsRoot,
   validateCreateWorkOrderInput,
-  validateStatusInput
+  validateStatusInput,
+  verifyPmSchedule
 } from "./db.js";
 
 const app = express();
@@ -228,6 +237,61 @@ app.patch("/api/master-data/issue-categories/:id", (request, response) => {
     name: String(request.body.name || ""),
     active: request.body.active === undefined ? true : Boolean(request.body.active)
   }));
+});
+
+app.get("/api/pm/dashboard", (request, response) => {
+  const actorId = String(request.query.actorId || "");
+  if (!actorId) {
+    throw new Error("actorId query parameter is required.");
+  }
+  const year = Number(request.query.year || new Date().getFullYear());
+  response.json(getPmDashboard(actorId, year));
+});
+
+app.get("/api/pm/templates", (_request, response) => {
+  response.json(listPmTemplates());
+});
+
+app.post("/api/pm/templates", (request, response) => {
+  response.status(201).json(savePmTemplate(null, request.body));
+});
+
+app.patch("/api/pm/templates/:id", (request, response) => {
+  response.json(savePmTemplate(request.params.id, request.body));
+});
+
+app.patch("/api/pm/plans/:id/template", (request, response) => {
+  response.json(assignPmTemplate(request.params.id, request.body));
+});
+
+app.get("/api/pm/schedules/:id", (request, response) => {
+  const actorId = String(request.query.actorId || "");
+  if (!actorId) {
+    throw new Error("actorId query parameter is required.");
+  }
+  response.json(getPmScheduleDetail(request.params.id, actorId));
+});
+
+app.post("/api/pm/schedules/:id/start", (request, response) => {
+  if (!request.body.actorId) {
+    throw new Error("actorId is required.");
+  }
+  response.json(startPmSchedule(request.params.id, String(request.body.actorId)));
+});
+
+app.put("/api/pm/schedules/:id/results/:itemId", (request, response) => {
+  response.json(savePmResult(request.params.id, { ...request.body, itemId: request.params.itemId }));
+});
+
+app.post("/api/pm/schedules/:id/submit", (request, response) => {
+  response.json(submitPmSchedule(request.params.id, request.body));
+});
+
+app.post("/api/pm/schedules/:id/verify", (request, response) => {
+  if (!request.body.actorId) {
+    throw new Error("actorId is required.");
+  }
+  response.json(verifyPmSchedule(request.params.id, String(request.body.actorId)));
 });
 
 app.get("/api/spare-parts", (_request, response) => {

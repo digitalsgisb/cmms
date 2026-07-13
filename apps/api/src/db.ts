@@ -13,6 +13,17 @@ import type {
   MachineImportRow,
   MasterData,
   NotificationRecord,
+  AssignPmTemplateInput,
+  PmChecklistItem,
+  PmChecklistResult,
+  PmChecklistTemplate,
+  PmDashboardResponse,
+  PmPlan,
+  PmScheduleDetail,
+  PmScheduleItem,
+  SavePmResultInput,
+  SavePmTemplateInput,
+  SubmitPmScheduleInput,
   PublicRequesterWorkOrder,
   Section,
   SpareAdjustmentInput,
@@ -277,6 +288,90 @@ export function migrate() {
       updatedAt TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS pm_checklist_templates (
+      id TEXT PRIMARY KEY,
+      machineName TEXT NOT NULL,
+      title TEXT NOT NULL,
+      documentNumber TEXT NOT NULL DEFAULT '',
+      revisionNumber TEXT NOT NULL DEFAULT '',
+      effectiveDate TEXT NOT NULL DEFAULT '',
+      version INTEGER NOT NULL DEFAULT 1,
+      active INTEGER NOT NULL DEFAULT 1,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS pm_checklist_items (
+      id TEXT PRIMARY KEY,
+      templateId TEXT NOT NULL,
+      sortOrder INTEGER NOT NULL,
+      groupName TEXT NOT NULL,
+      description TEXT NOT NULL,
+      specification TEXT NOT NULL,
+      inspectionMethod TEXT NOT NULL,
+      frequency TEXT NOT NULL,
+      dataType TEXT NOT NULL,
+      maintenanceType TEXT NOT NULL,
+      required INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (templateId) REFERENCES pm_checklist_templates(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS pm_plans (
+      id TEXT PRIMARY KEY,
+      mainMachine TEXT NOT NULL,
+      machineName TEXT NOT NULL,
+      frequencyLabel TEXT NOT NULL,
+      frequencyMonths INTEGER NOT NULL DEFAULT 1,
+      occurrencesPerMonth INTEGER NOT NULL DEFAULT 1,
+      technicianId TEXT NOT NULL,
+      technicianName TEXT NOT NULL,
+      templateId TEXT,
+      startMonth INTEGER NOT NULL DEFAULT 1,
+      weekOfMonth INTEGER NOT NULL DEFAULT 1,
+      secondaryWeek INTEGER,
+      active INTEGER NOT NULL DEFAULT 1,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      FOREIGN KEY (technicianId) REFERENCES users(id),
+      FOREIGN KEY (templateId) REFERENCES pm_checklist_templates(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS pm_schedules (
+      id TEXT PRIMARY KEY,
+      planId TEXT NOT NULL,
+      scheduledDate TEXT NOT NULL,
+      year INTEGER NOT NULL,
+      month INTEGER NOT NULL,
+      weekOfMonth INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'scheduled',
+      startedAt TEXT,
+      submittedAt TEXT,
+      verifiedAt TEXT,
+      verifiedById TEXT,
+      remarks TEXT NOT NULL DEFAULT '',
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      UNIQUE(planId, year, month, weekOfMonth),
+      FOREIGN KEY (planId) REFERENCES pm_plans(id) ON DELETE CASCADE,
+      FOREIGN KEY (verifiedById) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS pm_results (
+      id TEXT PRIMARY KEY,
+      scheduleId TEXT NOT NULL,
+      itemId TEXT NOT NULL,
+      resultCode TEXT,
+      readingValue TEXT NOT NULL DEFAULT '',
+      note TEXT NOT NULL DEFAULT '',
+      completedAt TEXT,
+      updatedById TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      UNIQUE(scheduleId, itemId),
+      FOREIGN KEY (scheduleId) REFERENCES pm_schedules(id) ON DELETE CASCADE,
+      FOREIGN KEY (itemId) REFERENCES pm_checklist_items(id),
+      FOREIGN KEY (updatedById) REFERENCES users(id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_work_orders_status ON work_orders(status);
     CREATE INDEX IF NOT EXISTS idx_work_orders_requester ON work_orders(requesterId);
     CREATE INDEX IF NOT EXISTS idx_work_orders_assigned ON work_orders(assignedToId);
@@ -286,6 +381,10 @@ export function migrate() {
     CREATE INDEX IF NOT EXISTS idx_spare_parts_search ON spare_parts(searchName);
     CREATE INDEX IF NOT EXISTS idx_stock_movements_item ON stock_movements(itemNo, createdAt);
     CREATE INDEX IF NOT EXISTS idx_stock_movements_sync ON stock_movements(syncStatus, createdAt);
+    CREATE INDEX IF NOT EXISTS idx_pm_items_template ON pm_checklist_items(templateId, sortOrder);
+    CREATE INDEX IF NOT EXISTS idx_pm_plans_technician ON pm_plans(technicianId, active);
+    CREATE INDEX IF NOT EXISTS idx_pm_schedules_date ON pm_schedules(scheduledDate, status);
+    CREATE INDEX IF NOT EXISTS idx_pm_results_schedule ON pm_results(scheduleId);
   `);
 
   const userColumns = rows<{ name: string }>(db.prepare("PRAGMA table_info(users)").all());
@@ -340,6 +439,12 @@ export function seed() {
     { id: publicRequesterId, username: "public-requester", name: "Requester Kiosk", role: "requester", department: "Shop Floor", title: "Public Requester", avatarUrl: null, password: "requester123" },
     { id: "u-tech-1", username: "hafiz", name: "Hafiz Rahman", role: "technician", department: "Maintenance", title: "Maintenance Technician", avatarUrl: null, password: "tech123" },
     { id: "u-tech-2", username: "kumar", name: "Kumar Velu", role: "technician", department: "Maintenance", title: "Senior Technician", avatarUrl: null, password: "tech123" },
+    { id: "u-tech-fauzan", username: "fauzan", name: "Fauzan", role: "technician", department: "Maintenance", title: "Maintenance Technician", avatarUrl: null, password: "tech123" },
+    { id: "u-tech-selvem", username: "selvem", name: "Selvem", role: "technician", department: "Maintenance", title: "Maintenance Technician", avatarUrl: null, password: "tech123" },
+    { id: "u-tech-mustak", username: "mustak", name: "Mustak", role: "technician", department: "Maintenance", title: "Maintenance Technician", avatarUrl: null, password: "tech123" },
+    { id: "u-tech-daryl", username: "daryl", name: "Daryl", role: "technician", department: "Maintenance", title: "Maintenance Technician", avatarUrl: null, password: "tech123" },
+    { id: "u-tech-hazwan", username: "hazwan", name: "Hazwan", role: "technician", department: "Maintenance", title: "Maintenance Technician", avatarUrl: null, password: "tech123" },
+    { id: "u-tech-ammar", username: "ammar", name: "Ammar", role: "technician", department: "Maintenance", title: "Maintenance Technician", avatarUrl: null, password: "tech123" },
     { id: "u-exec-1", username: "azlan", name: "Azlan Musa", role: "executive", department: "Maintenance", title: "Maintenance Executive", avatarUrl: null, password: "exec123" },
     { id: "u-admin-1", username: "admin", name: "System Admin", role: "admin", department: "IT", title: "Administrator", avatarUrl: null, password: "admin123" }
   ];
@@ -375,6 +480,7 @@ export function seed() {
   }
 
   seedMasterData();
+  seedPmData();
 
   const workOrderCount = row<{ count: number }>(db.prepare("SELECT COUNT(*) as count FROM work_orders").get()).count;
   if (workOrderCount === 0) {
@@ -464,6 +570,175 @@ function seedMasterData() {
 
   db.prepare("INSERT OR IGNORE INTO issue_categories (id, name, active, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)")
     .run(otherIssueCategoryId, "Other", 1, timestamp, timestamp);
+}
+
+function seedPmData() {
+  const timestamp = now();
+  const templateId = "pm-template-forming-6";
+  db.prepare(`
+    INSERT OR IGNORE INTO pm_checklist_templates (
+      id, machineName, title, documentNumber, revisionNumber, effectiveDate, version, active, createdAt, updatedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    templateId,
+    "Hydraulic Forming 6",
+    "Preventive & Predictive Maintenance Checklist",
+    "FR-MT-002",
+    "5",
+    "2025-02-03",
+    1,
+    1,
+    timestamp,
+    timestamp
+  );
+
+  const checklistItems: Array<[string, string, string, string, string, string, string]> = [
+    ["Pump & Motor", "Ensure the hydraulic pump and motor are functioning properly.", "Hydraulic pump and motor are functioning properly.", "Visual / Testing", "Monthly", "marking", "preventive"],
+    ["Pump & Motor", "Check and ensure oil level is maintained accordingly.", "Oil level should be at high level.", "Visual", "Monthly", "marking", "preventive"],
+    ["Pump & Motor", "Check for any oil leakages.", "No leakages.", "Visual", "Monthly", "marking", "predictive"],
+    ["Piston Rod", "Inspect and ensure smooth travel of the piston rod.", "Smooth and unrestricted movement of the piston rod.", "Visual", "Monthly", "marking", "preventive"],
+    ["Control System", "Check the control circuit and limit switch, including the solenoid valve.", "All fully functional.", "Visual", "Monthly", "marking", "preventive"],
+    ["Control System", "Ensure the photo sensor, safety sensor, and pitch roller are functioning properly.", "All fully functional.", "Visual", "Monthly", "marking", "preventive"],
+    ["Control System", "Verify air pressure gauge readings.", "5 - 6 Bar", "Visual", "Monthly", "value", "predictive"],
+    ["Conveyor Chain", "Check the conveyor chain drive motor and gearbox oil level.", "Good condition.", "Visual", "Monthly", "marking", "preventive"],
+    ["Conveyor Chain", "Ensure the grease pump is functioning properly.", "Good condition.", "Visual", "Monthly", "marking", "preventive"],
+    ["Conveyor Chain", "Inspect all carpet clamps and springs for damage or broken parts.", "Carpet clamps and springs are intact and functional.", "Visual", "Monthly", "marking", "preventive"],
+    ["Conveyor Chain", "Inspect oven mounting and FWD/REV spur gear for proper function.", "Good condition.", "Visual", "Monthly", "marking", "preventive"],
+    ["Oven Heater & Thermocouple", "Inspect the heaters for loose connections and ensure they are secured to the frame.", "Heater elements and connections are secure and functional.", "Visual", "Monthly", "marking", "preventive"],
+    ["Oven Heater & Thermocouple", "Inspect the control panel for loose connections or damaged wires.", "No loose connections, damaged wires or faulty indicators.", "Visual", "Monthly", "marking", "preventive"],
+    ["Oven Heater & Thermocouple", "Inspect heater wire, ceramic insulator and thermocouple wiring arrangement.", "No loose connection and in good condition.", "Visual", "Monthly", "marking", "preventive"],
+    ["Lubrication & Safety", "Apply greasing at the bushing and ensure the mould frame is secured to the cylinder lock nut.", "Greased and mould is secure.", "Testing", "Monthly", "marking", "preventive"],
+    ["Lubrication & Safety", "Check safety bar and ensure it is functioning properly.", "All fully functional.", "Testing", "Monthly", "marking", "preventive"],
+    ["Chiller", "Inspect the high/low-pressure gauge to ensure it is within range.", "Within the green range.", "Visual", "Monthly", "marking", "predictive"],
+    ["Chiller", "Check the control panel indicator light functionality.", "No faulty error and fully functional.", "Visual", "Monthly", "marking", "preventive"],
+    ["Chiller", "Inspect the copper pipe condition for leaks or damages.", "No gas leaks or broken pipes.", "Visual / Testing", "Monthly", "marking", "predictive"],
+    ["Chiller", "Clean condenser coils to ensure efficient heat exchange.", "In good condition and cleaned.", "Visual", "Monthly", "marking", "preventive"],
+    ["Chiller", "Compare the set temperature with the actual temperature of the chiller.", "Actual temperature should align with the set point.", "Visual / Testing", "Monthly", "marking", "preventive"],
+    ["Bolster", "Check the Bolster L-Bracket screw marking.", "Screw is aligned with the marking.", "Visual", "Monthly", "marking", "preventive"]
+  ];
+  const insertItem = db.prepare(`
+    INSERT OR IGNORE INTO pm_checklist_items (
+      id, templateId, sortOrder, groupName, description, specification, inspectionMethod,
+      frequency, dataType, maintenanceType, required
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+  `);
+  checklistItems.forEach((item, index) => {
+    insertItem.run(`pm-forming-6-item-${index + 1}`, templateId, index + 1, ...item);
+  });
+
+  const technicianIds: Record<string, string> = {
+    Fauzan: "u-tech-fauzan",
+    Selvem: "u-tech-selvem",
+    Mustak: "u-tech-mustak",
+    Daryl: "u-tech-daryl",
+    Hazwan: "u-tech-hazwan",
+    Ammar: "u-tech-ammar"
+  };
+  type SeedPlan = [string, string, string, number, number, string, number, number, number?];
+  const plans: SeedPlan[] = [
+    ["4 Meter NP", "Bale Opener 1,2", "Every 2 months", 2, 1, "Fauzan", 1, 1],
+    ["4 Meter NP", "Pre/Main Breaker", "Every 2 months", 2, 1, "Fauzan", 1, 2],
+    ["4 Meter NP", "Mix/Tower Hopper", "Every 2 months", 2, 1, "Fauzan", 1, 1],
+    ["4 Meter NP", "Carding", "Twice per month", 1, 2, "Fauzan", 1, 1, 3],
+    ["4 Meter NP", "Weave Layer", "Monthly", 1, 1, "Fauzan", 1, 3],
+    ["4 Meter NP", "Pre/Reverse/Final", "Monthly", 1, 1, "Fauzan", 1, 1],
+    ["Latex", "Latex Dryer and Hot Roller", "Every 2 months", 2, 1, "Selvem", 1, 1],
+    ["2 Meter NP", "Bale Opener 1,2", "Every 3 months", 3, 1, "Fauzan", 1, 1],
+    ["2 Meter NP", "Main Breaker", "Every 3 months", 3, 1, "Fauzan", 2, 1],
+    ["2 Meter NP", "Vertical Breaker", "Every 3 months", 3, 1, "Fauzan", 2, 2],
+    ["2 Meter NP", "Chutter", "Every 3 months", 3, 1, "Fauzan", 2, 3],
+    ["2 Meter NP", "Carding", "Every 2 months", 2, 1, "Fauzan", 1, 2],
+    ["2 Meter NP", "Weave Layer", "Every 2 months", 2, 1, "Fauzan", 1, 3],
+    ["2 Meter NP", "Pre / Reverse / Final 1 / Final 2", "Every 2 months", 2, 1, "Fauzan", 1, 4],
+    ["Patterning", "Dilo", "Every 2 months", 2, 1, "Mustak", 1, 2],
+    ["PE", "PE 1", "Every 2 months", 2, 1, "Daryl", 1, 1],
+    ["PE", "PE 2", "Every 2 months", 2, 1, "Daryl", 1, 2],
+    ["Hot Press Roller", "Hot Press Roller", "Every 2 months", 2, 1, "Daryl", 1, 1],
+    ["Forming", "Hydraulic Forming 4", "Every 6 months", 6, 1, "Selvem", 6, 3],
+    ["Forming", "Hydraulic Forming 5", "Every 6 months", 6, 1, "Selvem", 6, 4],
+    ["Forming", "Hydraulic Forming 6", "Monthly", 1, 1, "Selvem", 1, 2],
+    ["Forming", "Hydraulic Forming 7", "Monthly", 1, 1, "Selvem", 1, 3],
+    ["WaterJet", "Waterjet 2", "Every 2 months", 2, 1, "Hazwan", 1, 1],
+    ["WaterJet", "Waterjet 3", "Every 2 months", 2, 1, "Hazwan", 1, 2],
+    ["WaterJet", "Waterjet 4", "Every 2 months", 2, 1, "Hazwan", 1, 3],
+    ["WaterJet", "Waterjet 7", "Every 2 months", 2, 1, "Hazwan", 1, 4],
+    ["Intensifier Pump", "Intensifier Pump 30HP", "Every 2 months", 2, 1, "Hazwan", 1, 1],
+    ["Intensifier Pump", "Intensifier Pump 60HP", "Every 2 months", 2, 1, "Hazwan", 1, 2],
+    ["Intensifier Pump", "Intensifier Pump KMT 50HP (Old)", "Every 2 months", 2, 1, "Hazwan", 1, 3],
+    ["Intensifier Pump", "Intensifier Pump KMT 50HP (New jetLine)", "Monthly", 1, 1, "Hazwan", 1, 1],
+    ["Intensifier Pump", "Intensifier Pump KMT 50HP (ABB7)", "Monthly", 1, 1, "Hazwan", 1, 2],
+    ["Mini Forming", "Mini Hydraulic Forming 1, 2, 3 & Oven 1", "Every 2 months", 2, 1, "Ammar", 1, 2],
+    ["Mini Forming", "Mini Hydraulic Forming 4, 5, 6 & Oven 2", "Every 3 months", 3, 1, "Ammar", 1, 1],
+    ["Mini Forming", "Mini Hydraulic Forming 7 & Oven 4", "Every 3 months", 3, 1, "Ammar", 2, 2],
+    ["Press Cut Machine", "Press Cut Double Feeder", "Every 3 months", 3, 1, "Ammar", 1, 1],
+    ["Air Compressor", "Kobelco (AG55A)-75HP", "Every 3 months", 3, 1, "Selvem", 1, 1],
+    ["Air Compressor", "Kobelco (SG 1490A - 75)-100HP", "Every 3 months", 3, 1, "Selvem", 1, 2],
+    ["Auto Hotmelt Glue", "Auto Hotmelt Glue (2D)(1)", "Every 3 months", 3, 1, "Ammar", 1, 1],
+    ["Auto Hotmelt Glue", "Auto Hotmelt Glue (2D)(2)", "Every 3 months", 3, 1, "Ammar", 1, 2],
+    ["Auto Hotmelt Glue", "Auto Hotmelt Glue (Cobolt)(1)", "Every 3 months", 3, 1, "Ammar", 1, 3],
+    ["Auto Hotmelt Glue", "Auto Hotmelt Glue (Cobolt)(2)", "Every 3 months", 3, 1, "Ammar", 1, 4]
+  ];
+  const insertPlan = db.prepare(`
+    INSERT OR IGNORE INTO pm_plans (
+      id, mainMachine, machineName, frequencyLabel, frequencyMonths, occurrencesPerMonth,
+      technicianId, technicianName, templateId, startMonth, weekOfMonth, secondaryWeek, active, createdAt, updatedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+  `);
+  plans.forEach((plan, index) => {
+    const [mainMachine, machineName, frequencyLabel, frequencyMonths, occurrencesPerMonth, technicianName, startMonth, weekOfMonth, secondaryWeek] = plan;
+    const assignedTemplateId = machineName === "Hydraulic Forming 6" ? templateId : null;
+    insertPlan.run(
+      `pm-plan-${String(index + 1).padStart(2, "0")}`,
+      mainMachine,
+      machineName,
+      frequencyLabel,
+      frequencyMonths,
+      occurrencesPerMonth,
+      technicianIds[technicianName],
+      technicianName,
+      assignedTemplateId,
+      startMonth,
+      weekOfMonth,
+      secondaryWeek ?? null,
+      timestamp,
+      timestamp
+    );
+  });
+
+  const currentYear = new Date().getFullYear();
+  generatePmSchedules(2026);
+  if (currentYear !== 2026) {
+    generatePmSchedules(currentYear);
+  }
+  generatePmSchedules(currentYear + 1);
+}
+
+function generatePmSchedules(year: number) {
+  const timestamp = now();
+  const plans = rows<{
+    id: string;
+    frequencyMonths: number;
+    occurrencesPerMonth: number;
+    startMonth: number;
+    weekOfMonth: number;
+    secondaryWeek: number | null;
+  }>(db.prepare("SELECT id, frequencyMonths, occurrencesPerMonth, startMonth, weekOfMonth, secondaryWeek FROM pm_plans WHERE active = 1").all());
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO pm_schedules (
+      id, planId, scheduledDate, year, month, weekOfMonth, status, remarks, createdAt, updatedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, 'scheduled', '', ?, ?)
+  `);
+
+  for (const plan of plans) {
+    for (let month = plan.startMonth; month <= 12; month += plan.frequencyMonths) {
+      const weeks = plan.occurrencesPerMonth > 1 ? [plan.weekOfMonth, plan.secondaryWeek || 3] : [plan.weekOfMonth];
+      for (const week of weeks) {
+        const day = Math.min(1 + (week - 1) * 7, new Date(Date.UTC(year, month, 0)).getUTCDate());
+        const scheduledDate = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+        insert.run(`pm-schedule-${year}-${plan.id}-${month}-${week}`, plan.id, scheduledDate, year, month, week, timestamp, timestamp);
+      }
+    }
+  }
 }
 
 export function listUsers(role?: string): User[] {
@@ -614,6 +889,389 @@ function requireSpareManager(actorId: string) {
   }
 
   return actor;
+}
+
+function requirePmActor(actorId: string) {
+  const actor = getUser(actorId);
+  if (actor.role === "requester") {
+    throw new Error("Requester accounts cannot access preventive maintenance.");
+  }
+  return actor;
+}
+
+function requirePmManager(actorId: string) {
+  const actor = requirePmActor(actorId);
+  if (!["executive", "admin"].includes(actor.role)) {
+    throw new Error("Executive or admin access is required.");
+  }
+  return actor;
+}
+
+type RawPmTemplate = Omit<PmChecklistTemplate, "active" | "items"> & { active: number };
+type RawPmItem = Omit<PmChecklistItem, "required"> & { required: number };
+type RawPmPlan = Omit<PmPlan, "active"> & { active: number };
+type RawPmSchedule = Omit<PmScheduleItem, "overdue">;
+
+function getPmTemplate(templateId: string): PmChecklistTemplate {
+  const template = row<RawPmTemplate | undefined>(db.prepare(`
+    SELECT t.*, COUNT(i.id) AS itemCount
+    FROM pm_checklist_templates t
+    LEFT JOIN pm_checklist_items i ON i.templateId = t.id
+    WHERE t.id = ?
+    GROUP BY t.id
+  `).get(templateId));
+  if (!template) {
+    throw new Error("PM checklist template not found.");
+  }
+  const items = rows<RawPmItem>(
+    db.prepare("SELECT * FROM pm_checklist_items WHERE templateId = ? ORDER BY sortOrder").all(templateId)
+  ).map((item) => ({ ...item, required: Boolean(item.required) }));
+  return { ...template, active: Boolean(template.active), items };
+}
+
+export function listPmTemplates(): PmChecklistTemplate[] {
+  const templates = rows<RawPmTemplate>(db.prepare(`
+    SELECT t.*, COUNT(i.id) AS itemCount
+    FROM pm_checklist_templates t
+    LEFT JOIN pm_checklist_items i ON i.templateId = t.id
+    GROUP BY t.id
+    ORDER BY t.active DESC, t.machineName
+  `).all());
+  return templates.map((template) => ({
+    ...template,
+    active: Boolean(template.active),
+    items: rows<RawPmItem>(
+      db.prepare("SELECT * FROM pm_checklist_items WHERE templateId = ? ORDER BY sortOrder").all(template.id)
+    ).map((item) => ({ ...item, required: Boolean(item.required) }))
+  }));
+}
+
+export function listPmPlans(): PmPlan[] {
+  return rows<RawPmPlan>(db.prepare(`
+    SELECT id, mainMachine, machineName, frequencyLabel, frequencyMonths, occurrencesPerMonth,
+           technicianId, technicianName, templateId, active
+    FROM pm_plans
+    ORDER BY mainMachine, machineName
+  `).all()).map((plan) => ({ ...plan, active: Boolean(plan.active) }));
+}
+
+function pmScheduleSelect() {
+  return `
+    SELECT
+      s.id, s.planId, s.scheduledDate, s.year, s.month, s.weekOfMonth, s.status,
+      s.startedAt, s.submittedAt, s.verifiedAt, s.remarks,
+      p.machineName, p.mainMachine, p.frequencyLabel, p.technicianId, p.technicianName,
+      p.templateId, t.title AS templateTitle,
+      COUNT(DISTINCT i.id) AS checklistItemCount,
+      COUNT(DISTINCT CASE WHEN r.resultCode IS NOT NULL THEN r.itemId END) AS completedItemCount,
+      COUNT(DISTINCT CASE WHEN r.resultCode = 'fail' THEN r.itemId END) AS failedItemCount
+    FROM pm_schedules s
+    JOIN pm_plans p ON p.id = s.planId
+    LEFT JOIN pm_checklist_templates t ON t.id = p.templateId
+    LEFT JOIN pm_checklist_items i ON i.templateId = p.templateId
+    LEFT JOIN pm_results r ON r.scheduleId = s.id AND r.itemId = i.id
+  `;
+}
+
+function normalizePmSchedule(schedule: RawPmSchedule): PmScheduleItem {
+  return {
+    ...schedule,
+    checklistItemCount: Number(schedule.checklistItemCount || 0),
+    completedItemCount: Number(schedule.completedItemCount || 0),
+    failedItemCount: Number(schedule.failedItemCount || 0),
+    overdue: !["submitted", "verified"].includes(schedule.status) && schedule.scheduledDate < now().slice(0, 10)
+  };
+}
+
+function listPmSchedules(actorId: string, year: number): PmScheduleItem[] {
+  const actor = requirePmActor(actorId);
+  const technicianFilter = actor.role === "technician" ? "AND p.technicianId = ?" : "";
+  const parameters = actor.role === "technician" ? [year, actor.id] : [year];
+  const scheduleRows = rows<RawPmSchedule>(db.prepare(`
+    ${pmScheduleSelect()}
+    WHERE s.year = ? ${technicianFilter}
+    GROUP BY s.id
+    ORDER BY s.scheduledDate, p.mainMachine, p.machineName
+  `).all(...parameters));
+  return scheduleRows.map(normalizePmSchedule);
+}
+
+export function getPmDashboard(actorId: string, year = new Date().getFullYear()): PmDashboardResponse {
+  const schedules = listPmSchedules(actorId, year);
+  const plans = listPmPlans();
+  const templates = listPmTemplates();
+  const today = now().slice(0, 10);
+  const currentMonth = Number(today.slice(5, 7));
+  const currentYear = Number(today.slice(0, 4));
+  const date = new Date(`${today}T00:00:00Z`);
+  const day = date.getUTCDay() || 7;
+  const weekStart = new Date(date);
+  weekStart.setUTCDate(date.getUTCDate() - day + 1);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
+  const weekStartText = weekStart.toISOString().slice(0, 10);
+  const weekEndText = weekEnd.toISOString().slice(0, 10);
+  const monthSchedules = year === currentYear ? schedules.filter((item) => item.month === currentMonth) : schedules;
+  const completedThisMonth = monthSchedules.filter((item) => ["submitted", "verified"].includes(item.status)).length;
+  const coveredPlans = plans.filter((plan) => plan.active && plan.templateId).length;
+  const activePlans = plans.filter((plan) => plan.active).length;
+
+  return {
+    summary: {
+      scheduledThisMonth: monthSchedules.length,
+      dueThisWeek: schedules.filter((item) => item.scheduledDate >= weekStartText && item.scheduledDate <= weekEndText).length,
+      overdue: schedules.filter((item) => item.overdue).length,
+      completedThisMonth,
+      compliancePercent: monthSchedules.length ? Math.round((completedThisMonth / monthSchedules.length) * 100) : 100,
+      checklistCoveragePercent: activePlans ? Math.round((coveredPlans / activePlans) * 100) : 100
+    },
+    schedules,
+    plans,
+    templates
+  };
+}
+
+function getPmScheduleBase(scheduleId: string): PmScheduleItem {
+  const schedule = row<RawPmSchedule | undefined>(db.prepare(`
+    ${pmScheduleSelect()}
+    WHERE s.id = ?
+    GROUP BY s.id
+  `).get(scheduleId));
+  if (!schedule) {
+    throw new Error("PM assignment not found.");
+  }
+  return normalizePmSchedule(schedule);
+}
+
+function requireScheduleAccess(scheduleId: string, actorId: string) {
+  const actor = requirePmActor(actorId);
+  const schedule = getPmScheduleBase(scheduleId);
+  if (actor.role === "technician" && schedule.technicianId !== actor.id) {
+    throw new Error("This PM assignment belongs to another technician.");
+  }
+  return { actor, schedule };
+}
+
+export function getPmScheduleDetail(scheduleId: string, actorId: string): PmScheduleDetail {
+  const { schedule } = requireScheduleAccess(scheduleId, actorId);
+  const verification = row<{ verifiedByName: string | null }>(db.prepare(`
+    SELECT u.name AS verifiedByName
+    FROM pm_schedules s
+    LEFT JOIN users u ON u.id = s.verifiedById
+    WHERE s.id = ?
+  `).get(scheduleId));
+  const template = schedule.templateId ? getPmTemplate(schedule.templateId) : null;
+  const storedResults = rows<PmChecklistResult>(db.prepare(`
+    SELECT itemId, resultCode, readingValue, note, completedAt
+    FROM pm_results WHERE scheduleId = ?
+  `).all(scheduleId));
+  const resultsByItem = new Map(storedResults.map((result) => [result.itemId, result]));
+  const results = (template?.items || []).map((item) => resultsByItem.get(item.id) || ({
+    itemId: item.id,
+    resultCode: null,
+    readingValue: "",
+    note: "",
+    completedAt: null
+  }));
+  return { ...schedule, template, results, verifiedByName: verification.verifiedByName };
+}
+
+export function startPmSchedule(scheduleId: string, actorId: string): PmScheduleDetail {
+  const { schedule } = requireScheduleAccess(scheduleId, actorId);
+  if (!schedule.templateId) {
+    throw new Error("A checklist must be assigned before this PM can start.");
+  }
+  if (schedule.status === "scheduled") {
+    const timestamp = now();
+    db.prepare("UPDATE pm_schedules SET status = 'in_progress', startedAt = ?, updatedAt = ? WHERE id = ?")
+      .run(timestamp, timestamp, scheduleId);
+  }
+  return getPmScheduleDetail(scheduleId, actorId);
+}
+
+export function savePmResult(scheduleId: string, input: SavePmResultInput): PmScheduleDetail {
+  const { schedule } = requireScheduleAccess(scheduleId, input.actorId);
+  if (["submitted", "verified"].includes(schedule.status)) {
+    throw new Error("This checklist has already been submitted.");
+  }
+  if (!schedule.templateId) {
+    throw new Error("This machine does not have a checklist yet.");
+  }
+  const item = row<{ id: string; dataType: string } | undefined>(
+    db.prepare("SELECT id, dataType FROM pm_checklist_items WHERE id = ? AND templateId = ?").get(input.itemId, schedule.templateId)
+  );
+  if (!item) {
+    throw new Error("Checklist item not found.");
+  }
+  const allowedResults = ["pass", "fail", "adjusted", "not_applicable"];
+  if (input.resultCode && !allowedResults.includes(input.resultCode)) {
+    throw new Error("Invalid checklist result.");
+  }
+  const timestamp = now();
+  db.prepare(`
+    INSERT INTO pm_results (
+      id, scheduleId, itemId, resultCode, readingValue, note, completedAt, updatedById, updatedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(scheduleId, itemId) DO UPDATE SET
+      resultCode = excluded.resultCode,
+      readingValue = excluded.readingValue,
+      note = excluded.note,
+      completedAt = excluded.completedAt,
+      updatedById = excluded.updatedById,
+      updatedAt = excluded.updatedAt
+  `).run(
+    randomUUID(),
+    scheduleId,
+    input.itemId,
+    input.resultCode,
+    input.readingValue?.trim() || "",
+    input.note?.trim() || "",
+    input.resultCode ? timestamp : null,
+    input.actorId,
+    timestamp
+  );
+  db.prepare(`
+    UPDATE pm_schedules
+    SET status = CASE WHEN status = 'scheduled' THEN 'in_progress' ELSE status END,
+        startedAt = COALESCE(startedAt, ?), updatedAt = ?
+    WHERE id = ?
+  `).run(timestamp, timestamp, scheduleId);
+  return getPmScheduleDetail(scheduleId, input.actorId);
+}
+
+export function submitPmSchedule(scheduleId: string, input: SubmitPmScheduleInput): PmScheduleDetail {
+  const { schedule } = requireScheduleAccess(scheduleId, input.actorId);
+  if (!schedule.templateId) {
+    throw new Error("This machine does not have a checklist yet.");
+  }
+  const incomplete = row<{ count: number }>(db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM pm_checklist_items i
+    LEFT JOIN pm_results r ON r.itemId = i.id AND r.scheduleId = ?
+    WHERE i.templateId = ? AND i.required = 1
+      AND (r.resultCode IS NULL OR (i.dataType = 'value' AND trim(COALESCE(r.readingValue, '')) = ''))
+  `).get(scheduleId, schedule.templateId)).count;
+  if (incomplete > 0) {
+    throw new Error(`${incomplete} required checklist item${incomplete === 1 ? " is" : "s are"} incomplete.`);
+  }
+  const timestamp = now();
+  db.prepare(`
+    UPDATE pm_schedules
+    SET status = 'submitted', submittedAt = ?, remarks = ?, updatedAt = ?
+    WHERE id = ?
+  `).run(timestamp, input.remarks?.trim() || "", timestamp, scheduleId);
+  return getPmScheduleDetail(scheduleId, input.actorId);
+}
+
+export function verifyPmSchedule(scheduleId: string, actorId: string): PmScheduleDetail {
+  requirePmManager(actorId);
+  const schedule = getPmScheduleBase(scheduleId);
+  if (schedule.status !== "submitted") {
+    throw new Error("Only a submitted checklist can be verified.");
+  }
+  const timestamp = now();
+  db.prepare(`
+    UPDATE pm_schedules
+    SET status = 'verified', verifiedAt = ?, verifiedById = ?, updatedAt = ?
+    WHERE id = ?
+  `).run(timestamp, actorId, timestamp, scheduleId);
+  return getPmScheduleDetail(scheduleId, actorId);
+}
+
+export function savePmTemplate(templateId: string | null, input: SavePmTemplateInput): PmChecklistTemplate {
+  requirePmManager(input.actorId);
+  const machineName = input.machineName.trim();
+  const title = input.title.trim();
+  if (!machineName || !title) {
+    throw new Error("Machine name and checklist title are required.");
+  }
+  if (input.items.length === 0) {
+    throw new Error("Add at least one checklist item.");
+  }
+  const timestamp = now();
+  const id = templateId || randomUUID();
+  if (templateId) {
+    getPmTemplate(templateId);
+    db.prepare(`
+      UPDATE pm_checklist_templates
+      SET machineName = ?, title = ?, documentNumber = ?, revisionNumber = ?, effectiveDate = ?,
+          version = version + 1, active = ?, updatedAt = ?
+      WHERE id = ?
+    `).run(
+      machineName,
+      title,
+      input.documentNumber?.trim() || "",
+      input.revisionNumber?.trim() || "",
+      input.effectiveDate || "",
+      boolNumber(input.active ?? true),
+      timestamp,
+      id
+    );
+    db.prepare("DELETE FROM pm_checklist_items WHERE templateId = ?").run(id);
+  } else {
+    db.prepare(`
+      INSERT INTO pm_checklist_templates (
+        id, machineName, title, documentNumber, revisionNumber, effectiveDate, version, active, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+    `).run(
+      id,
+      machineName,
+      title,
+      input.documentNumber?.trim() || "",
+      input.revisionNumber?.trim() || "",
+      input.effectiveDate || "",
+      boolNumber(input.active ?? true),
+      timestamp,
+      timestamp
+    );
+  }
+  const insertItem = db.prepare(`
+    INSERT INTO pm_checklist_items (
+      id, templateId, sortOrder, groupName, description, specification, inspectionMethod,
+      frequency, dataType, maintenanceType, required
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  input.items.forEach((item, index) => {
+    if (!item.groupName.trim() || !item.description.trim()) {
+      throw new Error(`Checklist item ${index + 1} needs a group and description.`);
+    }
+    insertItem.run(
+      item.id || randomUUID(),
+      id,
+      index + 1,
+      item.groupName.trim(),
+      item.description.trim(),
+      item.specification.trim(),
+      item.inspectionMethod.trim(),
+      item.frequency.trim() || "As scheduled",
+      item.dataType,
+      item.maintenanceType,
+      boolNumber(item.required ?? true)
+    );
+  });
+  return getPmTemplate(id);
+}
+
+export function assignPmTemplate(planId: string, input: AssignPmTemplateInput): PmPlan {
+  requirePmManager(input.actorId);
+  if (input.templateId) {
+    getPmTemplate(input.templateId);
+  }
+  const plan = row<RawPmPlan | undefined>(db.prepare(`
+    SELECT id, mainMachine, machineName, frequencyLabel, frequencyMonths, occurrencesPerMonth,
+           technicianId, technicianName, templateId, active
+    FROM pm_plans WHERE id = ?
+  `).get(planId));
+  if (!plan) {
+    throw new Error("PM plan not found.");
+  }
+  db.prepare("UPDATE pm_plans SET templateId = ?, updatedAt = ? WHERE id = ?").run(input.templateId, now(), planId);
+  const updated = row<RawPmPlan>(db.prepare(`
+    SELECT id, mainMachine, machineName, frequencyLabel, frequencyMonths, occurrencesPerMonth,
+           technicianId, technicianName, templateId, active
+    FROM pm_plans WHERE id = ?
+  `).get(planId));
+  return { ...updated, active: Boolean(updated.active) };
 }
 
 export function createSection(input: { actorId: string; name: string; active?: boolean }): Section {

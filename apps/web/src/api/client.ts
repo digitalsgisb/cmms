@@ -9,6 +9,14 @@ import type {
   MachineImportRow,
   MasterData,
   NotificationRecord,
+  AssignPmTemplateInput,
+  PmChecklistTemplate,
+  PmDashboardResponse,
+  PmPlan,
+  PmScheduleDetail,
+  SavePmResultInput,
+  SavePmTemplateInput,
+  SubmitPmScheduleInput,
   PublicRequesterWorkOrder,
   Section,
   SpareAdjustmentInput,
@@ -113,6 +121,46 @@ export const api = {
     }),
   updateIssueCategory: (id: string, input: { actorId: string; name: string; active?: boolean }) =>
     request<IssueCategory>(`/api/master-data/issue-categories/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(input)
+    }),
+  pmDashboard: (actorId: string, year: number) =>
+    request<PmDashboardResponse>(`/api/pm/dashboard?actorId=${encodeURIComponent(actorId)}&year=${year}`),
+  pmTemplates: () => request<PmChecklistTemplate[]>("/api/pm/templates"),
+  pmSchedule: (id: string, actorId: string) =>
+    request<PmScheduleDetail>(`/api/pm/schedules/${id}?actorId=${encodeURIComponent(actorId)}`),
+  startPmSchedule: (id: string, actorId: string) =>
+    request<PmScheduleDetail>(`/api/pm/schedules/${id}/start`, {
+      method: "POST",
+      body: JSON.stringify({ actorId })
+    }),
+  savePmResult: (scheduleId: string, input: SavePmResultInput) =>
+    request<PmScheduleDetail>(`/api/pm/schedules/${scheduleId}/results/${input.itemId}`, {
+      method: "PUT",
+      body: JSON.stringify(input)
+    }),
+  submitPmSchedule: (id: string, input: SubmitPmScheduleInput) =>
+    request<PmScheduleDetail>(`/api/pm/schedules/${id}/submit`, {
+      method: "POST",
+      body: JSON.stringify(input)
+    }),
+  verifyPmSchedule: (id: string, actorId: string) =>
+    request<PmScheduleDetail>(`/api/pm/schedules/${id}/verify`, {
+      method: "POST",
+      body: JSON.stringify({ actorId })
+    }),
+  createPmTemplate: (input: SavePmTemplateInput) =>
+    request<PmChecklistTemplate>("/api/pm/templates", {
+      method: "POST",
+      body: JSON.stringify(input)
+    }),
+  updatePmTemplate: (id: string, input: SavePmTemplateInput) =>
+    request<PmChecklistTemplate>(`/api/pm/templates/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(input)
+    }),
+  assignPmTemplate: (planId: string, input: AssignPmTemplateInput) =>
+    request<PmPlan>(`/api/pm/plans/${planId}/template`, {
       method: "PATCH",
       body: JSON.stringify(input)
     }),

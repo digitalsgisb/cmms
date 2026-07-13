@@ -23,8 +23,6 @@ import { useCurrentUser } from "../state/UserContext";
 import { formatShortDate } from "../utils/format";
 
 const navItems = [
-  { to: "/assets", label: "Assets", icon: Factory },
-  { to: "/preventive-maintenance", label: "Preventive", icon: ShieldCheck },
   { to: "/performance", label: "Performance", icon: ChartNoAxesCombined },
   { to: "/reports", label: "Reports", icon: Boxes },
   { to: "/users", label: "Users", icon: Users },
@@ -56,8 +54,10 @@ export function Layout() {
   const canUseTechnicianViews = currentUser ? currentUser.role !== "requester" : true;
   const workOrdersActive = location.pathname.startsWith("/work-orders") || (!isRequester && location.pathname.startsWith("/technician"));
   const sparePartsActive = location.pathname.startsWith("/spare-parts");
+  const preventiveActive = location.pathname.startsWith("/preventive-maintenance");
   const [workOrdersOpen, setWorkOrdersOpen] = useState(workOrdersActive);
   const [sparePartsOpen, setSparePartsOpen] = useState(sparePartsActive);
+  const [preventiveOpen, setPreventiveOpen] = useState(preventiveActive);
 
   async function loadNotifications() {
     if (!currentUser) {
@@ -126,6 +126,15 @@ export function Layout() {
 
     setSparePartsOpen(false);
   }, [sparePartsActive]);
+
+  useEffect(() => {
+    if (preventiveActive) {
+      setPreventiveOpen(true);
+      return;
+    }
+
+    setPreventiveOpen(false);
+  }, [preventiveActive]);
 
   useEffect(() => {
     setMobileNavOpen(false);
@@ -340,6 +349,62 @@ export function Layout() {
               {["executive", "admin"].includes(currentUser.role) ? (
                 <NavLink to="/spare-parts/setup" tabIndex={sparePartsOpen ? 0 : -1} className={({ isActive }) => (isActive ? "active" : "")} onClick={() => setMobileNavOpen(false)}>
                   Sheet Setup
+                </NavLink>
+              ) : null}
+            </div>
+          </div>
+
+          <NavLink to="/assets" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} onClick={() => setMobileNavOpen(false)}>
+            <Factory size={18} aria-hidden="true" />
+            <span>Assets</span>
+          </NavLink>
+
+          <div className={`nav-group ${preventiveOpen ? "open" : ""}`}>
+            <NavLink
+              to="/preventive-maintenance"
+              className={`nav-item nav-parent ${preventiveActive ? "active" : ""}`}
+              aria-expanded={preventiveOpen}
+              onClick={(event) => {
+                if (preventiveActive) {
+                  event.preventDefault();
+                  setPreventiveOpen((open) => !open);
+                  return;
+                }
+
+                setPreventiveOpen(true);
+              }}
+            >
+              <ShieldCheck size={18} aria-hidden="true" />
+              <span>Preventive</span>
+              {preventiveOpen ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
+            </NavLink>
+
+            <div className="nav-subitems" aria-hidden={!preventiveOpen}>
+              <NavLink
+                to="/preventive-maintenance"
+                end
+                tabIndex={preventiveOpen ? 0 : -1}
+                className={({ isActive }) => (isActive ? "active" : "")}
+                onClick={() => setMobileNavOpen(false)}
+              >
+                Overview
+              </NavLink>
+              <NavLink
+                to="/preventive-maintenance/schedule"
+                tabIndex={preventiveOpen ? 0 : -1}
+                className={({ isActive }) => (isActive ? "active" : "")}
+                onClick={() => setMobileNavOpen(false)}
+              >
+                Schedule
+              </NavLink>
+              {['executive', 'admin'].includes(currentUser.role) ? (
+                <NavLink
+                  to="/preventive-maintenance/checklists"
+                  tabIndex={preventiveOpen ? 0 : -1}
+                  className={({ isActive }) => (isActive ? "active" : "")}
+                  onClick={() => setMobileNavOpen(false)}
+                >
+                  Checklists
                 </NavLink>
               ) : null}
             </div>
