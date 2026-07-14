@@ -5,6 +5,11 @@ import { fileURLToPath } from "node:url";
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import type {
   ActivityAction,
+  AssetCondition,
+  AssetCriticality,
+  AssetDashboardResponse,
+  AssetLifecycleBand,
+  AssetRecord,
   CreateWorkOrderInput,
   DashboardSummary,
   IssueCategory,
@@ -42,6 +47,8 @@ import type {
   StockMovementType,
   StockSyncStatus,
   UpdateSpareSyncSettingsInput,
+  UpdateAssetInput,
+  UpdatePmPlanInput,
   UpdateWorkOrderStatusInput,
   User,
   WorkOrder,
@@ -51,6 +58,7 @@ import type {
   WorkOrderStatus,
   WorkOrderType
 } from "@sugi-cmms/shared";
+import { productionAssets2026 } from "./production-assets-2026.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.resolve(__dirname, "../data");
@@ -163,6 +171,28 @@ export function migrate() {
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL,
       FOREIGN KEY (sectionId) REFERENCES sections(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS assets (
+      id TEXT PRIMARY KEY,
+      assetNo INTEGER NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      serialNo TEXT NOT NULL DEFAULT '',
+      yearText TEXT NOT NULL DEFAULT '',
+      installDateText TEXT NOT NULL DEFAULT '',
+      warranty TEXT NOT NULL DEFAULT '',
+      manufacturer TEXT NOT NULL DEFAULT '',
+      supplier TEXT NOT NULL DEFAULT '',
+      contactPerson TEXT NOT NULL DEFAULT '',
+      telephone TEXT NOT NULL DEFAULT '',
+      fax TEXT NOT NULL DEFAULT '',
+      condition TEXT NOT NULL DEFAULT 'operational',
+      criticality TEXT NOT NULL DEFAULT 'medium',
+      location TEXT NOT NULL DEFAULT 'Production',
+      notes TEXT NOT NULL DEFAULT '',
+      source TEXT NOT NULL DEFAULT '',
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS issue_categories (
@@ -377,6 +407,8 @@ export function migrate() {
     CREATE INDEX IF NOT EXISTS idx_work_orders_assigned ON work_orders(assignedToId);
     CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(userId, readAt);
     CREATE INDEX IF NOT EXISTS idx_machines_section ON machines(sectionId);
+    CREATE INDEX IF NOT EXISTS idx_assets_condition ON assets(condition, assetNo);
+    CREATE INDEX IF NOT EXISTS idx_assets_name ON assets(name);
     CREATE INDEX IF NOT EXISTS idx_spare_parts_category ON spare_parts(category);
     CREATE INDEX IF NOT EXISTS idx_spare_parts_search ON spare_parts(searchName);
     CREATE INDEX IF NOT EXISTS idx_stock_movements_item ON stock_movements(itemNo, createdAt);
@@ -480,6 +512,7 @@ export function seed() {
   }
 
   seedMasterData();
+  seedProductionAssets();
   seedPmData();
 
   const workOrderCount = row<{ count: number }>(db.prepare("SELECT COUNT(*) as count FROM work_orders").get()).count;
@@ -572,27 +605,112 @@ function seedMasterData() {
     .run(otherIssueCategoryId, "Other", 1, timestamp, timestamp);
 }
 
-function seedPmData() {
+function seedProductionAssets() {
   const timestamp = now();
-  const templateId = "pm-template-forming-6";
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO assets (
+      id, assetNo, name, serialNo, yearText, installDateText, warranty, manufacturer,
+      supplier, contactPerson, telephone, fax, condition, criticality, location, notes,
+      source, createdAt, updatedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  for (const asset of productionAssets2026) {
+    const [assetNo, name, serialNo, yearText, installDateText, warranty, manufacturer, supplier, contactPerson, telephone, fax] = asset;
+    const condition: AssetCondition = warranty.toLowerCase().includes("obs") ? "obsolete" : "operational";
+    const criticality: AssetCriticality = /robot|pump|compressor|air comp|carding|forming|oven|breaker|dilo|dryer|coating/i.test(name)
+      ? "high"
+      : "medium";
+    const notes = assetNo === 46 ? "Source note: sent to SDYN on 22/5/2025." : "";
+    insert.run(
+      `asset-${String(assetNo).padStart(3, "0")}`,
+      assetNo,
+      name,
+      serialNo,
+      yearText,
+      installDateText,
+      warranty,
+      manufacturer,
+      supplier,
+      contactPerson,
+      telephone,
+      fax,
+      condition,
+      criticality,
+      "Production",
+      notes,
+      "FR-MT-008 / Production Machine Register 2026",
+      timestamp,
+      timestamp
+    );
+  }
+
+  // Correct untouched seed rows where the source uses the warranty column as a disposition flag.
   db.prepare(`
+    UPDATE assets
+    SET condition = 'obsolete'
+    WHERE lower(warranty) LIKE '%obs%'
+      AND condition = 'operational'
+      AND updatedAt = createdAt
+  `).run();
+}
+
+type SeedPmChecklistItem = [
+  string,
+  string,
+  string,
+  string,
+  string,
+  PmChecklistItem["dataType"],
+  PmChecklistItem["maintenanceType"]
+];
+
+function seedPmChecklistTemplate(input: {
+  id: string;
+  machineName: string;
+  title?: string;
+  documentNumber?: string;
+  revisionNumber?: string;
+  effectiveDate?: string;
+  itemIdPrefix: string;
+  items: SeedPmChecklistItem[];
+}, timestamp: string) {
+  const inserted = db.prepare(`
     INSERT OR IGNORE INTO pm_checklist_templates (
       id, machineName, title, documentNumber, revisionNumber, effectiveDate, version, active, createdAt, updatedAt
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    templateId,
-    "Hydraulic Forming 6",
-    "Preventive & Predictive Maintenance Checklist",
-    "FR-MT-002",
-    "5",
-    "2025-02-03",
+    input.id,
+    input.machineName,
+    input.title || "Preventive & Predictive Maintenance Checklist",
+    input.documentNumber || "FR-MT-002",
+    input.revisionNumber || "5",
+    input.effectiveDate || "2025-02-03",
     1,
     1,
     timestamp,
     timestamp
   );
 
-  const checklistItems: Array<[string, string, string, string, string, string, string]> = [
+  // Seed only once so later user edits (including deleted items) remain authoritative.
+  if (inserted.changes === 0) return;
+
+  const insertItem = db.prepare(`
+    INSERT INTO pm_checklist_items (
+      id, templateId, sortOrder, groupName, description, specification, inspectionMethod,
+      frequency, dataType, maintenanceType, required
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+  `);
+  input.items.forEach((item, index) => {
+    insertItem.run(`${input.itemIdPrefix}-${index + 1}`, input.id, index + 1, ...item);
+  });
+}
+
+function seedPmData() {
+  const timestamp = now();
+  const templateId = "pm-template-forming-6";
+
+  const checklistItems: SeedPmChecklistItem[] = [
     ["Pump & Motor", "Ensure the hydraulic pump and motor are functioning properly.", "Hydraulic pump and motor are functioning properly.", "Visual / Testing", "Monthly", "marking", "preventive"],
     ["Pump & Motor", "Check and ensure oil level is maintained accordingly.", "Oil level should be at high level.", "Visual", "Monthly", "marking", "preventive"],
     ["Pump & Motor", "Check for any oil leakages.", "No leakages.", "Visual", "Monthly", "marking", "predictive"],
@@ -616,14 +734,105 @@ function seedPmData() {
     ["Chiller", "Compare the set temperature with the actual temperature of the chiller.", "Actual temperature should align with the set point.", "Visual / Testing", "Monthly", "marking", "preventive"],
     ["Bolster", "Check the Bolster L-Bracket screw marking.", "Screw is aligned with the marking.", "Visual", "Monthly", "marking", "preventive"]
   ];
-  const insertItem = db.prepare(`
-    INSERT OR IGNORE INTO pm_checklist_items (
-      id, templateId, sortOrder, groupName, description, specification, inspectionMethod,
-      frequency, dataType, maintenanceType, required
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-  `);
-  checklistItems.forEach((item, index) => {
-    insertItem.run(`pm-forming-6-item-${index + 1}`, templateId, index + 1, ...item);
+  seedPmChecklistTemplate({
+    id: templateId,
+    machineName: "Hydraulic Forming 6",
+    itemIdPrefix: "pm-forming-6-item",
+    items: checklistItems
+  }, timestamp);
+
+  const importedTemplates: Array<{
+    id: string;
+    machineName: string;
+    itemIdPrefix: string;
+    items: SeedPmChecklistItem[];
+  }> = [
+    {
+      id: "pm-template-forming-7",
+      machineName: "Hydraulic Forming 7",
+      itemIdPrefix: "pm-forming-7-item",
+      items: [
+        ["Power Pack", "Ensure the hydraulic pump and motor are functioning properly.", "Hydraulic pump and motor are functioning properly.", "Visual / Testing", "Monthly", "marking", "preventive"],
+        ["Power Pack", "Check and ensure oil level is maintained accordingly.", "Oil level should be at high level.", "Visual", "Monthly", "marking", "preventive"],
+        ["Power Pack", "Check for any oil leakages.", "No leakages.", "Visual", "Monthly", "marking", "predictive"],
+        ["Piston Rod", "Inspect and ensure smooth travel of the piston rod.", "Smooth and unrestricted movement of the piston rod.", "Visual", "Monthly", "marking", "preventive"],
+        ["Control System", "Check the control circuit and limit switch, including the solenoid valve.", "All fully functional.", "Visual", "Monthly", "marking", "preventive"],
+        ["Control System", "Ensure the photo sensor, safety sensor, and pitch roller are functioning properly.", "All fully functional.", "Visual", "Monthly", "marking", "preventive"],
+        ["Control System", "Verify air pressure gauge readings.", "5 - 6 Bar", "Visual", "Monthly", "value", "predictive"],
+        ["Conveyor Chain", "Check the conveyor chain drive motor and gearbox oil level.", "Good condition.", "Visual", "Monthly", "marking", "preventive"],
+        ["Conveyor Chain", "Ensure the grease pump is functioning properly.", "Good condition.", "Visual", "Monthly", "marking", "preventive"],
+        ["Conveyor Chain", "Inspect all carpet clamps and springs for damage or broken parts.", "Carpet clamps and springs are intact and functional.", "Visual", "Monthly", "marking", "preventive"],
+        ["Conveyor Chain", "Inspect oven mounting and FWD/REV spur gear for proper function.", "Good condition.", "Visual", "Monthly", "marking", "preventive"],
+        ["Oven Heater", "Inspect the heaters for loose connections and ensure they are secured to the frame.", "Heater elements and connections are secure and functional.", "Visual", "Monthly", "marking", "preventive"],
+        ["Oven Heater", "Inspect the control panel for loose connections or damaged wires.", "No loose connections, damaged wires or faulty indicators.", "Visual", "Monthly", "marking", "preventive"],
+        ["Oven Heater", "Inspect the wiring system for loose connections, neatness, and proper arrangement.", "No loose connections and in good condition.", "Visual", "Monthly", "marking", "preventive"],
+        ["Lubrication & Safety", "Apply greasing at the bushing and ensure the mould frame is secured to the cylinder lock nut.", "Greased and mould is secure.", "Testing", "Monthly", "marking", "preventive"],
+        ["Chiller", "Inspect the high/low-pressure gauge to ensure it is within range.", "Within the green range.", "Visual", "Monthly", "marking", "predictive"],
+        ["Chiller", "Check the control panel indicator light functionality.", "No faulty error and fully functional.", "Visual", "Monthly", "marking", "preventive"],
+        ["Chiller", "Inspect the copper pipe condition for leaks or damages.", "No gas leaks or broken pipes.", "Visual / Testing", "Monthly", "marking", "predictive"],
+        ["Chiller", "Clean condenser coils to ensure efficient heat exchange.", "In good condition and cleaned.", "Visual", "Monthly", "marking", "preventive"],
+        ["Chiller", "Compare the set temperature with the actual temperature of the chiller.", "Actual temperature should align with the set point.", "Visual / Testing", "Monthly", "marking", "preventive"]
+      ]
+    },
+    {
+      id: "pm-template-carding-4m",
+      machineName: "4 Meter Carding",
+      itemIdPrefix: "pm-carding-4m-item",
+      items: [
+        ["Intake Roller", "Inspect metallic carding wire for cuts or damage.", "Free from cuts, bends, or damaged wire.", "Visual", "Twice per month", "marking", "preventive"],
+        ["Intake Roller", "Check metal detector functionality.", "Fully functional and responsive.", "Functional test", "Twice per month", "marking", "preventive"],
+        ["Intake Roller", "Check the main drive motor gearbox, bearing, and V-belt condition.", "No abnormal wear, vibration, or leakage.", "Visual / Listening", "Twice per month", "marking", "preventive"],
+        ["Main Drive", "Inspect gearbox and motor conditions.", "No overheating, abnormal noise, or oil leak.", "Visual / IR thermometer (<65°C)", "Twice per month", "marking", "preventive"],
+        ["Main Drive", "Check pulley and belt for wear, tears, or cuts.", "Correct belt tension with no cracks or wear.", "Visual / Belt tension gauge", "Twice per month", "marking", "preventive"],
+        ["Roller Stripper, Doffer, Worker, Big Drum & Intake Drum", "Inspect metallic carding wire for cuts or damage.", "Free from cuts or damage.", "Visual", "Twice per month", "marking", "preventive"],
+        ["Roller Stripper, Doffer, Worker, Big Drum & Intake Drum", "Check all roller settings and sprocket alignment.", "Within machine standards.", "Visual / Refer to setting standard", "Twice per month", "marking", "preventive"],
+        ["Roller Stripper, Doffer, Worker, Big Drum & Intake Drum", "Ensure all roller bearings are lubricated and greased.", "Lubricated with smooth rotation.", "Visual / Sound", "Twice per month", "marking", "preventive"],
+        ["Roller Stripper, Doffer, Worker, Big Drum & Intake Drum", "Check roller gap settings.", "Follow approved setting.", "Visual", "Twice per month", "marking", "preventive"],
+        ["Roller Stripper, Doffer, Worker, Big Drum & Intake Drum", "Check chain tension.", "In good condition.", "Visual / Feel", "Twice per month", "marking", "preventive"],
+        ["Roller Stripper, Doffer, Worker, Big Drum & Intake Drum", "Inspect wire condition.", "In good condition.", "Visual", "Twice per month", "marking", "preventive"],
+        ["Roller Stripper, Doffer, Worker, Big Drum & Intake Drum", "Check roller-bearing temperature using an IR thermometer.", "35°C - 45°C", "Testing / IR thermometer", "Twice per month", "value", "predictive"],
+        ["Abnormal Sound", "Observe for rubbing, knocking, or frictional sounds.", "No abnormal sound.", "Testing / Hearing", "Twice per month", "marking", "predictive"],
+        ["Vacuum", "Inspect PVC pipes and hose connections for leaks or damage.", "No leaks or damage.", "Visual", "Twice per month", "marking", "preventive"],
+        ["Vacuum", "Ensure the vacuum nozzle is functional and intact.", "In good condition.", "Visual / Feel test", "Twice per month", "marking", "preventive"],
+        ["Centralized Auto Grease Pump", "Check grease level.", "Grease at optimum level.", "Visual", "Twice per month", "marking", "preventive"],
+        ["Centralized Auto Grease Pump", "Check distributor condition and grease movement.", "In good condition and fully functional.", "Visual", "Twice per month", "marking", "preventive"],
+        ["Centralized Auto Grease Pump", "Check the control-panel alarm.", "In good condition with no alarm.", "Visual", "Twice per month", "marking", "preventive"],
+        ["Centralized Auto Grease Pump", "Check the control-panel timer.", "1 pump/hour.", "Visual", "Twice per month", "marking", "preventive"]
+      ]
+    },
+    {
+      id: "pm-template-waterjet-abb2-60hp",
+      machineName: "Waterjet ABB2 & Intensifier Pump 60HP",
+      itemIdPrefix: "pm-waterjet-abb2-item",
+      items: [
+        ["Control Panel", "Inspect cooling-fan and ventilation operation.", "Cooling fan functional with unobstructed airflow.", "Visual / Functional", "Every 2 months", "marking", "predictive"],
+        ["Control Panel", "Inspect cable condition and terminal tightness.", "No loose connections or overheating.", "Visual", "Every 2 months", "marking", "predictive"],
+        ["Teach Pendant", "Check teach-pendant functionality and physical condition.", "In good condition and fully functional.", "Visual", "Every 2 months", "marking", "predictive"],
+        ["Nozzle & Hose", "Check the actuator for leaks.", "No leaks.", "Sound", "Every 2 months", "marking", "predictive"],
+        ["Nozzle & Hose", "Check solenoid-valve condition.", "In good condition and fully functional.", "Visual / Testing", "Every 2 months", "marking", "preventive"],
+        ["Nozzle & Hose", "Check hose and fitting condition.", "In good condition with no leaks.", "Visual / Sound", "Every 2 months", "marking", "preventive"],
+        ["Filter", "Inspect the water filter for dirt particles or damage.", "Free from dirt particles and damage.", "Visual", "Every 2 months", "marking", "preventive"],
+        ["High Pressure Piping", "Check the high-pressure pipe connector for leaks.", "No leaks.", "Visual", "Every 2 months", "marking", "preventive"],
+        ["Shuttle", "Check shuttle condition for smooth movement.", "In good condition with no jerking movement.", "Visual", "Every 2 months", "marking", "preventive"],
+        ["Shuttle", "Check the shuttle stopper and stopper lock nut.", "In good condition and functional.", "Check and test", "Every 2 months", "marking", "preventive"],
+        ["Shuttle", "Check greasing on the rail and linear bearing.", "Lubricated with grease.", "Visual", "Every 2 months", "marking", "preventive"],
+        ["Intensifier Pump 60HP", "Check the pump for abnormal noise.", "No abnormal sound.", "Visual / Sound", "Every 2 months", "marking", "predictive"],
+        ["Intensifier Pump 60HP", "Check the pump for oil leaks.", "No oil leakages.", "Visual", "Every 2 months", "marking", "predictive"],
+        ["Intensifier Pump 60HP", "Check the intensifier for water leaks.", "No leakages.", "Visual", "Every 2 months", "marking", "predictive"],
+        ["Intensifier Pump 60HP", "Check the oil and water filters.", "Free from dirt particles.", "Visual", "Every 2 months", "marking", "preventive"],
+        ["Intensifier Pump 60HP", "Check oil level above the minimum level.", "Oil at optimum level.", "Indicator", "Every 2 months", "marking", "preventive"],
+        ["Intensifier Pump 60HP", "Check outgoing high-pressure water.", "40k - 50k psi", "Visual / Testing", "Every 2 months", "value", "predictive"],
+        ["Intensifier Pump 60HP", "Check valve condition if pressure is abnormal.", "In good condition with no damage.", "Visual", "Every 2 months", "marking", "predictive"],
+        ["Chiller", "Inspect the high/low-pressure gauge to ensure it is within range.", "Within the green range.", "Visual", "Every 2 months", "marking", "predictive"],
+        ["Chiller", "Check the control-panel indicator light functionality.", "No faulty error and fully functional.", "Visual", "Every 2 months", "marking", "preventive"],
+        ["Chiller", "Inspect the copper-pipe condition for leaks or damage.", "No gas leaks or broken pipes.", "Visual / Testing", "Every 2 months", "marking", "predictive"],
+        ["Chiller", "Clean condenser coils to ensure efficient heat exchange.", "In good condition and cleaned.", "Visual", "Every 2 months", "marking", "preventive"],
+        ["Chiller", "Compare the chiller set temperature with the actual temperature.", "Actual temperature should align with the set point.", "Visual / Testing", "Every 2 months", "marking", "predictive"]
+      ]
+    }
+  ];
+  importedTemplates.forEach((template) => {
+    seedPmChecklistTemplate(template, timestamp);
   });
 
   const technicianIds: Record<string, string> = {
@@ -686,7 +895,15 @@ function seedPmData() {
   `);
   plans.forEach((plan, index) => {
     const [mainMachine, machineName, frequencyLabel, frequencyMonths, occurrencesPerMonth, technicianName, startMonth, weekOfMonth, secondaryWeek] = plan;
-    const assignedTemplateId = machineName === "Hydraulic Forming 6" ? templateId : null;
+    const assignedTemplateId = machineName === "Hydraulic Forming 6"
+      ? templateId
+      : machineName === "Hydraulic Forming 7"
+        ? "pm-template-forming-7"
+        : mainMachine === "4 Meter NP" && machineName === "Carding"
+          ? "pm-template-carding-4m"
+          : machineName === "Waterjet 2"
+            ? "pm-template-waterjet-abb2-60hp"
+            : null;
     insertPlan.run(
       `pm-plan-${String(index + 1).padStart(2, "0")}`,
       mainMachine,
@@ -705,6 +922,16 @@ function seedPmData() {
     );
   });
 
+  // Connect newly imported controlled checklists to existing deployed plans without
+  // replacing any template an administrator has already assigned.
+  const connectImportedTemplate = db.prepare(`
+    UPDATE pm_plans SET templateId = ?, updatedAt = ?
+    WHERE mainMachine = ? AND machineName = ? AND templateId IS NULL
+  `);
+  connectImportedTemplate.run("pm-template-forming-7", timestamp, "Forming", "Hydraulic Forming 7");
+  connectImportedTemplate.run("pm-template-carding-4m", timestamp, "4 Meter NP", "Carding");
+  connectImportedTemplate.run("pm-template-waterjet-abb2-60hp", timestamp, "WaterJet", "Waterjet 2");
+
   const currentYear = new Date().getFullYear();
   generatePmSchedules(2026);
   if (currentYear !== 2026) {
@@ -713,7 +940,7 @@ function seedPmData() {
   generatePmSchedules(currentYear + 1);
 }
 
-function generatePmSchedules(year: number) {
+function generatePmSchedules(year: number, planId?: string, fromDate?: string) {
   const timestamp = now();
   const plans = rows<{
     id: string;
@@ -722,7 +949,11 @@ function generatePmSchedules(year: number) {
     startMonth: number;
     weekOfMonth: number;
     secondaryWeek: number | null;
-  }>(db.prepare("SELECT id, frequencyMonths, occurrencesPerMonth, startMonth, weekOfMonth, secondaryWeek FROM pm_plans WHERE active = 1").all());
+  }>(db.prepare(`
+    SELECT id, frequencyMonths, occurrencesPerMonth, startMonth, weekOfMonth, secondaryWeek
+    FROM pm_plans
+    WHERE active = 1${planId ? " AND id = ?" : ""}
+  `).all(...(planId ? [planId] : [])));
   const insert = db.prepare(`
     INSERT OR IGNORE INTO pm_schedules (
       id, planId, scheduledDate, year, month, weekOfMonth, status, remarks, createdAt, updatedAt
@@ -735,6 +966,7 @@ function generatePmSchedules(year: number) {
       for (const week of weeks) {
         const day = Math.min(1 + (week - 1) * 7, new Date(Date.UTC(year, month, 0)).getUTCDate());
         const scheduledDate = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+        if (fromDate && scheduledDate < fromDate) continue;
         insert.run(`pm-schedule-${year}-${plan.id}-${month}-${week}`, plan.id, scheduledDate, year, month, week, timestamp, timestamp);
       }
     }
@@ -808,6 +1040,148 @@ export function listMasterData(): MasterData {
     machines: rows<Machine & { active: number }>(db.prepare("SELECT * FROM machines ORDER BY active DESC, name").all()).map(normalizeMachine),
     issueCategories: rows<IssueCategory & { active: number }>(db.prepare("SELECT * FROM issue_categories ORDER BY active DESC, name").all()).map(normalizeIssueCategory)
   };
+}
+
+type StoredAsset = Omit<
+  AssetRecord,
+  "ageYears" | "lifecycleBand" | "riskScore" | "warrantyState" | "dataCompleteness"
+>;
+
+function assetYear(value: string): number | null {
+  const fullYear = value.match(/(?:19|20)\d{2}/)?.[0];
+  if (fullYear) return Number(fullYear);
+
+  const shortYear = value.match(/\d{2}/g)?.at(-1);
+  if (!shortYear) return null;
+  const year = Number(shortYear);
+  return year <= 30 ? 2000 + year : 1900 + year;
+}
+
+function lifecycleBand(ageYears: number | null): AssetLifecycleBand {
+  if (ageYears === null) return "unknown";
+  if (ageYears <= 7) return "modern";
+  if (ageYears <= 15) return "midlife";
+  if (ageYears <= 24) return "aging";
+  return "legacy";
+}
+
+function warrantyState(asset: StoredAsset, installYear: number | null): AssetRecord["warrantyState"] {
+  const warranty = asset.warranty.toLowerCase();
+  if (warranty.includes("obs") || warranty.includes("n/a")) return "not_applicable";
+  if (!installYear) return "unknown";
+
+  const years = warranty.match(/(\d+)\s*(?:yr|year)/)?.[1];
+  const months = warranty.match(/(\d+)\s*month/)?.[1];
+  if (!years && !months) return "unknown";
+  const expiryYear = installYear + Number(years || 0);
+  const currentYear = new Date().getFullYear();
+  if (expiryYear < currentYear || (months && expiryYear <= currentYear)) return "expired";
+  if (expiryYear === currentYear) return "expiring";
+  return "active";
+}
+
+function normalizeAsset(asset: StoredAsset): AssetRecord {
+  const manufacturedYear = assetYear(asset.yearText);
+  const installYear = assetYear(asset.installDateText);
+  const currentYear = new Date().getFullYear();
+  const ageYears = manufacturedYear ? Math.max(0, currentYear - manufacturedYear) : null;
+  const lifecycle = lifecycleBand(ageYears);
+  const warranty = warrantyState(asset, installYear);
+  const completenessFields = [
+    asset.name,
+    asset.yearText,
+    asset.installDateText,
+    asset.warranty,
+    asset.serialNo,
+    asset.manufacturer,
+    asset.supplier,
+    asset.contactPerson,
+    asset.telephone
+  ];
+  const dataCompleteness = Math.round((completenessFields.filter(Boolean).length / completenessFields.length) * 100);
+
+  let riskScore = ageYears === null ? 45 : ageYears >= 25 ? 76 : ageYears >= 20 ? 68 : ageYears >= 15 ? 55 : ageYears >= 10 ? 44 : 25;
+  riskScore += asset.criticality === "critical" ? 20 : asset.criticality === "high" ? 10 : asset.criticality === "medium" ? 5 : 0;
+  if (warranty === "expired") riskScore += 5;
+  if (!asset.serialNo) riskScore += 3;
+  if (asset.condition === "watch") riskScore = Math.max(riskScore, 75);
+  if (["obsolete", "decommissioned"].includes(asset.condition)) riskScore = 100;
+
+  return {
+    ...asset,
+    ageYears,
+    lifecycleBand: lifecycle,
+    warrantyState: warranty,
+    dataCompleteness,
+    riskScore: Math.min(100, riskScore)
+  };
+}
+
+function getAsset(id: string): AssetRecord {
+  const asset = db.prepare("SELECT * FROM assets WHERE id = ?").get(id);
+  if (!asset) throw new Error("Asset not found.");
+  return normalizeAsset(row<StoredAsset>(asset));
+}
+
+export function getAssetDashboard(): AssetDashboardResponse {
+  const assets = rows<StoredAsset>(db.prepare("SELECT * FROM assets ORDER BY assetNo").all()).map(normalizeAsset);
+  const totalKnownAge = assets.filter((asset) => asset.ageYears !== null);
+  const manufacturers = [...assets.reduce((counts, asset) => {
+    const name = asset.manufacturer.trim() || "Not recorded";
+    counts.set(name, (counts.get(name) || 0) + 1);
+    return counts;
+  }, new Map<string, number>()).entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  const expectedNumbers = Array.from({ length: Math.max(...assets.map((asset) => asset.assetNo)) }, (_, index) => index + 1);
+  const existingNumbers = new Set(assets.map((asset) => asset.assetNo));
+
+  return {
+    summary: {
+      totalAssets: assets.length,
+      operational: assets.filter((asset) => asset.condition === "operational").length,
+      watch: assets.filter((asset) => asset.condition === "watch").length,
+      obsolete: assets.filter((asset) => asset.condition === "obsolete").length,
+      decommissioned: assets.filter((asset) => asset.condition === "decommissioned").length,
+      highRisk: assets.filter((asset) => asset.riskScore >= 75).length,
+      legacy: assets.filter((asset) => asset.lifecycleBand === "legacy").length,
+      averageAge: totalKnownAge.length
+        ? Math.round(totalKnownAge.reduce((sum, asset) => sum + (asset.ageYears || 0), 0) / totalKnownAge.length)
+        : 0,
+      missingSerials: assets.filter((asset) => !asset.serialNo).length,
+      expiredWarranties: assets.filter((asset) => asset.warrantyState === "expired").length,
+      expiringWarranties: assets.filter((asset) => asset.warrantyState === "expiring").length,
+      dataCompleteness: assets.length
+        ? Math.round(assets.reduce((sum, asset) => sum + asset.dataCompleteness, 0) / assets.length)
+        : 0
+    },
+    assets,
+    manufacturers,
+    sourceLabel: "FR-MT-008 - List of Production Machineries (confirmed 2026 register)",
+    sourceRevision: 11,
+    sourceUpdatedAt: "2025-11-20",
+    missingAssetNumbers: expectedNumbers.filter((assetNo) => !existingNumbers.has(assetNo))
+  };
+}
+
+export function updateAsset(id: string, input: UpdateAssetInput): AssetRecord {
+  const actor = getUser(input.actorId);
+  if (!["executive", "admin"].includes(actor.role)) {
+    throw new Error("Executive or admin access is required to update an asset.");
+  }
+  if (!["operational", "watch", "obsolete", "decommissioned"].includes(input.condition)) {
+    throw new Error("Select a valid asset condition.");
+  }
+  if (!["critical", "high", "medium", "low"].includes(input.criticality)) {
+    throw new Error("Select a valid asset criticality.");
+  }
+  getAsset(id);
+  db.prepare(`
+    UPDATE assets
+    SET condition = ?, criticality = ?, location = ?, notes = ?, updatedAt = ?
+    WHERE id = ?
+  `).run(input.condition, input.criticality, input.location?.trim() || "Production", input.notes?.trim() || "", now(), id);
+  return getAsset(id);
 }
 
 function getSection(id: string): Section {
@@ -949,7 +1323,7 @@ export function listPmTemplates(): PmChecklistTemplate[] {
 export function listPmPlans(): PmPlan[] {
   return rows<RawPmPlan>(db.prepare(`
     SELECT id, mainMachine, machineName, frequencyLabel, frequencyMonths, occurrencesPerMonth,
-           technicianId, technicianName, templateId, active
+           technicianId, technicianName, templateId, startMonth, weekOfMonth, secondaryWeek, active
     FROM pm_plans
     ORDER BY mainMachine, machineName
   `).all()).map((plan) => ({ ...plan, active: Boolean(plan.active) }));
@@ -1259,7 +1633,7 @@ export function assignPmTemplate(planId: string, input: AssignPmTemplateInput): 
   }
   const plan = row<RawPmPlan | undefined>(db.prepare(`
     SELECT id, mainMachine, machineName, frequencyLabel, frequencyMonths, occurrencesPerMonth,
-           technicianId, technicianName, templateId, active
+           technicianId, technicianName, templateId, startMonth, weekOfMonth, secondaryWeek, active
     FROM pm_plans WHERE id = ?
   `).get(planId));
   if (!plan) {
@@ -1268,10 +1642,86 @@ export function assignPmTemplate(planId: string, input: AssignPmTemplateInput): 
   db.prepare("UPDATE pm_plans SET templateId = ?, updatedAt = ? WHERE id = ?").run(input.templateId, now(), planId);
   const updated = row<RawPmPlan>(db.prepare(`
     SELECT id, mainMachine, machineName, frequencyLabel, frequencyMonths, occurrencesPerMonth,
-           technicianId, technicianName, templateId, active
+           technicianId, technicianName, templateId, startMonth, weekOfMonth, secondaryWeek, active
     FROM pm_plans WHERE id = ?
   `).get(planId));
   return { ...updated, active: Boolean(updated.active) };
+}
+
+function pmFrequencyLabel(frequencyMonths: number, occurrencesPerMonth: number) {
+  if (occurrencesPerMonth === 2) return "Twice per month";
+  if (frequencyMonths === 1) return "Monthly";
+  return `Every ${frequencyMonths} months`;
+}
+
+export function updatePmPlan(planId: string, input: UpdatePmPlanInput): PmPlan {
+  requirePmManager(input.actorId);
+  const existing = row<{ id: string } | undefined>(db.prepare("SELECT id FROM pm_plans WHERE id = ?").get(planId));
+  if (!existing) throw new Error("PM plan not found.");
+
+  const mainMachine = input.mainMachine.trim();
+  const machineName = input.machineName.trim();
+  const frequencyMonths = Number(input.frequencyMonths);
+  const occurrencesPerMonth = Number(input.occurrencesPerMonth);
+  const startMonth = Number(input.startMonth);
+  const weekOfMonth = Number(input.weekOfMonth);
+  const secondaryWeek = occurrencesPerMonth === 2 ? Number(input.secondaryWeek) : null;
+  if (!mainMachine || !machineName) throw new Error("Section and machine name are required.");
+  if (!Number.isInteger(frequencyMonths) || frequencyMonths < 1 || frequencyMonths > 12) {
+    throw new Error("Frequency interval must be between 1 and 12 months.");
+  }
+  if (![1, 2].includes(occurrencesPerMonth) || (occurrencesPerMonth === 2 && frequencyMonths !== 1)) {
+    throw new Error("Twice-per-month scheduling is only available for monthly plans.");
+  }
+  if (!Number.isInteger(startMonth) || startMonth < 1 || startMonth > 12) throw new Error("Start month is invalid.");
+  if (!Number.isInteger(weekOfMonth) || weekOfMonth < 1 || weekOfMonth > 4) throw new Error("Primary week is invalid.");
+  if (occurrencesPerMonth === 2 && (!Number.isInteger(secondaryWeek) || secondaryWeek! < 1 || secondaryWeek! > 4 || secondaryWeek === weekOfMonth)) {
+    throw new Error("Choose a different valid secondary week.");
+  }
+
+  const technician = row<{ id: string; name: string } | undefined>(db.prepare(`
+    SELECT id, name FROM users WHERE id = ? AND role IN ('technician', 'executive')
+  `).get(input.technicianId));
+  if (!technician) throw new Error("Select a valid maintenance technician.");
+
+  const timestamp = now();
+  const today = timestamp.slice(0, 10);
+  const active = input.active ?? true;
+  db.exec("BEGIN");
+  try {
+    db.prepare(`
+      UPDATE pm_plans
+      SET mainMachine = ?, machineName = ?, frequencyLabel = ?, frequencyMonths = ?, occurrencesPerMonth = ?,
+          technicianId = ?, technicianName = ?, startMonth = ?, weekOfMonth = ?, secondaryWeek = ?, active = ?, updatedAt = ?
+      WHERE id = ?
+    `).run(
+      mainMachine,
+      machineName,
+      pmFrequencyLabel(frequencyMonths, occurrencesPerMonth),
+      frequencyMonths,
+      occurrencesPerMonth,
+      technician.id,
+      technician.name,
+      startMonth,
+      weekOfMonth,
+      secondaryWeek,
+      boolNumber(active),
+      timestamp,
+      planId
+    );
+    db.prepare("DELETE FROM pm_schedules WHERE planId = ? AND status = 'scheduled' AND scheduledDate >= ?").run(planId, today);
+    if (active) {
+      const currentYear = Number(today.slice(0, 4));
+      generatePmSchedules(currentYear, planId, today);
+      generatePmSchedules(currentYear + 1, planId, today);
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+
+  return listPmPlans().find((plan) => plan.id === planId)!;
 }
 
 export function createSection(input: { actorId: string; name: string; active?: boolean }): Section {

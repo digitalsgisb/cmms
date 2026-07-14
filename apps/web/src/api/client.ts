@@ -1,4 +1,6 @@
 import type {
+  AssetDashboardResponse,
+  AssetRecord,
   ClaimWorkOrderInput,
   CreateWorkOrderInput,
   DashboardSummary,
@@ -30,6 +32,8 @@ import type {
   SpareSyncResult,
   StockMovementDetail,
   UpdateSpareSyncSettingsInput,
+  UpdateAssetInput,
+  UpdatePmPlanInput,
   UpdateWorkOrderStatusInput,
   User,
   WorkOrder,
@@ -88,6 +92,12 @@ export const api = {
     });
   },
   dashboardSummary: () => request<DashboardSummary>("/api/dashboard-summary"),
+  assetDashboard: () => request<AssetDashboardResponse>("/api/assets"),
+  updateAsset: (id: string, input: UpdateAssetInput) =>
+    request<AssetRecord>(`/api/assets/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(input)
+    }),
   masterData: () => request<MasterData>("/api/master-data"),
   createSection: (input: { actorId: string; name: string; active?: boolean }) =>
     request<Section>("/api/master-data/sections", {
@@ -161,6 +171,11 @@ export const api = {
     }),
   assignPmTemplate: (planId: string, input: AssignPmTemplateInput) =>
     request<PmPlan>(`/api/pm/plans/${planId}/template`, {
+      method: "PATCH",
+      body: JSON.stringify(input)
+    }),
+  updatePmPlan: (planId: string, input: UpdatePmPlanInput) =>
+    request<PmPlan>(`/api/pm/plans/${planId}`, {
       method: "PATCH",
       body: JSON.stringify(input)
     }),

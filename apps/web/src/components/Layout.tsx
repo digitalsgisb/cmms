@@ -354,11 +354,6 @@ export function Layout() {
             </div>
           </div>
 
-          <NavLink to="/assets" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} onClick={() => setMobileNavOpen(false)}>
-            <Factory size={18} aria-hidden="true" />
-            <span>Assets</span>
-          </NavLink>
-
           <div className={`nav-group ${preventiveOpen ? "open" : ""}`}>
             <NavLink
               to="/preventive-maintenance"
@@ -409,6 +404,11 @@ export function Layout() {
               ) : null}
             </div>
           </div>
+
+          <NavLink to="/assets" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} onClick={() => setMobileNavOpen(false)}>
+            <Factory size={18} aria-hidden="true" />
+            <span>Assets</span>
+          </NavLink>
 
           {navItems.map((item) => (
             <NavLink key={item.to} to={item.to} className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} onClick={() => setMobileNavOpen(false)}>

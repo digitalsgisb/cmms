@@ -36,7 +36,9 @@ import type {
   PmResultCode,
   PmScheduleDetail,
   PmScheduleItem,
-  SavePmTemplateInput
+  SavePmTemplateInput,
+  UpdatePmPlanInput,
+  User
 } from "@sugi-cmms/shared";
 import { api } from "../api/client";
 import { useCurrentUser } from "../state/UserContext";
@@ -94,6 +96,7 @@ function PmCommandCenter() {
   const location = useLocation();
   const isManager = currentUser ? ["executive", "admin"].includes(currentUser.role) : false;
   const [data, setData] = useState<PmDashboardResponse | null>(null);
+  const [maintenanceTechnicians, setMaintenanceTechnicians] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [month, setMonth] = useState(new Date().getMonth() + 1);
@@ -101,6 +104,7 @@ function PmCommandCenter() {
   const [status, setStatus] = useState("all");
   const [search, setSearch] = useState("");
   const [templateEditor, setTemplateEditor] = useState<PmChecklistTemplate | "new" | null>(null);
+  const [planEditor, setPlanEditor] = useState<PmPlan | null>(null);
   const [assigningPlanId, setAssigningPlanId] = useState("");
   const year = new Date().getFullYear();
   const activeView: "overview" | "schedule" | "templates" = !isManager
@@ -116,7 +120,12 @@ function PmCommandCenter() {
     setLoading(true);
     setError("");
     try {
-      setData(await api.pmDashboard(currentUser.id, year));
+      const [dashboard, technicianUsers] = await Promise.all([
+        api.pmDashboard(currentUser.id, year),
+        isManager ? api.usersByRole("technician") : Promise.resolve([])
+      ]);
+      setData(dashboard);
+      setMaintenanceTechnicians(technicianUsers);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to load preventive maintenance.");
     } finally {
@@ -222,7 +231,13 @@ function PmCommandCenter() {
 
           <div className="pm-assignment-list">
             {filteredSchedules.length ? filteredSchedules.map((item) => (
-              <PmAssignmentCard key={item.id} item={item} manager={isManager} onOpen={() => navigate(`/preventive-maintenance/${item.id}`)} />
+              <PmAssignmentCard
+                key={item.id}
+                item={item}
+                manager={isManager}
+                onOpen={() => navigate(`/preventive-maintenance/${item.id}`)}
+                onEditPlan={() => setPlanEditor(data?.plans.find((plan) => plan.id === item.planId) || null)}
+              />
             )) : <div className="pm-empty"><CalendarCheck size={28} /><h3>No assignments found</h3><p>Try another month or clear the current filters.</p></div>}
           </div>
           </div>
@@ -248,6 +263,16 @@ function PmCommandCenter() {
           actorId={currentUser!.id}
           onClose={() => setTemplateEditor(null)}
           onSaved={async () => { setTemplateEditor(null); await load(); }}
+        />
+      ) : null}
+
+      {planEditor ? (
+        <PmPlanEditor
+          plan={planEditor}
+          technicians={maintenanceTechnicians}
+          actorId={currentUser!.id}
+          onClose={() => setPlanEditor(null)}
+          onSaved={async () => { setPlanEditor(null); await load(); }}
         />
       ) : null}
     </section>
@@ -407,7 +432,7 @@ function PmOverview({ data, nextAssignments, onOpen, onOpenTemplates }: { data: 
   );
 }
 
-function PmAssignmentCard({ item, manager, onOpen }: { item: PmScheduleItem; manager: boolean; onOpen: () => void }) {
+function PmAssignmentCard({ item, manager, onOpen, onEditPlan }: { item: PmScheduleItem; manager: boolean; onOpen: () => void; onEditPlan: () => void }) {
   const progress = item.checklistItemCount ? Math.round((item.completedItemCount / item.checklistItemCount) * 100) : 0;
   return (
     <article className={`pm-assignment-card ${scheduleTone(item)}`}>
@@ -420,8 +445,83 @@ function PmAssignmentCard({ item, manager, onOpen }: { item: PmScheduleItem; man
       <div className="pm-checklist-state">
         {item.templateId ? <><div><span>Checklist progress</span><strong>{item.completedItemCount}/{item.checklistItemCount}</strong></div><span className="pm-progress-track"><i style={{ width: `${progress}%` }} /></span>{item.failedItemCount ? <small className="failed"><AlertCircle size={13} />{item.failedItemCount} failed item</small> : <small><FileCheck2 size={13} />{item.templateTitle}</small>}</> : <div className="pm-missing-checklist"><AlertCircle size={18} /><span><strong>Checklist pending</strong><small>{manager ? "Connect a template in Checklists" : "Maintenance executive is preparing it"}</small></span></div>}
       </div>
-      <button className="pm-card-open" type="button" onClick={onOpen} disabled={!item.templateId && !manager}>{item.templateId ? (item.status === "scheduled" ? "Open checklist" : "View checklist") : manager ? "View assignment" : "Not ready"}<ChevronRight size={17} /></button>
+      <div className="pm-card-actions">
+        {manager ? <button className="pm-card-edit" type="button" onClick={onEditPlan}><Pencil size={15} />Edit plan</button> : null}
+        <button className="pm-card-open" type="button" onClick={onOpen} disabled={!item.templateId && !manager}>{item.templateId ? (item.status === "scheduled" ? "Open checklist" : "View checklist") : manager ? "View assignment" : "Not ready"}<ChevronRight size={17} /></button>
+      </div>
     </article>
+  );
+}
+
+function PmPlanEditor({ plan, technicians, actorId, onClose, onSaved }: { plan: PmPlan; technicians: User[]; actorId: string; onClose: () => void; onSaved: () => Promise<void> }) {
+  const [mainMachine, setMainMachine] = useState(plan.mainMachine);
+  const [machineName, setMachineName] = useState(plan.machineName);
+  const [frequencyMonths, setFrequencyMonths] = useState(plan.frequencyMonths);
+  const [occurrencesPerMonth, setOccurrencesPerMonth] = useState(plan.occurrencesPerMonth);
+  const [technicianId, setTechnicianId] = useState(plan.technicianId);
+  const [startMonth, setStartMonth] = useState(plan.startMonth);
+  const [weekOfMonth, setWeekOfMonth] = useState(plan.weekOfMonth);
+  const [secondaryWeek, setSecondaryWeek] = useState(plan.secondaryWeek || 3);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = overflow; };
+  }, []);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    const input: UpdatePmPlanInput = {
+      actorId,
+      mainMachine,
+      machineName,
+      frequencyMonths,
+      occurrencesPerMonth,
+      technicianId,
+      startMonth,
+      weekOfMonth,
+      secondaryWeek: occurrencesPerMonth === 2 ? secondaryWeek : null,
+      active: plan.active
+    };
+    try {
+      await api.updatePmPlan(plan.id, input);
+      await onSaved();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to update PM plan.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="pm-modal-backdrop" role="presentation">
+      <form className="pm-template-editor pm-plan-editor" onSubmit={submit}>
+        <header>
+          <div><span>Recurring schedule control</span><h2>Edit {plan.machineName}</h2></div>
+          <button type="button" onClick={onClose} aria-label="Close schedule editor"><X size={21} /></button>
+        </header>
+        <div className="pm-editor-scroll">
+          {error ? <div className="pm-alert"><AlertCircle size={16} />{error}</div> : null}
+          <div className="pm-plan-editor-note"><CalendarCheck size={21} /><div><strong>Future assignments update automatically</strong><p>Completed and in-progress inspections remain unchanged. Only upcoming scheduled work is regenerated.</p></div></div>
+          <section className="pm-editor-details pm-plan-fields">
+            <label>Section / line<input required value={mainMachine} onChange={(event) => setMainMachine(event.target.value)} /></label>
+            <label className="wide">Machine name<input required value={machineName} onChange={(event) => setMachineName(event.target.value)} /></label>
+            <label>Technician<select value={technicianId} onChange={(event) => setTechnicianId(event.target.value)}>{technicians.map((technician) => <option value={technician.id} key={technician.id}>{technician.name}</option>)}</select></label>
+            <label>Interval<select value={frequencyMonths} onChange={(event) => { const value = Number(event.target.value); setFrequencyMonths(value); if (value !== 1) setOccurrencesPerMonth(1); }}><option value={1}>Every month</option><option value={2}>Every 2 months</option><option value={3}>Every 3 months</option><option value={4}>Every 4 months</option><option value={6}>Every 6 months</option><option value={12}>Every 12 months</option></select></label>
+            <label>Occurrences<select value={occurrencesPerMonth} disabled={frequencyMonths !== 1} onChange={(event) => { const value = Number(event.target.value); setOccurrencesPerMonth(value); if (value === 2 && secondaryWeek === weekOfMonth) setSecondaryWeek(weekOfMonth === 3 ? 1 : 3); }}><option value={1}>Once per cycle</option><option value={2}>Twice per month</option></select></label>
+            <label>Cycle starts<select value={startMonth} onChange={(event) => setStartMonth(Number(event.target.value))}>{months.map((label, index) => <option value={index + 1} key={label}>{label}</option>)}</select></label>
+            <label>Primary week<select value={weekOfMonth} onChange={(event) => { const value = Number(event.target.value); setWeekOfMonth(value); if (secondaryWeek === value) setSecondaryWeek(value === 3 ? 1 : 3); }}>{[1, 2, 3, 4].map((week) => <option value={week} key={week}>Week {week}</option>)}</select></label>
+            {occurrencesPerMonth === 2 ? <label>Secondary week<select value={secondaryWeek} onChange={(event) => setSecondaryWeek(Number(event.target.value))}>{[1, 2, 3, 4].filter((week) => week !== weekOfMonth).map((week) => <option value={week} key={week}>Week {week}</option>)}</select></label> : null}
+          </section>
+          <div className="pm-plan-preview"><span>New recurrence</span><strong>{occurrencesPerMonth === 2 ? `Twice per month | weeks ${weekOfMonth} and ${secondaryWeek}` : `${frequencyMonths === 1 ? "Monthly" : `Every ${frequencyMonths} months`} | week ${weekOfMonth}`}</strong><small>Starting {months[startMonth - 1]} | assigned to {technicians.find((item) => item.id === technicianId)?.name}</small></div>
+        </div>
+        <footer><button type="button" onClick={onClose}>Cancel</button><button className="pm-button pm-button-primary" disabled={saving} type="submit"><Check size={17} />{saving ? "Updating..." : "Update schedule"}</button></footer>
+      </form>
+    </div>
   );
 }
 

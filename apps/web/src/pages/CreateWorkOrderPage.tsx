@@ -1,6 +1,6 @@
 import { ArrowLeft, CalendarDays, Factory, ImagePlus, Send, UserRound } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import type { MasterData, ShiftGroup, WorkOrderType } from "@sugi-cmms/shared";
 import { workOrderTypeLabels } from "@sugi-cmms/shared";
 import { api } from "../api/client";
@@ -26,6 +26,8 @@ const initialForm = {
 
 export function CreateWorkOrderPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const assetFromQuery = searchParams.get("asset")?.trim() || "";
   const { currentUser } = useCurrentUser();
   const [masterData, setMasterData] = useState<MasterData>({ sections: [], machines: [], issueCategories: [] });
   const [form, setForm] = useState(initialForm);
@@ -41,12 +43,13 @@ export function CreateWorkOrderPage() {
           ...current,
           sectionId: current.sectionId || nextMasterData.sections.find((section) => section.active)?.id || "",
           issueCategoryId: current.issueCategoryId || nextMasterData.issueCategories.find((category) => category.active)?.id || "",
+          customMachineName: current.customMachineName || assetFromQuery,
           reportedByName: current.reportedByName || currentUser?.name || "",
           reportedByDepartment: current.reportedByDepartment || currentUser?.department || ""
         }));
       })
       .catch(console.error);
-  }, [currentUser?.department, currentUser?.name]);
+  }, [assetFromQuery, currentUser?.department, currentUser?.name]);
 
   const activeSections = useMemo(() => masterData.sections.filter((section) => section.active), [masterData.sections]);
   const activeIssueCategories = useMemo(() => masterData.issueCategories.filter((category) => category.active), [masterData.issueCategories]);

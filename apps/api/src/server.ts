@@ -19,6 +19,7 @@ import {
   dashboardSummary,
   deleteWorkOrder,
   getPmDashboard,
+  getAssetDashboard,
   getPmScheduleDetail,
   getWorkOrderDetail,
   importMachines,
@@ -48,7 +49,9 @@ import {
   startPmSchedule,
   submitPmSchedule,
   updateIssueCategory,
+  updateAsset,
   updateMachine,
+  updatePmPlan,
   updateSpareSyncSettings,
   updateSection,
   updateUserAvatar,
@@ -174,6 +177,20 @@ app.get("/api/dashboard-summary", (_request, response) => {
   response.json(dashboardSummary());
 });
 
+app.get("/api/assets", (_request, response) => {
+  response.json(getAssetDashboard());
+});
+
+app.patch("/api/assets/:id", (request, response) => {
+  response.json(updateAsset(request.params.id, {
+    actorId: String(request.body.actorId || ""),
+    condition: String(request.body.condition || "operational") as "operational" | "watch" | "obsolete" | "decommissioned",
+    criticality: String(request.body.criticality || "medium") as "critical" | "high" | "medium" | "low",
+    location: String(request.body.location || "Production"),
+    notes: String(request.body.notes || "")
+  }));
+});
+
 app.get("/api/master-data", (_request, response) => {
   response.json(listMasterData());
 });
@@ -262,6 +279,10 @@ app.patch("/api/pm/templates/:id", (request, response) => {
 
 app.patch("/api/pm/plans/:id/template", (request, response) => {
   response.json(assignPmTemplate(request.params.id, request.body));
+});
+
+app.patch("/api/pm/plans/:id", (request, response) => {
+  response.json(updatePmPlan(request.params.id, request.body));
 });
 
 app.get("/api/pm/schedules/:id", (request, response) => {

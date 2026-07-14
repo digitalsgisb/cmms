@@ -148,6 +148,75 @@ export interface DashboardSummary {
   closedToday: number;
 }
 
+export type AssetCondition = "operational" | "watch" | "obsolete" | "decommissioned";
+export type AssetCriticality = "critical" | "high" | "medium" | "low";
+export type AssetLifecycleBand = "modern" | "midlife" | "aging" | "legacy" | "unknown";
+
+export interface AssetRecord {
+  id: string;
+  assetNo: number;
+  name: string;
+  serialNo: string;
+  yearText: string;
+  installDateText: string;
+  warranty: string;
+  manufacturer: string;
+  supplier: string;
+  contactPerson: string;
+  telephone: string;
+  fax: string;
+  condition: AssetCondition;
+  criticality: AssetCriticality;
+  location: string;
+  notes: string;
+  source: string;
+  ageYears: number | null;
+  lifecycleBand: AssetLifecycleBand;
+  riskScore: number;
+  warrantyState: "active" | "expiring" | "expired" | "unknown" | "not_applicable";
+  dataCompleteness: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AssetSummary {
+  totalAssets: number;
+  operational: number;
+  watch: number;
+  obsolete: number;
+  decommissioned: number;
+  highRisk: number;
+  legacy: number;
+  averageAge: number;
+  missingSerials: number;
+  expiredWarranties: number;
+  expiringWarranties: number;
+  dataCompleteness: number;
+}
+
+export interface AssetManufacturerBreakdown {
+  name: string;
+  count: number;
+}
+
+export interface AssetDashboardResponse {
+  summary: AssetSummary;
+  assets: AssetRecord[];
+  manufacturers: AssetManufacturerBreakdown[];
+  sourceLabel: string;
+  sourceRevision: number;
+  sourceUpdatedAt: string;
+  missingAssetNumbers: number[];
+}
+
+export interface UpdateAssetInput {
+  actorId: string;
+  condition: AssetCondition;
+  criticality: AssetCriticality;
+  location?: string;
+  notes?: string;
+}
+
 export interface CreateWorkOrderInput {
   type: WorkOrderType;
   title?: string;
@@ -437,6 +506,9 @@ export interface PmPlan {
   technicianId: string;
   technicianName: string;
   templateId: string | null;
+  startMonth: number;
+  weekOfMonth: number;
+  secondaryWeek: number | null;
   active: boolean;
 }
 
@@ -532,6 +604,19 @@ export interface SavePmTemplateInput {
 export interface AssignPmTemplateInput {
   actorId: string;
   templateId: string | null;
+}
+
+export interface UpdatePmPlanInput {
+  actorId: string;
+  mainMachine: string;
+  machineName: string;
+  frequencyMonths: number;
+  occurrencesPerMonth: number;
+  technicianId: string;
+  startMonth: number;
+  weekOfMonth: number;
+  secondaryWeek?: number | null;
+  active?: boolean;
 }
 
 export const workOrderStatusLabels: Record<WorkOrderStatus, string> = {

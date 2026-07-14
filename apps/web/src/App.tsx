@@ -1,11 +1,11 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { AdminPage } from "./pages/AdminPage";
+import { AssetsPage } from "./pages/AssetsPage";
 import { CreateWorkOrderPage } from "./pages/CreateWorkOrderPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { LoginPage } from "./pages/LoginPage";
-import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { PreventiveMaintenancePage } from "./pages/PreventiveMaintenancePage";
 import { PublicRequesterPage } from "./pages/PublicRequesterPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -16,6 +16,9 @@ import { TvDashboardPage } from "./pages/TvDashboardPage";
 import { WorkOrderDetailPage } from "./pages/WorkOrderDetailPage";
 import { WorkOrdersPage } from "./pages/WorkOrdersPage";
 import { useCurrentUser } from "./state/UserContext";
+
+const PerformancePage = lazy(() => import("./pages/PerformancePage"));
+const ReportsPage = lazy(() => import("./pages/ReportsPage"));
 
 export function App() {
   const location = useLocation();
@@ -38,7 +41,7 @@ export function App() {
         <Route path="/work-orders/new" element={<CreateWorkOrderPage />} />
         <Route path="/work-orders/:id" element={<WorkOrderDetailPage />} />
         <Route path="/technician" element={<TechnicianPage />} />
-        <Route path="/assets" element={<PlaceholderPage title="Assets" module="Asset register" />} />
+        <Route path="/assets" element={<AssetsPage />} />
         <Route path="/spare-parts" element={<SparePartsPage />} />
         <Route path="/spare-parts/inventory" element={<SparePartsPage />} />
         <Route path="/spare-parts/scanner" element={<SparePartsPage />} />
@@ -46,8 +49,8 @@ export function App() {
         <Route path="/spare-parts/issue/:itemNo" element={<SparePartsPage />} />
         <Route path="/spare-parts/:itemNo" element={<SparePartsPage />} />
         <Route path="/preventive-maintenance/*" element={<PreventiveMaintenancePage />} />
-        <Route path="/performance" element={<PlaceholderPage title="Performance" module="Technician and maintenance KPIs" />} />
-        <Route path="/reports" element={<PlaceholderPage title="Reports" module="Maintenance reporting" />} />
+        <Route path="/performance" element={<Suspense fallback={<div className="performance-loading">Preparing live performance view...</div>}><PerformancePage /></Suspense>} />
+        <Route path="/reports" element={<Suspense fallback={<div className="performance-loading">Building live report...</div>}><ReportsPage /></Suspense>} />
         <Route path="/users" element={<AdminPage />} />
         <Route path="/profile" element={<TechnicianProfilePage />} />
         <Route path="/settings" element={<SettingsPage />} />
