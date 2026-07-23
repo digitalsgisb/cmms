@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import type { MachineImportRow } from "@sugi-cmms/shared";
 import {
   addAttachment,
+  addPmResultPhoto,
   addComment,
   adjustSparePart,
   assignPmTemplate,
@@ -18,7 +19,9 @@ import {
   createWorkOrder,
   dashboardSummary,
   deleteWorkOrder,
+  deletePmResultPhoto,
   getPmDashboard,
+  getPmPhoto,
   getAssetDashboard,
   getPmScheduleDetail,
   getWorkOrderDetail,
@@ -33,6 +36,7 @@ import {
   listPmTemplates,
   listRequesterWorkOrders,
   listSpareInventory,
+  listSpareMovementsForActor,
   listSparePartMovements,
   listUsers,
   listWorkOrders,
@@ -87,6 +91,21 @@ const upload = multer({
     }
 
     callback(new Error("Only image uploads are supported in this MVP."));
+  }
+});
+
+const pmProofUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 8 * 1024 * 1024,
+    files: 1
+  },
+  fileFilter: (_request, file, callback) => {
+    if (file.mimetype.startsWith("image/")) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error("PM proof must be an image."));
   }
 });
 
@@ -285,6 +304,14 @@ app.patch("/api/pm/plans/:id", (request, response) => {
   response.json(updatePmPlan(request.params.id, request.body));
 });
 
+app.get("/api/pm/photos/:photoId", (request, response) => {
+  const photo = getPmPhoto(request.params.photoId);
+  response.setHeader("Content-Type", photo.mimeType);
+  response.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(photo.originalName)}`);
+  response.setHeader("Cache-Control", "private, max-age=3600");
+  response.send(Buffer.from(photo.data));
+});
+
 app.get("/api/pm/schedules/:id", (request, response) => {
   const actorId = String(request.query.actorId || "");
   if (!actorId) {
@@ -304,6 +331,25 @@ app.put("/api/pm/schedules/:id/results/:itemId", (request, response) => {
   response.json(savePmResult(request.params.id, { ...request.body, itemId: request.params.itemId }));
 });
 
+app.post("/api/pm/schedules/:id/results/:itemId/photos", pmProofUpload.single("photo"), (request, response) => {
+  if (!request.file) {
+    throw new Error("A proof photo is required.");
+  }
+  response.status(201).json(addPmResultPhoto({
+    scheduleId: request.params.id,
+    itemId: request.params.itemId,
+    actorId: String(request.body.actorId || ""),
+    originalName: request.file.originalname,
+    mimeType: request.file.mimetype,
+    size: request.file.size,
+    data: request.file.buffer
+  }));
+});
+
+app.delete("/api/pm/photos/:photoId", (request, response) => {
+  response.json(deletePmResultPhoto(request.params.photoId, String(request.body.actorId || "")));
+});
+
 app.post("/api/pm/schedules/:id/submit", (request, response) => {
   response.json(submitPmSchedule(request.params.id, request.body));
 });
@@ -321,6 +367,10 @@ app.get("/api/spare-parts", (_request, response) => {
 
 app.get("/api/spare-parts/qr/lookup", (request, response) => {
   response.json(lookupSpareQr(String(request.query.value || "")));
+});
+
+app.get("/api/spare-parts/history/by-actor", (request, response) => {
+  response.json(listSpareMovementsForActor(String(request.query.actorId || "")));
 });
 
 app.get("/api/spare-parts/sync/settings", (_request, response) => {

@@ -8,9 +8,12 @@ import {
   ExternalLink,
   FileSpreadsheet,
   History,
+  Minus,
   Package,
+  Plus,
   QrCode,
   RefreshCw,
+  ScanLine,
   Search,
   Settings2,
   SlidersHorizontal,
@@ -20,9 +23,8 @@ import type { IScannerControls } from "@zxing/browser";
 import QRCode from "qrcode";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import type { SparePart, SparePartDetail, SpareSyncSettings, StockMovementType, WorkOrder } from "@sugi-cmms/shared";
+import type { SparePart, SparePartDetail, SpareSyncSettings, StockMovementDetail, StockMovementType, WorkOrder } from "@sugi-cmms/shared";
 import { api } from "../api/client";
-import { PwaInstallButton } from "../components/PwaInstallButton";
 import { useCurrentUser } from "../state/UserContext";
 import { formatDateTime } from "../utils/format";
 
@@ -138,6 +140,8 @@ export function SparePartsPage() {
   });
   const [syncConfigured, setSyncConfigured] = useState(false);
   const [recentMovements, setRecentMovements] = useState<SparePartDetail["movements"]>([]);
+  const [myMovements, setMyMovements] = useState<StockMovementDetail[]>([]);
+  const [technicianPartView, setTechnicianPartView] = useState<"issue" | "history">("issue");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [stockFilter, setStockFilter] = useState<StockFilter>("all");
@@ -218,11 +222,20 @@ export function SparePartsPage() {
     }
   }
 
+  async function loadMyMovements() {
+    if (!currentUser || currentUser.role === "requester") return;
+    setMyMovements(await api.spareMovementsForActor(currentUser.id));
+  }
+
   useEffect(() => {
     loadInventory().catch(console.error);
     api.workOrders().then(setWorkOrders).catch(console.error);
     api.spareSyncSettings().then(setSyncSettings).catch(console.error);
   }, []);
+
+  useEffect(() => {
+    if (technicianMode) loadMyMovements().catch(console.error);
+  }, [currentUser?.id, technicianMode]);
 
   useEffect(() => {
     return () => clearIssueFeedbackTimer();
@@ -428,6 +441,11 @@ export function SparePartsPage() {
   }, [manualPartSearch, parts]);
 
   function chooseIssuePart(part: SparePart) {
+    if (part.currentStock <= 0) {
+      setError(`${part.searchName || part.itemNo} is out of stock. Please choose another part or contact the store.`);
+      return;
+    }
+    setError("");
     setIssuePart(part);
     setQrMatches([]);
     setManualPartSearch(`${part.itemNo} ${part.searchName || part.description || part.category || "Spare part"}`);
@@ -525,6 +543,12 @@ export function SparePartsPage() {
         detail: `${movement.itemNo} is now ${numberText(movement.afterStock)} ${unit}.`
       });
       await loadInventory();
+      if (technicianMode) {
+        await loadMyMovements();
+        setIssuePart(null);
+        setManualPartSearch("");
+        setTechnicianPartView("history");
+      }
       if (detail?.itemNo === selectedPart.itemNo) {
         await loadDetail(selectedPart.itemNo);
       }
@@ -790,6 +814,111 @@ export function SparePartsPage() {
           </span>
         ) : null}
       </div>
+    );
+  }
+
+  function renderTechnicianTabs() {
+    const issueCount = myMovements.filter((movement) => movement.type === "issue").length;
+    return (
+      <div className="tech-parts-tabs" role="tablist" aria-label="Parts sections">
+        <button type="button" role="tab" aria-selected={technicianPartView === "issue"} className={technicianPartView === "issue" ? "active" : ""} onClick={() => setTechnicianPartView("issue")}>
+          <ScanLine size={21} aria-hidden="true" />
+          <span><strong>Use a part</strong><small>Scan or search</small></span>
+        </button>
+        <button type="button" role="tab" aria-selected={technicianPartView === "history"} className={technicianPartView === "history" ? "active" : ""} onClick={() => setTechnicianPartView("history")}>
+          <History size={21} aria-hidden="true" />
+          <span><strong>My history</strong><small>{issueCount} recorded</small></span>
+        </button>
+      </div>
+    );
+  }
+
+  function renderTechnicianIssuePanel() {
+    const quantity = Math.max(1, Number(issueQuantity) || 1);
+    const maxQuantity = Math.max(1, Math.floor(issuePart?.currentStock || 1));
+    const showResults = manualPartSearch.trim().length >= 2 && !issuePart;
+    return (
+      <section className="tech-parts-workflow" aria-label="Use a spare part">
+        <header className="tech-parts-guide">
+          <div><Package size={24} aria-hidden="true" /><span><strong>Taking a part from the store?</strong><small>Follow these three simple steps. Your history updates automatically.</small></span></div>
+          <ol><li><b>1</b>Find part</li><li><b>2</b>Add job</li><li><b>3</b>Confirm</li></ol>
+        </header>
+
+        <section className={`tech-parts-step ${issuePart ? "complete" : "current"}`}>
+          <div className="tech-parts-step-heading"><b>{issuePart ? <CheckCircle2 size={20} /> : "1"}</b><span><strong>Find the part</strong><small>Scan the QR label or type the part name.</small></span></div>
+          {issuePart ? (
+            <div className="tech-selected-part">
+              <span className="tech-selected-icon"><Package size={25} /></span>
+              <div><small>Selected part</small><strong>{issuePart.searchName || issuePart.description || issuePart.itemNo}</strong><span>{issuePart.itemNo}</span></div>
+              <em><b>{numberText(issuePart.currentStock)}</b>{issuePart.uom || "unit"} available</em>
+              <button type="button" onClick={() => { setIssuePart(null); setManualPartSearch(""); }}>Change part</button>
+            </div>
+          ) : (
+            <div className="tech-parts-find-options">
+              <button className="tech-scan-button" type="button" onClick={cameraOpen ? stopCamera : startCamera}>
+                <QrCode size={25} aria-hidden="true" />
+                <span><strong>{cameraOpen ? "Close camera" : "Scan QR code"}</strong><small>Point the camera at the part label</small></span>
+              </button>
+              <div className="tech-parts-or"><span>or</span></div>
+              <label className="tech-part-search">
+                <span>Search manually</span>
+                <div><Search size={21} aria-hidden="true" /><input value={manualPartSearch} onChange={(event) => setManualPartSearch(event.target.value)} placeholder="Type part name or item number" /></div>
+              </label>
+            </div>
+          )}
+          {cameraOpen ? <div className={`spare-camera-box tech-camera-box ${scanDetected ? "detected" : ""}`}><video ref={videoRef} muted playsInline /><span className="camera-scan-overlay" aria-hidden="true" /></div> : null}
+          {!issuePart && manualPartSearch.trim().length > 0 && manualPartSearch.trim().length < 2 ? <p className="tech-search-help">Type at least 2 characters to search.</p> : null}
+          {showResults ? (
+            <div className="tech-part-results" aria-label="Matching spare parts">
+              <p><strong>{manualPartOptions.length} matches</strong><span>Tap the correct part</span></p>
+              {manualPartOptions.slice(0, 8).map((part) => (
+                <button key={part.itemNo} type="button" disabled={part.currentStock <= 0} onClick={() => chooseIssuePart(part)}>
+                  <span><strong>{part.searchName || part.description || part.itemNo}</strong><small>{part.itemNo} · {part.category || "Spare part"}</small></span>
+                  <em className={part.currentStock <= 0 ? "out" : ""}><b>{numberText(part.currentStock)}</b>{part.currentStock <= 0 ? "Out" : part.uom || "unit"}</em>
+                </button>
+              ))}
+              {manualPartOptions.length === 0 ? <div className="tech-no-parts"><Search size={24} /><strong>No matching part</strong><span>Try the item number or a shorter name.</span></div> : null}
+            </div>
+          ) : null}
+        </section>
+
+        <form className={`tech-parts-step tech-parts-job-step ${issuePart ? "current" : "waiting"}`} onSubmit={submitIssue}>
+          <div className="tech-parts-step-heading"><b>2</b><span><strong>Add job details</strong><small>{issuePart ? "Choose the job and how many you are taking." : "Select a part first to continue."}</small></span></div>
+          {issuePart ? (
+            <div className="tech-parts-fields">
+              <label><span>Work order <em>Required</em></span><select value={issueWorkOrderId} onChange={(event) => setIssueWorkOrderId(event.target.value)}><option value="">Choose the work order</option>{activeWorkOrders.map((workOrder) => <option key={workOrder.id} value={workOrder.id}>{workOrder.number} - {workOrder.machineName || workOrder.title}</option>)}</select></label>
+              <label className="tech-quantity-field"><span>Quantity <em>Required</em></span><div><button type="button" aria-label="Decrease quantity" disabled={quantity <= 1} onClick={() => setIssueQuantity(String(Math.max(1, quantity - 1)))}><Minus size={21} /></button><input type="number" min="1" max={maxQuantity} step="1" value={issueQuantity} onChange={(event) => setIssueQuantity(event.target.value)} aria-label="Issue quantity" /><button type="button" aria-label="Increase quantity" disabled={quantity >= maxQuantity} onClick={() => setIssueQuantity(String(Math.min(maxQuantity, quantity + 1)))}><Plus size={21} /></button></div><small>Maximum available: {numberText(issuePart.currentStock)} {issuePart.uom}</small></label>
+              <label><span>Note <small>Optional</small></span><input value={issueNote} onChange={(event) => setIssueNote(event.target.value)} placeholder="Example: Used for bearing replacement" /></label>
+            </div>
+          ) : <div className="tech-step-waiting"><Package size={23} /><span>Your job details will appear here after you select a part.</span></div>}
+
+          {issuePart ? (
+            <section className="tech-parts-confirm">
+              <div className="tech-parts-step-heading"><b>3</b><span><strong>Check and confirm</strong><small>This records the part in your personal history.</small></span></div>
+              <div className="tech-confirm-summary"><span>You are taking</span><strong>{quantity} {issuePart.uom || "unit"} · {issuePart.searchName || issuePart.itemNo}</strong><small>{issueWorkOrderId ? activeWorkOrders.find((workOrder) => workOrder.id === issueWorkOrderId)?.number : "Choose a work order above"}</small></div>
+              <button className={busy === "issue" ? "tech-confirm-button loading" : "tech-confirm-button"} type="submit" disabled={!issueWorkOrderId || quantity > issuePart.currentStock || busy === "issue"}>{busy === "issue" ? <span className="spare-button-spinner" aria-hidden="true" /> : <CheckCircle2 size={22} aria-hidden="true" />}{busy === "issue" ? "Recording part..." : "Confirm and record part"}</button>
+            </section>
+          ) : null}
+        </form>
+      </section>
+    );
+  }
+
+  function renderTechnicianHistoryPanel() {
+    const issues = myMovements.filter((movement) => movement.type === "issue");
+    const todayKey = new Date().toDateString();
+    const usedToday = issues.filter((movement) => new Date(movement.createdAt).toDateString() === todayKey).length;
+    return (
+      <section className="tech-parts-history-panel">
+        <header><div><span>My parts record</span><h2>Parts I have used</h2><p>Use this list to check what you took, for which job, and when.</p></div><History size={28} /></header>
+        <div className="tech-history-summary"><article><span>Used today</span><strong>{usedToday}</strong></article><article><span>Recent records</span><strong>{issues.length}</strong></article></div>
+        <div className="tech-history-list">
+          {issues.length ? issues.map((movement) => {
+            const part = parts.find((item) => item.itemNo === movement.itemNo);
+            return <article key={movement.id}><span className="tech-history-icon"><Package size={21} /></span><div><strong>{movement.itemSearchName || movement.itemNo}</strong><span>{movement.itemNo}</span><small>{movement.workOrderNumber ? `For ${movement.workOrderNumber}` : "No work order"}{movement.note ? ` · ${movement.note}` : ""}</small></div><em><b>-{numberText(movement.quantity)}</b>{part?.uom || "unit"}</em><time>{formatDateTime(movement.createdAt)}</time></article>;
+          }) : <div className="tech-history-empty"><History size={34} /><h3>No parts recorded yet</h3><p>After you confirm a part, it will appear here automatically.</p><button type="button" onClick={() => setTechnicianPartView("issue")}>Use my first part</button></div>}
+        </div>
+      </section>
     );
   }
 
@@ -1375,26 +1504,26 @@ export function SparePartsPage() {
     );
   }
 
-  const title = technicianMode ? "Spare Part Issue" : view === "setup" ? "Spare Sheet Setup" : view === "scanner" ? "Spare Part Issue" : view === "inventory" || view === "detail" ? "Spare Inventory" : "Spare Parts";
+  const title = technicianMode ? "Parts" : view === "setup" ? "Spare Sheet Setup" : view === "scanner" ? "Spare Part Issue" : view === "inventory" || view === "detail" ? "Spare Inventory" : "Spare Parts";
 
   return (
     <section className={`page-stack spare-page spare-view-${view} ${technicianMode ? "technician-spare-page" : ""}`}>
       <div className="page-title-row page-title-clean">
         <div>
-          <p className="eyebrow">Store inventory</p>
+          <p className="eyebrow">{technicianMode ? "Store helper" : "Store inventory"}</p>
           <h1>{title}</h1>
+          {technicianMode ? <p className="tech-parts-page-intro">Find a part, link it to your job, and keep a clear record.</p> : null}
         </div>
-        {technicianMode ? (
-          <PwaInstallButton className="spare-install-action" />
-        ) : (
+        {!technicianMode ? (
           <span className={`sync-chip ${syncConfigured ? "ready" : "offline"}`}>
             <RefreshCw size={16} aria-hidden="true" />
             {syncConfigured ? "Sheet sync ready" : "Sheet sync off"}
           </span>
-        )}
+        ) : null}
       </div>
 
       {renderTabs()}
+      {technicianMode ? renderTechnicianTabs() : null}
       {renderIssueFeedback()}
       {message ? <p className="success-line">{message}</p> : null}
       {error ? <p className="error-line">{error}</p> : null}
@@ -1412,7 +1541,7 @@ export function SparePartsPage() {
       ) : null}
       {view === "scanner" ? (
         <div className="spare-scanner-shell">
-          <div className="spare-scanner-only">{renderScannerPanel()}</div>
+          <div className="spare-scanner-only">{technicianMode ? <div className={`tech-parts-view tech-parts-view-${technicianPartView}`} role="tabpanel" key={technicianPartView}>{technicianPartView === "issue" ? renderTechnicianIssuePanel() : renderTechnicianHistoryPanel()}</div> : renderScannerPanel()}</div>
           {!technicianMode ? <div className="spare-scanner-recent">{renderRecentMovementPanel()}</div> : null}
         </div>
       ) : null}

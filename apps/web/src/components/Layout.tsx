@@ -15,7 +15,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import type { NotificationRecord } from "@sugi-cmms/shared";
 import { api, mediaUrl } from "../api/client";
@@ -76,6 +76,9 @@ export function Layout() {
 
   const unreadCount = useMemo(() => notifications.filter((notification) => !notification.readAt).length, [notifications]);
   const breadcrumb = useMemo(() => {
+    if (currentUser?.role === "technician" && sparePartsActive) {
+      return "Parts";
+    }
     const current = [
       { match: "/work-orders", label: "Work Orders" },
       { match: "/technician", label: "Technician" },
@@ -93,7 +96,7 @@ export function Layout() {
     ].find((item) => location.pathname.startsWith(item.match));
 
     return current?.label || "Dashboard";
-  }, [location.pathname]);
+  }, [currentUser?.role, location.pathname, sparePartsActive]);
 
   const initials = useMemo(() => {
     if (!currentUser) {
@@ -141,6 +144,12 @@ export function Layout() {
     setPanelOpen(false);
   }, [location.pathname]);
 
+  useLayoutEffect(() => {
+    if (currentUser?.role === "technician") {
+      window.scrollTo({ top: 0, behavior: "auto" });
+    }
+  }, [currentUser?.role, location.pathname]);
+
   useEffect(() => {
     if (!mobileNavOpen) {
       return;
@@ -180,7 +189,7 @@ export function Layout() {
             </span>
             <div>
               <span>Sugi Tech</span>
-              <strong>{breadcrumb}</strong>
+              <strong className="technician-breadcrumb-label" key={breadcrumb}>{breadcrumb}</strong>
             </div>
           </div>
 
@@ -220,7 +229,9 @@ export function Layout() {
         </header>
 
         <main className="technician-app-main">
-          <Outlet />
+          <div className="technician-route-stage" key={location.pathname}>
+            <Outlet />
+          </div>
         </main>
 
         <nav className="technician-tabbar" aria-label="Technician navigation">

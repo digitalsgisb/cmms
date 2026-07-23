@@ -14,6 +14,7 @@ import {
   FileCheck2,
   Filter,
   Gauge,
+  ImagePlus,
   ListChecks,
   Pencil,
   Plus,
@@ -27,7 +28,7 @@ import {
   XCircle
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { FormEvent } from "react";
+import type { ChangeEvent, FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import type {
   PmChecklistTemplate,
@@ -40,7 +41,7 @@ import type {
   UpdatePmPlanInput,
   User
 } from "@sugi-cmms/shared";
-import { api } from "../api/client";
+import { api, mediaUrl } from "../api/client";
 import { useCurrentUser } from "../state/UserContext";
 
 const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -164,6 +165,13 @@ function PmCommandCenter() {
     return <PmLoading />;
   }
 
+  if (!isManager) {
+    if (!data) {
+      return <div className="pm-page"><div className="pm-alert"><AlertCircle size={18} />{error || "Unable to load your PM assignments."}</div></div>;
+    }
+    return <PmTechnicianHome data={data} technicianName={currentUser?.name || "Technician"} onOpen={(id) => navigate(`/preventive-maintenance/${id}`)} />;
+  }
+
   return (
     <section className="pm-page page-stack">
       <header className="pm-hero">
@@ -281,6 +289,158 @@ function PmCommandCenter() {
 
 function PmMetric({ icon: Icon, label, value, detail, tone = "default" }: { icon: typeof CalendarDays; label: string; value: number | string; detail: string; tone?: string }) {
   return <article className={`pm-metric pm-metric-${tone}`}><span><Icon size={19} /></span><div><small>{label}</small><strong>{value}</strong><p>{detail}</p></div></article>;
+}
+
+function pmDueLabel(schedule: PmScheduleItem) {
+  if (schedule.status === "submitted") return "Sent for approval";
+  if (schedule.status === "verified") return "Completed";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(`${schedule.scheduledDate}T00:00:00`);
+  const days = Math.round((due.getTime() - today.getTime()) / 86_400_000);
+  if (days === 0) return "Due today";
+  if (days === 1) return "Due tomorrow";
+  if (days > 1) return `Due in ${days} days`;
+  if (days === -1) return "1 day overdue";
+  return `${Math.abs(days)} days overdue`;
+}
+
+function PmTechnicianHome({ data, technicianName, onOpen }: { data: PmDashboardResponse; technicianName: string; onOpen: (id: string) => void }) {
+  const [queueView, setQueueView] = useState<"todo" | "completed">("todo");
+  const [scheduleRange, setScheduleRange] = useState<"month" | "date">("month");
+  const today = new Date();
+  const todayKey = formatDateKey(today);
+  const currentMonth = today.getMonth() + 1;
+  const currentYear = today.getFullYear();
+  const currentMonthKey = `${currentYear}-${String(currentMonth).padStart(2, "0")}`;
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthKey);
+  const [selectedDate, setSelectedDate] = useState(todayKey);
+  const [selectedYear, selectedMonthNumber] = selectedMonth.split("-").map(Number);
+  const isCurrentMonth = selectedMonth === currentMonthKey;
+  const selectedPeriodKey = scheduleRange === "month" ? selectedMonth : selectedDate;
+  const periodLabel = scheduleRange === "month"
+    ? new Date(selectedYear, selectedMonthNumber - 1, 1).toLocaleDateString("en-MY", { month: "long", year: "numeric" })
+    : new Date(`${selectedDate}T00:00:00`).toLocaleDateString("en-MY", { day: "numeric", month: "long", year: "numeric" });
+
+  function matchesSelectedPeriod(item: PmScheduleItem) {
+    return scheduleRange === "month"
+      ? item.year === selectedYear && item.month === selectedMonthNumber
+      : item.scheduledDate === selectedDate;
+  }
+
+  function movePeriod(offset: number) {
+    if (scheduleRange === "month") {
+      const next = new Date(selectedYear, selectedMonthNumber - 1 + offset, 1);
+      setSelectedMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`);
+      return;
+    }
+    const next = new Date(`${selectedDate}T00:00:00`);
+    next.setDate(next.getDate() + offset);
+    setSelectedDate(formatDateKey(next));
+  }
+
+  function showToday() {
+    setSelectedMonth(currentMonthKey);
+    setSelectedDate(todayKey);
+  }
+
+  const openScheduleCandidates = data.schedules
+    .filter((item) => item.templateId && ["scheduled", "in_progress"].includes(item.status))
+    .filter((item) => scheduleRange === "month" && isCurrentMonth
+      ? item.overdue || matchesSelectedPeriod(item)
+      : matchesSelectedPeriod(item))
+    .sort((left, right) => {
+      if (left.overdue !== right.overdue) return left.overdue ? -1 : 1;
+      return left.overdue
+        ? right.scheduledDate.localeCompare(left.scheduledDate)
+        : left.scheduledDate.localeCompare(right.scheduledDate);
+    });
+  const visiblePlanIds = new Set<string>();
+  const openSchedules = openScheduleCandidates.filter((item) => {
+    if (!(scheduleRange === "month" && isCurrentMonth)) return true;
+    if (visiblePlanIds.has(item.planId)) return false;
+    visiblePlanIds.add(item.planId);
+    return true;
+  });
+  const completedSchedules = data.schedules
+    .filter((item) => item.templateId && ["submitted", "verified"].includes(item.status) && matchesSelectedPeriod(item))
+    .sort((left, right) => right.scheduledDate.localeCompare(left.scheduledDate));
+  const preparingCount = data.schedules.filter((item) => !item.templateId && ["scheduled", "in_progress"].includes(item.status) && (
+    scheduleRange === "month" && isCurrentMonth ? item.overdue || matchesSelectedPeriod(item) : matchesSelectedPeriod(item)
+  )).length;
+  const actionableOverdue = openSchedules.filter((item) => item.overdue).length;
+  const awaitingCount = completedSchedules.filter((item) => item.status === "submitted").length;
+  const visibleSchedules = queueView === "todo" ? openSchedules : completedSchedules;
+  const firstName = technicianName.trim().split(/\s+/)[0] || "Technician";
+
+  return (
+    <section className="pm-tech-home">
+      <header className="pm-tech-welcome">
+        <div><span>My PM work</span><h1>Hello, {firstName}</h1><p>Choose a machine below. We’ll guide you through the inspection one step at a time.</p></div>
+        <div className="pm-tech-date"><CalendarDays size={20} /><span>Today</span><strong>{today.toLocaleDateString("en-MY", { day: "numeric", month: "short" })}</strong></div>
+      </header>
+
+      <section className="pm-tech-guide" aria-label="How preventive maintenance works">
+        <div className="pm-tech-guide-title"><Sparkles size={18} /><span><strong>New to PM?</strong><small>Just follow these three steps</small></span></div>
+        <ol>
+          <li><b>1</b><span><strong>Open a machine</strong><small>Tap Start PM below</small></span></li>
+          <li><b>2</b><span><strong>Do each check</strong><small>Choose the result</small></span></li>
+          <li><b>3</b><span><strong>Add photos</strong><small>Then submit</small></span></li>
+        </ol>
+      </section>
+
+      <div className="pm-tech-focus-strip">
+        <article><ListChecks size={19} /><span>Ready</span><strong>{openSchedules.length}</strong></article>
+        <article className={actionableOverdue ? "attention" : ""}><Clock3 size={19} /><span>Overdue</span><strong>{actionableOverdue}</strong></article>
+        <article><ShieldCheck size={19} /><span>Submitted</span><strong>{awaitingCount}</strong></article>
+      </div>
+
+      <section className="pm-tech-period-browser" aria-label="Choose PM schedule period">
+        <div className="pm-tech-range-toggle" role="group" aria-label="View schedule by month or date">
+          <button type="button" className={scheduleRange === "month" ? "active" : ""} aria-pressed={scheduleRange === "month"} onClick={() => setScheduleRange("month")}>Month</button>
+          <button type="button" className={scheduleRange === "date" ? "active" : ""} aria-pressed={scheduleRange === "date"} onClick={() => setScheduleRange("date")}>Date</button>
+        </div>
+        <div className="pm-tech-period-controls">
+          <button type="button" className="pm-tech-period-arrow" onClick={() => movePeriod(-1)} aria-label={scheduleRange === "month" ? "Previous month" : "Previous day"}><ChevronLeft size={20} /></button>
+          {scheduleRange === "month" ? (
+            <input type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} aria-label="Choose schedule month" />
+          ) : (
+            <input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} aria-label="Choose schedule date" />
+          )}
+          <button type="button" className="pm-tech-period-arrow" onClick={() => movePeriod(1)} aria-label={scheduleRange === "month" ? "Next month" : "Next day"}><ChevronRight size={20} /></button>
+          <button type="button" className="pm-tech-today-button" onClick={showToday}>Today</button>
+        </div>
+      </section>
+
+      <div className="pm-tech-queue-heading">
+        <div><span>{periodLabel}</span><h2>{queueView === "todo" ? (scheduleRange === "month" && isCurrentMonth ? "What to do next" : "Scheduled PM") : "Completed PM"}</h2></div>
+        <div className="pm-tech-queue-tabs" role="tablist" aria-label="PM assignment status">
+          <button type="button" role="tab" aria-selected={queueView === "todo"} className={queueView === "todo" ? "active" : ""} onClick={() => setQueueView("todo")}>To do</button>
+          <button type="button" role="tab" aria-selected={queueView === "completed"} className={queueView === "completed" ? "active" : ""} onClick={() => setQueueView("completed")}>Completed</button>
+        </div>
+      </div>
+
+      {visibleSchedules.length ? (
+        <div className="pm-tech-list" key={`${selectedPeriodKey}-${queueView}`}>
+          {visibleSchedules.map((item) => {
+            const progress = item.checklistItemCount ? Math.round((item.completedItemCount / item.checklistItemCount) * 100) : 0;
+            const actionLabel = item.status === "scheduled" ? "Start PM" : item.status === "in_progress" ? "Continue PM" : "View PM";
+            return (
+              <article className={`pm-tech-card ${scheduleTone(item)}`} key={item.id}>
+                <div className="pm-tech-card-top">
+                  <span className={`pm-status-pill ${scheduleTone(item)}`}>{scheduleStatusLabel(item)}</span>
+                  <time className={item.overdue ? "overdue" : ""}><CalendarDays size={14} />{pmDueLabel(item)}</time>
+                </div>
+                <div className="pm-tech-card-title"><span><Wrench size={19} /></span><div><h3>{item.machineName}</h3><p>{item.mainMachine} · {item.frequencyLabel}</p></div></div>
+                {item.templateId ? <div className="pm-tech-card-progress"><div><span>Checklist progress</span><strong>{item.completedItemCount}/{item.checklistItemCount}</strong></div><span><i style={{ width: `${progress}%` }} /></span></div> : <div className="pm-tech-not-ready"><Clock3 size={17} /><span><strong>Checklist is being prepared</strong><small>No action needed from you yet.</small></span></div>}
+                <button type="button" disabled={!item.templateId} onClick={() => onOpen(item.id)}>{item.templateId ? actionLabel : "Not ready yet"}<ChevronRight size={19} /></button>
+              </article>
+            );
+          })}
+        </div>
+      ) : <div className="pm-tech-empty" key={`empty-${selectedPeriodKey}-${queueView}`}><CheckCircle2 size={31} /><h3>{queueView === "todo" ? (scheduleRange === "month" && isCurrentMonth ? "Nothing you need to do now" : "No PM scheduled") : "Nothing completed yet"}</h3><p>{queueView === "todo" ? preparingCount ? "Your supervisor is preparing the checklist for this period." : scheduleRange === "month" && isCurrentMonth ? "There are no PM jobs needing attention right now." : `No PM assignments were found for ${periodLabel}.` : `No completed PM was found for ${periodLabel}.`}</p></div>}
+    </section>
+  );
 }
 
 function PmCalendar({ schedules, onOpen }: { schedules: PmScheduleItem[]; onOpen: (id: string) => void }) {
@@ -446,7 +606,7 @@ function PmAssignmentCard({ item, manager, onOpen, onEditPlan }: { item: PmSched
         {item.templateId ? <><div><span>Checklist progress</span><strong>{item.completedItemCount}/{item.checklistItemCount}</strong></div><span className="pm-progress-track"><i style={{ width: `${progress}%` }} /></span>{item.failedItemCount ? <small className="failed"><AlertCircle size={13} />{item.failedItemCount} failed item</small> : <small><FileCheck2 size={13} />{item.templateTitle}</small>}</> : <div className="pm-missing-checklist"><AlertCircle size={18} /><span><strong>Checklist pending</strong><small>{manager ? "Connect a template in Checklists" : "Maintenance executive is preparing it"}</small></span></div>}
       </div>
       <div className="pm-card-actions">
-        {manager ? <button className="pm-card-edit" type="button" onClick={onEditPlan}><Pencil size={15} />Edit plan</button> : null}
+        {manager ? <button className="pm-card-edit" type="button" onClick={onEditPlan}><Pencil size={15} />Edit schedule</button> : null}
         <button className="pm-card-open" type="button" onClick={onOpen} disabled={!item.templateId && !manager}>{item.templateId ? (item.status === "scheduled" ? "Open checklist" : "View checklist") : manager ? "View assignment" : "Not ready"}<ChevronRight size={17} /></button>
       </div>
     </article>
@@ -462,6 +622,7 @@ function PmPlanEditor({ plan, technicians, actorId, onClose, onSaved }: { plan: 
   const [startMonth, setStartMonth] = useState(plan.startMonth);
   const [weekOfMonth, setWeekOfMonth] = useState(plan.weekOfMonth);
   const [secondaryWeek, setSecondaryWeek] = useState(plan.secondaryWeek || 3);
+  const [active, setActive] = useState(plan.active);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -485,7 +646,7 @@ function PmPlanEditor({ plan, technicians, actorId, onClose, onSaved }: { plan: 
       startMonth,
       weekOfMonth,
       secondaryWeek: occurrencesPerMonth === 2 ? secondaryWeek : null,
-      active: plan.active
+      active
     };
     try {
       await api.updatePmPlan(plan.id, input);
@@ -501,7 +662,7 @@ function PmPlanEditor({ plan, technicians, actorId, onClose, onSaved }: { plan: 
     <div className="pm-modal-backdrop" role="presentation">
       <form className="pm-template-editor pm-plan-editor" onSubmit={submit}>
         <header>
-          <div><span>Recurring schedule control</span><h2>Edit {plan.machineName}</h2></div>
+          <div><span>Recurring PM schedule</span><h2>Edit schedule</h2></div>
           <button type="button" onClick={onClose} aria-label="Close schedule editor"><X size={21} /></button>
         </header>
         <div className="pm-editor-scroll">
@@ -509,7 +670,7 @@ function PmPlanEditor({ plan, technicians, actorId, onClose, onSaved }: { plan: 
           <div className="pm-plan-editor-note"><CalendarCheck size={21} /><div><strong>Future assignments update automatically</strong><p>Completed and in-progress inspections remain unchanged. Only upcoming scheduled work is regenerated.</p></div></div>
           <section className="pm-editor-details pm-plan-fields">
             <label>Section / line<input required value={mainMachine} onChange={(event) => setMainMachine(event.target.value)} /></label>
-            <label className="wide">Machine name<input required value={machineName} onChange={(event) => setMachineName(event.target.value)} /></label>
+            <label className="wide">PM schedule / machine name<input required value={machineName} onChange={(event) => setMachineName(event.target.value)} /></label>
             <label>Technician<select value={technicianId} onChange={(event) => setTechnicianId(event.target.value)}>{technicians.map((technician) => <option value={technician.id} key={technician.id}>{technician.name}</option>)}</select></label>
             <label>Interval<select value={frequencyMonths} onChange={(event) => { const value = Number(event.target.value); setFrequencyMonths(value); if (value !== 1) setOccurrencesPerMonth(1); }}><option value={1}>Every month</option><option value={2}>Every 2 months</option><option value={3}>Every 3 months</option><option value={4}>Every 4 months</option><option value={6}>Every 6 months</option><option value={12}>Every 12 months</option></select></label>
             <label>Occurrences<select value={occurrencesPerMonth} disabled={frequencyMonths !== 1} onChange={(event) => { const value = Number(event.target.value); setOccurrencesPerMonth(value); if (value === 2 && secondaryWeek === weekOfMonth) setSecondaryWeek(weekOfMonth === 3 ? 1 : 3); }}><option value={1}>Once per cycle</option><option value={2}>Twice per month</option></select></label>
@@ -517,6 +678,7 @@ function PmPlanEditor({ plan, technicians, actorId, onClose, onSaved }: { plan: 
             <label>Primary week<select value={weekOfMonth} onChange={(event) => { const value = Number(event.target.value); setWeekOfMonth(value); if (secondaryWeek === value) setSecondaryWeek(value === 3 ? 1 : 3); }}>{[1, 2, 3, 4].map((week) => <option value={week} key={week}>Week {week}</option>)}</select></label>
             {occurrencesPerMonth === 2 ? <label>Secondary week<select value={secondaryWeek} onChange={(event) => setSecondaryWeek(Number(event.target.value))}>{[1, 2, 3, 4].filter((week) => week !== weekOfMonth).map((week) => <option value={week} key={week}>Week {week}</option>)}</select></label> : null}
           </section>
+          <label className="pm-plan-active-toggle"><input type="checkbox" checked={active} onChange={(event) => setActive(event.target.checked)} /><span><strong>{active ? "Schedule active" : "Schedule paused"}</strong><small>{active ? "Future PM assignments will continue to be generated." : "No new assignments will be generated until this is reactivated."}</small></span></label>
           <div className="pm-plan-preview"><span>New recurrence</span><strong>{occurrencesPerMonth === 2 ? `Twice per month | weeks ${weekOfMonth} and ${secondaryWeek}` : `${frequencyMonths === 1 ? "Monthly" : `Every ${frequencyMonths} months`} | week ${weekOfMonth}`}</strong><small>Starting {months[startMonth - 1]} | assigned to {technicians.find((item) => item.id === technicianId)?.name}</small></div>
         </div>
         <footer><button type="button" onClick={onClose}>Cancel</button><button className="pm-button pm-button-primary" disabled={saving} type="submit"><Check size={17} />{saving ? "Updating..." : "Update schedule"}</button></footer>
@@ -575,7 +737,7 @@ function PmTemplateEditor({ template, actorId, onClose, onSaved }: { template: P
   return <div className="pm-modal-backdrop" role="presentation"><form className="pm-template-editor" onSubmit={submit}><header><div><span>{template ? `Version ${template.version + 1}` : "New controlled checklist"}</span><h2>{template ? `Edit ${template.machineName}` : "Build a machine checklist"}</h2></div><button type="button" onClick={onClose} aria-label="Close editor"><X size={21} /></button></header><div className="pm-editor-scroll">{error ? <div className="pm-alert"><AlertCircle size={16} />{error}</div> : null}<section className="pm-editor-details"><label>Machine name<input required value={machineName} onChange={(event) => setMachineName(event.target.value)} placeholder="e.g. Hydraulic Forming 7" /></label><label className="wide">Checklist title<input required value={title} onChange={(event) => setTitle(event.target.value)} /></label><label>Document number<input value={documentNumber} onChange={(event) => setDocumentNumber(event.target.value)} /></label><label>Revision<input value={revisionNumber} onChange={(event) => setRevisionNumber(event.target.value)} /></label><label>Effective date<input type="date" value={effectiveDate} onChange={(event) => setEffectiveDate(event.target.value)} /></label></section><section className="pm-editor-items"><div className="pm-editor-section-title"><div><span>Inspection points</span><h3>{items.length} checklist items</h3></div><button type="button" onClick={() => setItems((current) => [...current, blankTemplateItem()])}><Plus size={16} />Add item</button></div>{items.map((item, index) => <article key={index}><div className="pm-item-number">{String(index + 1).padStart(2, "0")}</div><div className="pm-editor-item-grid"><label>Machine / location<input required value={item.groupName} onChange={(event) => updateItem(index, { groupName: event.target.value })} /></label><label className="wide">Check / description<textarea required value={item.description} onChange={(event) => updateItem(index, { description: event.target.value })} /></label><label className="wide">Specification<textarea value={item.specification} onChange={(event) => updateItem(index, { specification: event.target.value })} /></label><label>Inspection method<input value={item.inspectionMethod} onChange={(event) => updateItem(index, { inspectionMethod: event.target.value })} /></label><label>Data type<select value={item.dataType} onChange={(event) => updateItem(index, { dataType: event.target.value as "marking" | "value" })}><option value="marking">Marking</option><option value="value">Reading value</option></select></label><label>Maintenance type<select value={item.maintenanceType} onChange={(event) => updateItem(index, { maintenanceType: event.target.value as "preventive" | "predictive" })}><option value="preventive">Preventive</option><option value="predictive">Predictive</option></select></label></div><button className="pm-remove-item" type="button" disabled={items.length === 1} onClick={() => setItems((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 size={16} /></button></article>)}</section></div><footer><button type="button" onClick={onClose}>Cancel</button><button className="pm-button pm-button-primary" disabled={saving} type="submit"><Check size={17} />{saving ? "Saving..." : "Save checklist"}</button></footer></form></div>;
 }
 
-function PmChecklistExecution({ scheduleId }: { scheduleId: string }) {
+function PmChecklistExecutionLegacy({ scheduleId }: { scheduleId: string }) {
   const { currentUser } = useCurrentUser();
   const navigate = useNavigate();
   const [detail, setDetail] = useState<PmScheduleDetail | null>(null);
@@ -621,6 +783,195 @@ function PmChecklistExecution({ scheduleId }: { scheduleId: string }) {
   if (!detail.template) return <div className="pm-page"><button className="pm-back-link" onClick={() => navigate("/preventive-maintenance")}><ArrowLeft size={17} />Back to PM</button><div className="pm-empty pm-no-template"><ClipboardCheck size={32} /><h2>{detail.machineName}</h2><p>This schedule is active, but its machine checklist has not been added yet.</p></div></div>;
 
   return <section className="pm-page pm-execution-page"><button className="pm-back-link" type="button" onClick={() => navigate("/preventive-maintenance")}><ArrowLeft size={17} />Back to PM schedule</button><header className="pm-execution-header"><div><div className="pm-eyebrow"><ShieldCheck size={15} />{detail.template.documentNumber} · Rev {detail.template.revisionNumber}</div><h1>{detail.machineName}</h1><p>{detail.template.title}</p><div className="pm-execution-meta"><span><CalendarDays size={15} />{formatPmDate(detail.scheduledDate)}</span><span><UserRound size={15} />{detail.technicianName}</span><span><Clock3 size={15} />{detail.frequencyLabel}</span></div></div><div className="pm-execution-progress"><strong>{progress}%</strong><span><i style={{ width: `${progress}%` }} /></span><small>{detail.completedItemCount} of {detail.checklistItemCount} checks complete</small></div></header>{error ? <div className="pm-alert"><AlertCircle size={17} />{error}</div> : null}<div className="pm-checklist-instructions"><div><ListChecks size={20} /><span><strong>Inspection guide</strong><small>Record every item. Use Pass, Adjusted, Fail, or N/A. Reading items also require the actual value.</small></span></div><div className="pm-legend"><span className="pass"><Check size={13} />Pass</span><span className="adjusted"><Wrench size={13} />Adjusted</span><span className="fail"><X size={13} />Fail</span></div></div>{detail.status === "scheduled" ? <div className="pm-start-banner"><div><Sparkles size={21} /><span><strong>Ready to begin?</strong><small>Starting records the technician and timestamp for traceability.</small></span></div><button className="pm-button pm-button-primary" disabled={submitting} type="button" onClick={start}>Start inspection<ChevronRight size={17} /></button></div> : null}<div className="pm-checklist-groups">{groups.map(([groupName, items], groupIndex) => <section className="pm-check-group" key={groupName}><header><span>{String(groupIndex + 1).padStart(2, "0")}</span><div><h2>{groupName}</h2><small>{items.length} inspection point{items.length === 1 ? "" : "s"}</small></div></header><div>{items.map((item) => { const result = detail.results.find((value) => value.itemId === item.id)!; return <article className={`pm-check-item ${result.resultCode || ""}`} key={item.id}><div className="pm-check-copy"><div className="pm-item-tags"><span>{item.maintenanceType}</span><span>{item.inspectionMethod}</span>{item.dataType === "value" ? <span className="reading"><Gauge size={12} />Reading</span> : null}</div><h3>{item.description}</h3><p><strong>Standard</strong>{item.specification || "Complete as described."}</p></div><div className="pm-result-controls"><div className="pm-result-buttons">{resultOptions.map((option) => <button key={option.code} type="button" disabled={!editable || busyItem === item.id} className={result.resultCode === option.code ? `active ${option.code}` : ""} onClick={() => saveItem(item.id, { resultCode: option.code })}><option.icon size={16} />{option.label}</button>)}</div>{item.dataType === "value" ? <label className="pm-reading-input"><span>Actual reading</span><input disabled={!editable} defaultValue={result.readingValue} onBlur={(event) => event.target.value !== result.readingValue && saveItem(item.id, { readingValue: event.target.value })} placeholder={item.specification || "Enter value"} /></label> : null}<label className="pm-item-note"><span>Note <small>optional</small></span><input disabled={!editable} defaultValue={result.note} onBlur={(event) => event.target.value !== result.note && saveItem(item.id, { note: event.target.value })} placeholder="Add observation or action taken" /></label>{busyItem === item.id ? <small className="pm-saving">Saving...</small> : result.completedAt ? <small className="pm-saved"><Check size={12} />Saved</small> : null}</div></article>; })}</div></section>)}</div><footer className="pm-submit-panel"><div><span>Technician remarks</span><textarea disabled={!editable} value={remarks} onChange={(event) => setRemarks(event.target.value)} placeholder="Add overall findings, follow-up needs, or parts required..." /></div><aside><div><span className={`pm-status-pill ${scheduleTone(detail)}`}>{scheduleStatusLabel(detail)}</span>{detail.failedItemCount ? <small className="failed"><AlertCircle size={14} />{detail.failedItemCount} failed inspection</small> : null}</div>{editable ? <button className="pm-button pm-button-primary" type="button" disabled={submitting || progress < 100} onClick={submit}><FileCheck2 size={17} />{submitting ? "Submitting..." : "Submit for verification"}</button> : null}{detail.status === "submitted" && isManager ? <button className="pm-button pm-button-primary" type="button" disabled={submitting} onClick={verify}><ShieldCheck size={17} />Verify checklist</button> : null}{detail.status === "verified" ? <div className="pm-verified-stamp"><ShieldCheck size={22} /><span><strong>Verified</strong><small>by {detail.verifiedByName}</small></span></div> : null}</aside></footer></section>;
+}
+
+function PmChecklistExecution({ scheduleId }: { scheduleId: string }) {
+  const { currentUser } = useCurrentUser();
+  const navigate = useNavigate();
+  const [detail, setDetail] = useState<PmScheduleDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busyItem, setBusyItem] = useState("");
+  const [uploadingItem, setUploadingItem] = useState("");
+  const [error, setError] = useState("");
+  const [remarks, setRemarks] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const isManager = currentUser ? ["executive", "admin"].includes(currentUser.role) : false;
+  const isAdmin = currentUser?.role === "admin";
+
+  async function load() {
+    if (!currentUser) return;
+    setLoading(true);
+    try {
+      const next = await api.pmSchedule(scheduleId, currentUser.id);
+      setDetail(next);
+      setRemarks(next.remarks);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to load checklist.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load().catch(console.error); }, [scheduleId, currentUser?.id]);
+  useEffect(() => {
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
+  }, [scheduleId]);
+
+  const groups = useMemo(() => {
+    if (!detail?.template) return [];
+    const grouped = new Map<string, typeof detail.template.items>();
+    detail.template.items.forEach((item) => grouped.set(item.groupName, [...(grouped.get(item.groupName) || []), item]));
+    return [...grouped.entries()];
+  }, [detail?.template]);
+  const progress = detail?.checklistItemCount ? Math.round((detail.completedItemCount / detail.checklistItemCount) * 100) : 0;
+  const editable = detail ? !["submitted", "verified"].includes(detail.status) : false;
+
+  async function saveItem(itemId: string, patch: { resultCode?: PmResultCode | null; readingValue?: string; note?: string }) {
+    if (!currentUser || !detail) return;
+    const existing = detail.results.find((result) => result.itemId === itemId)!;
+    setBusyItem(itemId); setError("");
+    try {
+      setDetail(await api.savePmResult(scheduleId, {
+        actorId: currentUser.id,
+        itemId,
+        resultCode: patch.resultCode === undefined ? existing.resultCode : patch.resultCode,
+        readingValue: patch.readingValue === undefined ? existing.readingValue : patch.readingValue,
+        note: patch.note === undefined ? existing.note : patch.note
+      }));
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to save result.");
+    } finally {
+      setBusyItem("");
+    }
+  }
+
+  async function uploadProof(itemId: string, event: ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!currentUser || !file) return;
+    setUploadingItem(itemId); setError("");
+    try {
+      setDetail(await api.uploadPmProof(scheduleId, itemId, currentUser.id, file));
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to upload photo proof.");
+    } finally {
+      setUploadingItem("");
+      input.value = "";
+    }
+  }
+
+  async function deleteProof(photoId: string) {
+    if (!currentUser || !window.confirm("Delete this PM proof photo? This cannot be undone.")) return;
+    setUploadingItem(photoId); setError("");
+    try {
+      setDetail(await api.deletePmProof(photoId, currentUser.id));
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to delete photo proof.");
+    } finally {
+      setUploadingItem("");
+    }
+  }
+
+  async function start() {
+    if (!currentUser) return;
+    setSubmitting(true);
+    try { setDetail(await api.startPmSchedule(scheduleId, currentUser.id)); }
+    catch (nextError) { setError(nextError instanceof Error ? nextError.message : "Unable to start checklist."); }
+    finally { setSubmitting(false); }
+  }
+
+  async function submit() {
+    if (!currentUser) return;
+    setSubmitting(true); setError("");
+    try { setDetail(await api.submitPmSchedule(scheduleId, { actorId: currentUser.id, remarks })); }
+    catch (nextError) { setError(nextError instanceof Error ? nextError.message : "Unable to submit checklist."); }
+    finally { setSubmitting(false); }
+  }
+
+  async function verify() {
+    if (!currentUser) return;
+    setSubmitting(true);
+    try { setDetail(await api.verifyPmSchedule(scheduleId, currentUser.id)); }
+    catch (nextError) { setError(nextError instanceof Error ? nextError.message : "Unable to verify checklist."); }
+    finally { setSubmitting(false); }
+  }
+
+  if (loading && !detail) return <PmLoading />;
+  if (!detail) return <div className="pm-page"><button className="pm-back-link" onClick={() => navigate("/preventive-maintenance")}><ArrowLeft size={18} />Back to PM</button><div className="pm-alert"><AlertCircle size={18} />{error || "Assignment not found."}</div></div>;
+  if (!detail.template) return <div className="pm-page"><button className="pm-back-link" onClick={() => navigate("/preventive-maintenance")}><ArrowLeft size={18} />Back to PM</button><div className="pm-empty pm-no-template"><ClipboardCheck size={34} /><h2>{detail.machineName}</h2><p>This schedule is active, but its machine checklist has not been added yet.</p></div></div>;
+
+  return (
+    <section className="pm-page pm-execution-page">
+      <button className="pm-back-link" type="button" onClick={() => navigate("/preventive-maintenance")}><ArrowLeft size={18} />Back to my PM list</button>
+      <header className="pm-execution-header">
+        <div>
+          <div className="pm-eyebrow"><ShieldCheck size={16} />{detail.template.documentNumber} · Rev {detail.template.revisionNumber}</div>
+          <h1>{detail.machineName}</h1>
+          <p>{detail.template.title}</p>
+          <div className="pm-execution-meta"><span><CalendarDays size={17} />{formatPmDate(detail.scheduledDate)}</span><span><UserRound size={17} />{detail.technicianName}</span><span><Clock3 size={17} />{detail.frequencyLabel}</span></div>
+        </div>
+        <div className="pm-execution-progress"><strong>{progress}%</strong><span><i style={{ width: `${progress}%` }} /></span><small>{detail.completedItemCount} of {detail.checklistItemCount} fully complete</small></div>
+      </header>
+
+      {error ? <div className="pm-alert"><AlertCircle size={18} />{error}</div> : null}
+      <div className="pm-checklist-instructions">
+        <div><ListChecks size={22} /><span><strong>Complete each inspection point</strong><small>1. Choose a result. 2. Enter a reading when requested. 3. Take at least one proof photo.</small></span></div>
+        <div className="pm-proof-required"><ImagePlus size={17} /><span>Photo required for every item</span></div>
+      </div>
+
+      {detail.status === "scheduled" ? <div className="pm-start-banner"><div><Sparkles size={22} /><span><strong>Ready to inspect {detail.machineName}?</strong><small>Start when you are at the machine. Your progress saves after every action.</small></span></div><button className="pm-button pm-button-primary" disabled={submitting} type="button" onClick={start}>Start inspection<ChevronRight size={18} /></button></div> : null}
+
+      <div className="pm-checklist-groups">
+        {groups.map(([groupName, items], groupIndex) => (
+          <section className="pm-check-group" key={groupName}>
+            <header><span>{String(groupIndex + 1).padStart(2, "0")}</span><div><h2>{groupName}</h2><small>{items.length} inspection point{items.length === 1 ? "" : "s"}</small></div></header>
+            <div>
+              {items.map((item, itemIndex) => {
+                const result = detail.results.find((value) => value.itemId === item.id)!;
+                const resultReady = Boolean(result.resultCode) && (item.dataType !== "value" || Boolean(result.readingValue.trim()));
+                const itemComplete = resultReady && result.photos.length > 0;
+                return (
+                  <article className={`pm-check-item ${result.resultCode || ""} ${itemComplete ? "complete" : ""}`} key={item.id}>
+                    <div className="pm-check-copy">
+                      <div className="pm-item-step">Item {itemIndex + 1} of {items.length}</div>
+                      <div className="pm-item-tags"><span>{item.maintenanceType}</span><span>{item.inspectionMethod}</span>{item.dataType === "value" ? <span className="reading"><Gauge size={13} />Reading needed</span> : null}</div>
+                      <h3>{item.description}</h3>
+                      <p><strong>Expected standard</strong>{item.specification || "Complete as described."}</p>
+                    </div>
+                    <div className="pm-result-controls">
+                      <div className="pm-control-step"><b>1</b><span>Inspection result</span></div>
+                      <div className="pm-result-buttons">
+                        {resultOptions.map((option) => <button key={option.code} type="button" disabled={!editable || busyItem === item.id} className={result.resultCode === option.code ? `active ${option.code}` : ""} onClick={() => saveItem(item.id, { resultCode: option.code })}><option.icon size={18} />{option.label}</button>)}
+                      </div>
+                      {item.dataType === "value" ? <label className="pm-reading-input"><span><b>2</b> Actual reading <em>required</em></span><input disabled={!editable} defaultValue={result.readingValue} onBlur={(event) => event.target.value !== result.readingValue && saveItem(item.id, { readingValue: event.target.value })} placeholder="Enter the measured value" /></label> : null}
+                      <div className="pm-photo-proof">
+                        <div className="pm-control-step"><b>{item.dataType === "value" ? "3" : "2"}</b><span>Photo proof <em>required</em></span></div>
+                        {result.photos.length ? <div className="pm-photo-grid">{result.photos.map((photo) => <div className="pm-photo-tile" key={photo.id}><a href={mediaUrl(photo.url)} target="_blank" rel="noreferrer" aria-label={`Open ${photo.originalName}`}><img src={mediaUrl(photo.url)} alt={`Proof for ${item.description}`} /></a><span><strong>Proof saved</strong><small>{new Date(photo.createdAt).toLocaleString("en-MY", { dateStyle: "medium", timeStyle: "short" })}</small></span>{isAdmin ? <button type="button" disabled={uploadingItem === photo.id} onClick={() => deleteProof(photo.id)} aria-label="Delete proof photo"><Trash2 size={16} /></button> : null}</div>)}</div> : <div className="pm-photo-empty"><ImagePlus size={20} /><span>No proof photo yet</span></div>}
+                        {editable && result.photos.length < 5 ? <label className={`pm-photo-upload ${uploadingItem === item.id ? "loading" : ""}`}><ImagePlus size={19} />{uploadingItem === item.id ? "Uploading photo..." : result.photos.length ? "Add another photo" : "Take or upload photo"}<input type="file" accept="image/*" capture="environment" disabled={uploadingItem === item.id} onChange={(event) => uploadProof(item.id, event)} /></label> : null}
+                      </div>
+                      <label className="pm-item-note"><span>Observation or action <small>optional</small></span><input disabled={!editable} defaultValue={result.note} onBlur={(event) => event.target.value !== result.note && saveItem(item.id, { note: event.target.value })} placeholder="Add a short note if useful" /></label>
+                      <div className={`pm-item-completion ${itemComplete ? "done" : "pending"}`}>{itemComplete ? <><CheckCircle2 size={17} /><span>Item complete</span></> : <><CircleDashed size={17} /><span>{!resultReady ? "Choose a result" : "Add the required photo"}</span></>}{busyItem === item.id ? <small>Saving...</small> : null}</div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        ))}
+      </div>
+
+      <footer className="pm-submit-panel">
+        <div><span>Overall technician remarks</span><textarea disabled={!editable} value={remarks} onChange={(event) => setRemarks(event.target.value)} placeholder="Add overall findings, follow-up needs, or parts required..." /></div>
+        <aside>
+          <div><span className={`pm-status-pill ${scheduleTone(detail)}`}>{scheduleStatusLabel(detail)}</span>{progress < 100 && editable ? <small>{detail.checklistItemCount - detail.completedItemCount} item{detail.checklistItemCount - detail.completedItemCount === 1 ? "" : "s"} still need a result and photo</small> : null}{detail.failedItemCount ? <small className="failed"><AlertCircle size={15} />{detail.failedItemCount} failed inspection</small> : null}</div>
+          {editable ? <button className="pm-button pm-button-primary" type="button" disabled={submitting || progress < 100} onClick={submit}><FileCheck2 size={18} />{submitting ? "Submitting..." : progress < 100 ? "Finish all items first" : "Submit for verification"}</button> : null}
+          {detail.status === "submitted" && isManager ? <button className="pm-button pm-button-primary" type="button" disabled={submitting} onClick={verify}><ShieldCheck size={18} />Verify checklist</button> : null}
+          {detail.status === "verified" ? <div className="pm-verified-stamp"><ShieldCheck size={23} /><span><strong>Verified</strong><small>by {detail.verifiedByName}</small></span></div> : null}
+        </aside>
+      </footer>
+    </section>
+  );
 }
 
 function PmLoading() {

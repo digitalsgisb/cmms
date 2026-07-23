@@ -20,6 +20,7 @@ import type {
   NotificationRecord,
   AssignPmTemplateInput,
   PmChecklistItem,
+  PmChecklistPhoto,
   PmChecklistResult,
   PmChecklistTemplate,
   PmDashboardResponse,
@@ -402,6 +403,20 @@ export function migrate() {
       FOREIGN KEY (updatedById) REFERENCES users(id)
     );
 
+    CREATE TABLE IF NOT EXISTS pm_result_photos (
+      id TEXT PRIMARY KEY,
+      scheduleId TEXT NOT NULL,
+      itemId TEXT NOT NULL,
+      uploadedBy TEXT NOT NULL,
+      originalName TEXT NOT NULL,
+      mimeType TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      data BLOB NOT NULL,
+      createdAt TEXT NOT NULL,
+      FOREIGN KEY (scheduleId) REFERENCES pm_schedules(id) ON DELETE CASCADE,
+      FOREIGN KEY (uploadedBy) REFERENCES users(id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_work_orders_status ON work_orders(status);
     CREATE INDEX IF NOT EXISTS idx_work_orders_requester ON work_orders(requesterId);
     CREATE INDEX IF NOT EXISTS idx_work_orders_assigned ON work_orders(assignedToId);
@@ -417,6 +432,7 @@ export function migrate() {
     CREATE INDEX IF NOT EXISTS idx_pm_plans_technician ON pm_plans(technicianId, active);
     CREATE INDEX IF NOT EXISTS idx_pm_schedules_date ON pm_schedules(scheduledDate, status);
     CREATE INDEX IF NOT EXISTS idx_pm_results_schedule ON pm_results(scheduleId);
+    CREATE INDEX IF NOT EXISTS idx_pm_photos_result ON pm_result_photos(scheduleId, itemId, createdAt);
   `);
 
   const userColumns = rows<{ name: string }>(db.prepare("PRAGMA table_info(users)").all());
@@ -1337,7 +1353,15 @@ function pmScheduleSelect() {
       p.machineName, p.mainMachine, p.frequencyLabel, p.technicianId, p.technicianName,
       p.templateId, t.title AS templateTitle,
       COUNT(DISTINCT i.id) AS checklistItemCount,
-      COUNT(DISTINCT CASE WHEN r.resultCode IS NOT NULL THEN r.itemId END) AS completedItemCount,
+      COUNT(DISTINCT CASE
+        WHEN r.resultCode IS NOT NULL
+          AND (i.dataType <> 'value' OR trim(COALESCE(r.readingValue, '')) <> '')
+          AND EXISTS (
+            SELECT 1 FROM pm_result_photos photo
+            WHERE photo.scheduleId = s.id AND photo.itemId = i.id
+          )
+        THEN r.itemId
+      END) AS completedItemCount,
       COUNT(DISTINCT CASE WHEN r.resultCode = 'fail' THEN r.itemId END) AS failedItemCount
     FROM pm_schedules s
     JOIN pm_plans p ON p.id = s.planId
@@ -1439,15 +1463,104 @@ export function getPmScheduleDetail(scheduleId: string, actorId: string): PmSche
     SELECT itemId, resultCode, readingValue, note, completedAt
     FROM pm_results WHERE scheduleId = ?
   `).all(scheduleId));
-  const resultsByItem = new Map(storedResults.map((result) => [result.itemId, result]));
+  const photos = rows<PmChecklistPhoto>(db.prepare(`
+    SELECT photo.id, photo.scheduleId, photo.itemId, photo.uploadedBy, u.name AS uploadedByName,
+           photo.originalName, photo.mimeType, photo.size,
+           '/api/pm/photos/' || photo.id AS url, photo.createdAt
+    FROM pm_result_photos photo
+    JOIN users u ON u.id = photo.uploadedBy
+    WHERE photo.scheduleId = ?
+    ORDER BY photo.createdAt
+  `).all(scheduleId));
+  const photosByItem = new Map<string, PmChecklistPhoto[]>();
+  photos.forEach((photo) => photosByItem.set(photo.itemId, [...(photosByItem.get(photo.itemId) || []), photo]));
+  const resultsByItem = new Map(storedResults.map((result) => [result.itemId, {
+    ...result,
+    photos: photosByItem.get(result.itemId) || []
+  }]));
   const results = (template?.items || []).map((item) => resultsByItem.get(item.id) || ({
     itemId: item.id,
     resultCode: null,
     readingValue: "",
     note: "",
-    completedAt: null
+    completedAt: null,
+    photos: photosByItem.get(item.id) || []
   }));
   return { ...schedule, template, results, verifiedByName: verification.verifiedByName };
+}
+
+export function addPmResultPhoto(input: {
+  scheduleId: string;
+  itemId: string;
+  actorId: string;
+  originalName: string;
+  mimeType: string;
+  size: number;
+  data: Uint8Array;
+}): PmScheduleDetail {
+  const { schedule } = requireScheduleAccess(input.scheduleId, input.actorId);
+  if (["submitted", "verified"].includes(schedule.status)) {
+    throw new Error("Photo proof cannot be changed after the checklist is submitted.");
+  }
+  if (!schedule.templateId) {
+    throw new Error("This machine does not have a checklist yet.");
+  }
+  const item = db.prepare("SELECT id FROM pm_checklist_items WHERE id = ? AND templateId = ?")
+    .get(input.itemId, schedule.templateId);
+  if (!item) {
+    throw new Error("Checklist item not found.");
+  }
+  const photoCount = row<{ count: number }>(db.prepare(`
+    SELECT COUNT(*) AS count FROM pm_result_photos WHERE scheduleId = ? AND itemId = ?
+  `).get(input.scheduleId, input.itemId)).count;
+  if (photoCount >= 5) {
+    throw new Error("A checklist item can keep up to 5 proof photos.");
+  }
+  const timestamp = now();
+  db.prepare(`
+    INSERT INTO pm_result_photos (
+      id, scheduleId, itemId, uploadedBy, originalName, mimeType, size, data, createdAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    randomUUID(),
+    input.scheduleId,
+    input.itemId,
+    input.actorId,
+    input.originalName,
+    input.mimeType,
+    input.size,
+    input.data,
+    timestamp
+  );
+  db.prepare(`
+    UPDATE pm_schedules
+    SET status = CASE WHEN status = 'scheduled' THEN 'in_progress' ELSE status END,
+        startedAt = COALESCE(startedAt, ?), updatedAt = ?
+    WHERE id = ?
+  `).run(timestamp, timestamp, input.scheduleId);
+  return getPmScheduleDetail(input.scheduleId, input.actorId);
+}
+
+export function getPmPhoto(photoId: string) {
+  const photo = row<{ mimeType: string; originalName: string; data: Uint8Array } | undefined>(db.prepare(`
+    SELECT mimeType, originalName, data FROM pm_result_photos WHERE id = ?
+  `).get(photoId));
+  if (!photo) {
+    throw new Error("PM proof photo not found.");
+  }
+  return photo;
+}
+
+export function deletePmResultPhoto(photoId: string, actorId: string): PmScheduleDetail {
+  requireAdmin(actorId);
+  const photo = row<{ scheduleId: string } | undefined>(db.prepare(`
+    SELECT scheduleId FROM pm_result_photos WHERE id = ?
+  `).get(photoId));
+  if (!photo) {
+    throw new Error("PM proof photo not found.");
+  }
+  db.prepare("DELETE FROM pm_result_photos WHERE id = ?").run(photoId);
+  return getPmScheduleDetail(photo.scheduleId, actorId);
 }
 
 export function startPmSchedule(scheduleId: string, actorId: string): PmScheduleDetail {
@@ -1523,10 +1636,17 @@ export function submitPmSchedule(scheduleId: string, input: SubmitPmScheduleInpu
     FROM pm_checklist_items i
     LEFT JOIN pm_results r ON r.itemId = i.id AND r.scheduleId = ?
     WHERE i.templateId = ? AND i.required = 1
-      AND (r.resultCode IS NULL OR (i.dataType = 'value' AND trim(COALESCE(r.readingValue, '')) = ''))
-  `).get(scheduleId, schedule.templateId)).count;
+      AND (
+        r.resultCode IS NULL
+        OR (i.dataType = 'value' AND trim(COALESCE(r.readingValue, '')) = '')
+        OR NOT EXISTS (
+          SELECT 1 FROM pm_result_photos photo
+          WHERE photo.scheduleId = ? AND photo.itemId = i.id
+        )
+      )
+  `).get(scheduleId, schedule.templateId, scheduleId)).count;
   if (incomplete > 0) {
-    throw new Error(`${incomplete} required checklist item${incomplete === 1 ? " is" : "s are"} incomplete.`);
+    throw new Error(`${incomplete} required checklist item${incomplete === 1 ? " is" : "s are"} missing a result, reading, or photo proof.`);
   }
   const timestamp = now();
   db.prepare(`
@@ -2109,6 +2229,14 @@ export function listSpareInventory(): SpareInventoryResponse {
     summary: inventorySummary(),
     syncConfigured: spareSyncConfigured()
   };
+}
+
+export function listSpareMovementsForActor(actorId: string): StockMovementDetail[] {
+  const actor = requireSpareActor(actorId);
+  if (actor.role === "requester") {
+    throw new Error("Technician access is required.");
+  }
+  return listMovementDetails("WHERE sm.actorId = ?", [actor.id], 100);
 }
 
 export function getSpareSyncSettings(): SpareSyncSettings {

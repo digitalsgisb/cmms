@@ -149,6 +149,20 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(input)
     }),
+  uploadPmProof: (scheduleId: string, itemId: string, actorId: string, file: File) => {
+    const formData = new FormData();
+    formData.append("actorId", actorId);
+    formData.append("photo", file);
+    return request<PmScheduleDetail>(`/api/pm/schedules/${scheduleId}/results/${itemId}/photos`, {
+      method: "POST",
+      body: formData
+    });
+  },
+  deletePmProof: (photoId: string, actorId: string) =>
+    request<PmScheduleDetail>(`/api/pm/photos/${photoId}`, {
+      method: "DELETE",
+      body: JSON.stringify({ actorId })
+    }),
   submitPmSchedule: (id: string, input: SubmitPmScheduleInput) =>
     request<PmScheduleDetail>(`/api/pm/schedules/${id}/submit`, {
       method: "POST",
@@ -180,6 +194,8 @@ export const api = {
       body: JSON.stringify(input)
     }),
   spareInventory: () => request<SpareInventoryResponse>("/api/spare-parts"),
+  spareMovementsForActor: (actorId: string) =>
+    request<StockMovementDetail[]>(`/api/spare-parts/history/by-actor?actorId=${encodeURIComponent(actorId)}`),
   sparePart: (itemNo: string) => request<SparePartDetail>(`/api/spare-parts/${encodeURIComponent(itemNo)}`),
   sparePartMovements: (itemNo: string) =>
     request<StockMovementDetail[]>(`/api/spare-parts/${encodeURIComponent(itemNo)}/movements`),

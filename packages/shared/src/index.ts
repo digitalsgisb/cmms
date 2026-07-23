@@ -543,6 +543,20 @@ export interface PmChecklistResult {
   readingValue: string;
   note: string;
   completedAt: string | null;
+  photos: PmChecklistPhoto[];
+}
+
+export interface PmChecklistPhoto {
+  id: string;
+  scheduleId: string;
+  itemId: string;
+  uploadedBy: string;
+  uploadedByName: string;
+  originalName: string;
+  mimeType: string;
+  size: number;
+  url: string;
+  createdAt: string;
 }
 
 export interface PmScheduleDetail extends PmScheduleItem {
