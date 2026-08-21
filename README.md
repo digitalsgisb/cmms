@@ -26,6 +26,78 @@ Default local URLs:
 - Web app: http://localhost:5173
 - API health: http://localhost:3300/api/health
 
+## GitHub: Pull and Push Updates
+
+Run these commands from the project folder. The main branch for this project is `main`.
+
+### Pull the latest update
+
+Before starting work, check that you do not have unfinished changes:
+
+```powershell
+git status
+```
+
+Then download and apply the latest version from GitHub:
+
+```powershell
+git pull --rebase origin main
+pnpm install
+```
+
+Run `pnpm install` after pulling because an update may add or change a dependency. Start the updated app with:
+
+```powershell
+pnpm dev
+```
+
+### Push your changes
+
+Review the changed files:
+
+```powershell
+git status
+git diff
+```
+
+Add the files, create a commit, and push it to GitHub:
+
+```powershell
+git add .
+git commit -m "Describe what was changed"
+git pull --rebase origin main
+git push origin main
+```
+
+The second pull checks for updates made by someone else before your push. Do not use `git add .` if the status shows files that should not be included; add only the required paths instead, for example `git add README.md`.
+
+If Git reports a conflict, do not force-push. Open each conflicted file, choose the correct content, and then continue:
+
+```powershell
+git add <fixed-file>
+git rebase --continue
+git push origin main
+```
+
+To cancel the conflicted rebase and return to the state before the pull:
+
+```powershell
+git rebase --abort
+```
+
+### Update the Raspberry Pi deployment
+
+After pushing an update, run these commands on the Raspberry Pi:
+
+```bash
+cd /opt/sugi-cmms
+git pull --ff-only origin main
+corepack pnpm install --frozen-lockfile
+corepack pnpm build
+sudo systemctl restart sugi-cmms
+sudo systemctl status sugi-cmms --no-pager
+```
+
 ## Raspberry Pi Service Install
 
 This app requires Node.js 24 or newer because the API uses `node:sqlite`. The installer below installs Node.js Current from NodeSource if the Pi does not already have Node.js 24+.
