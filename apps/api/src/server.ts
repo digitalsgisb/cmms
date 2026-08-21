@@ -152,6 +152,12 @@ seed();
 app.use(cors());
 app.use(express.json({ limit: "12mb" }));
 app.use("/uploads", express.static(uploadsRoot));
+app.use("/api", (_request, response, next) => {
+  response.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  response.set("Pragma", "no-cache");
+  response.set("Expires", "0");
+  next();
+});
 
 type LiveTopic = "work-orders" | "notifications" | "dashboard" | "spare-parts" | "pm" | "assets" | "master-data" | "users";
 

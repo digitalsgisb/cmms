@@ -94,10 +94,18 @@ export function TechnicianPage() {
   useLiveRefresh(["work-orders"], () => loadWorkOrders(true), { fallbackMs: 5000 });
 
   useEffect(() => {
+    const refreshFromNotification = () => void loadWorkOrders(true).catch(console.error);
+    const visibleSafetyRefresh = window.setInterval(() => {
+      if (document.visibilityState === "visible") refreshFromNotification();
+    }, 2500);
+    window.addEventListener("sugi:work-orders-changed", refreshFromNotification);
+
     return () => {
+      window.clearInterval(visibleSafetyRefresh);
+      window.removeEventListener("sugi:work-orders-changed", refreshFromNotification);
       if (liveArrivalTimerRef.current) window.clearTimeout(liveArrivalTimerRef.current);
     };
-  }, []);
+  }, [currentUser?.id]);
 
   useEffect(() => {
     if (!resolveTarget) {

@@ -1,4 +1,4 @@
-const CACHE_NAME = "sugi-cmms-shell-v6";
+const CACHE_NAME = "sugi-cmms-shell-v7";
 const APP_SHELL_URL = "/";
 const SHELL_ASSETS = [APP_SHELL_URL, "/manifest.webmanifest", "/requester.webmanifest", "/icons/cmms-icon.svg"];
 
@@ -6,7 +6,7 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(SHELL_ASSETS);
-    })
+    }).then(() => self.skipWaiting())
   );
 });
 
@@ -14,7 +14,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)));
-    })
+    }).then(() => self.clients.claim())
   );
 });
 

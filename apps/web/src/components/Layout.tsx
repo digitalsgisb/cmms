@@ -15,7 +15,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import type { NotificationRecord } from "@sugi-cmms/shared";
 import { api, mediaUrl } from "../api/client";
@@ -48,6 +48,7 @@ function isTechnicianTabActive(tabPath: string, pathname: string) {
 export function Layout() {
   const { currentUser, loadingUsers, logout } = useCurrentUser();
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
+  const knownNotificationIdsRef = useRef<Set<string> | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const location = useLocation();
@@ -66,10 +67,23 @@ export function Layout() {
     }
 
     const nextNotifications = await api.notifications(currentUser.id);
+    const knownNotificationIds = knownNotificationIdsRef.current;
+    if (knownNotificationIds) {
+      const incomingWorkOrderNotification = nextNotifications.find(
+        (notification) => notification.workOrderId && !knownNotificationIds.has(notification.id)
+      );
+      if (incomingWorkOrderNotification) {
+        window.dispatchEvent(new CustomEvent("sugi:work-orders-changed", {
+          detail: { workOrderId: incomingWorkOrderNotification.workOrderId }
+        }));
+      }
+    }
+    knownNotificationIdsRef.current = new Set(nextNotifications.map((notification) => notification.id));
     setNotifications(nextNotifications);
   }
 
   useEffect(() => {
+    knownNotificationIdsRef.current = null;
     loadNotifications().catch(console.error);
   }, [currentUser?.id]);
 

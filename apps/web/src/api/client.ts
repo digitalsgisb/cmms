@@ -49,6 +49,7 @@ export const liveEventsUrl = `${API_BASE}/api/events`;
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
+    cache: options.cache ?? "no-store",
     headers: {
       ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
       ...options.headers
