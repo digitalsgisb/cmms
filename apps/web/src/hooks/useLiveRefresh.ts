@@ -6,6 +6,43 @@ type LiveRefreshOptions = {
   fallbackMs?: number;
 };
 
+type LiveChange = {
+  topic?: string;
+  path?: string;
+  method?: string;
+  at?: string;
+};
+
+const liveListeners = new Set<(change: LiveChange) => void>();
+let sharedLiveSource: EventSource | null = null;
+
+function ensureSharedLiveSource() {
+  if (sharedLiveSource || typeof EventSource === "undefined") return;
+
+  sharedLiveSource = new EventSource(liveEventsUrl);
+  sharedLiveSource.onmessage = (event) => {
+    try {
+      const change = JSON.parse(event.data) as LiveChange;
+      liveListeners.forEach((listener) => listener(change));
+    } catch {
+      // Ignore malformed/heartbeat messages. EventSource reconnects automatically.
+    }
+  };
+}
+
+function subscribeToLiveChanges(listener: (change: LiveChange) => void) {
+  liveListeners.add(listener);
+  ensureSharedLiveSource();
+
+  return () => {
+    liveListeners.delete(listener);
+    if (liveListeners.size === 0) {
+      sharedLiveSource?.close();
+      sharedLiveSource = null;
+    }
+  };
+}
+
 /**
  * Refreshes data immediately after a matching server mutation. EventSource
  * reconnects itself; periodic and focus refreshes cover sleeping phones,
@@ -53,17 +90,9 @@ export function useLiveRefresh(
       debounceTimer = window.setTimeout(() => void runRefresh(), 80);
     };
 
-    const source = typeof EventSource === "undefined" ? null : new EventSource(liveEventsUrl);
-    if (source) {
-      source.onmessage = (event) => {
-        try {
-          const change = JSON.parse(event.data) as { topic?: string };
-          if (change.topic && acceptedTopics.has(change.topic)) queueRefresh();
-        } catch {
-          // Ignore malformed/heartbeat messages; the fallback still keeps data fresh.
-        }
-      };
-    }
+    const unsubscribe = subscribeToLiveChanges((change) => {
+      if (change.topic && acceptedTopics.has(change.topic)) queueRefresh();
+    });
 
     const fallback = window.setInterval(() => {
       if (document.visibilityState === "visible") void runRefresh();
@@ -76,7 +105,7 @@ export function useLiveRefresh(
     document.addEventListener("visibilitychange", refreshWhenVisible);
 
     return () => {
-      source?.close();
+      unsubscribe();
       window.clearTimeout(debounceTimer);
       window.clearInterval(fallback);
       window.removeEventListener("focus", refreshWhenVisible);

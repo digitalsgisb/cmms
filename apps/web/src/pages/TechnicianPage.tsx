@@ -1,9 +1,9 @@
-import { AlertTriangle, CheckCircle2, ChevronRight, ImagePlus, PackageOpen, ShieldCheck, Wrench } from "lucide-react";
+import { AlertTriangle, BellRing, CheckCircle2, ChevronRight, ImagePlus, PackageOpen, ShieldCheck, Wrench } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent, PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { Link, Navigate } from "react-router-dom";
-import type { WorkOrder, WorkOrderStatus } from "@sugi-cmms/shared";
+import type { User, WorkOrder, WorkOrderStatus } from "@sugi-cmms/shared";
 import { api } from "../api/client";
 import { PriorityBadge, StatusBadge } from "../components/Badges";
 import { ActionButton } from "../components/ActionButton";
@@ -34,6 +34,14 @@ function vibrateAccepted() {
   navigator.vibrate?.([36, 18, 36]);
 }
 
+function appearsInTechnicianQueue(workOrder: WorkOrder, currentUser: User | null) {
+  if (["resolved", "closed", "cancelled"].includes(workOrder.status)) return false;
+  if (currentUser?.role !== "technician") return true;
+
+  const available = workOrder.status === "open" && (!workOrder.assignedToId || workOrder.assignedToId === currentUser.id);
+  return available || workOrder.assignedToId === currentUser.id;
+}
+
 export function TechnicianPage() {
   const { currentUser } = useCurrentUser();
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
@@ -47,16 +55,49 @@ export function TechnicianPage() {
   const [resolveNote, setResolveNote] = useState("");
   const [resolveFiles, setResolveFiles] = useState<FileList | null>(null);
   const [resolveError, setResolveError] = useState("");
+  const [liveArrival, setLiveArrival] = useState<{ id: string; number: string; title: string } | null>(null);
+  const workOrdersRef = useRef<WorkOrder[]>([]);
+  const hasLoadedWorkOrdersRef = useRef(false);
+  const liveArrivalTimerRef = useRef<number | null>(null);
 
-  async function loadWorkOrders() {
-    setWorkOrders(await api.workOrders());
+  function showLiveArrival(workOrder: WorkOrder) {
+    setLiveArrival({ id: workOrder.id, number: workOrder.number, title: workOrder.title });
+    setRecentlyUpdatedId(workOrder.id);
+    navigator.vibrate?.([28, 35, 28]);
+    if (liveArrivalTimerRef.current) window.clearTimeout(liveArrivalTimerRef.current);
+    liveArrivalTimerRef.current = window.setTimeout(() => {
+      setLiveArrival(null);
+      setRecentlyUpdatedId((current) => (current === workOrder.id ? "" : current));
+      liveArrivalTimerRef.current = null;
+    }, 8000);
+  }
+
+  async function loadWorkOrders(announceIncoming = false) {
+    const nextWorkOrders = await api.workOrders();
+    if (announceIncoming && hasLoadedWorkOrdersRef.current) {
+      const knownIds = new Set(workOrdersRef.current.map((workOrder) => workOrder.id));
+      const newArrival = nextWorkOrders.find(
+        (workOrder) => !knownIds.has(workOrder.id) && appearsInTechnicianQueue(workOrder, currentUser)
+      );
+      if (newArrival) showLiveArrival(newArrival);
+    }
+
+    workOrdersRef.current = nextWorkOrders;
+    hasLoadedWorkOrdersRef.current = true;
+    setWorkOrders(nextWorkOrders);
   }
 
   useEffect(() => {
     loadWorkOrders().catch(console.error);
   }, []);
 
-  useLiveRefresh(["work-orders"], loadWorkOrders, { fallbackMs: 10000 });
+  useLiveRefresh(["work-orders"], () => loadWorkOrders(true), { fallbackMs: 5000 });
+
+  useEffect(() => {
+    return () => {
+      if (liveArrivalTimerRef.current) window.clearTimeout(liveArrivalTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!resolveTarget) {
@@ -71,18 +112,7 @@ export function TechnicianPage() {
   }, [resolveTarget]);
 
   const queue = useMemo(() => {
-    return workOrders.filter((workOrder) => {
-      if (["resolved", "closed", "cancelled"].includes(workOrder.status)) {
-        return false;
-      }
-
-      if (currentUser?.role === "technician") {
-        const isAvailableOpenJob = workOrder.status === "open" && (!workOrder.assignedToId || workOrder.assignedToId === currentUser.id);
-        return isAvailableOpenJob || workOrder.assignedToId === currentUser.id;
-      }
-
-      return true;
-    });
+    return workOrders.filter((workOrder) => appearsInTechnicianQueue(workOrder, currentUser));
   }, [workOrders, currentUser]);
   const queueCounts = useMemo(() => {
     return {
@@ -278,6 +308,16 @@ export function TechnicianPage() {
 
   return (
     <section className="page-stack technician-page">
+      {liveArrival ? (
+        <Link className="technician-live-arrival" to={`/work-orders/${liveArrival.id}`} aria-live="polite">
+          <span><BellRing size={20} aria-hidden="true" /></span>
+          <span>
+            <strong>New work order · {liveArrival.number}</strong>
+            <small>{liveArrival.title}</small>
+          </span>
+          <ChevronRight size={19} aria-hidden="true" />
+        </Link>
+      ) : null}
       <div className="page-title-row">
         <div>
           <p className="eyebrow">Mobile-first</p>
@@ -322,6 +362,7 @@ export function TechnicianPage() {
               "technician-card",
               isClaimable ? "is-claimable" : "",
               recentlyUpdatedId === workOrder.id ? "is-updated" : "",
+              liveArrival?.id === workOrder.id ? "is-new-live" : "",
               recentlyClaimedId === workOrder.id ? "is-claimed" : ""
             ]
               .filter(Boolean)
