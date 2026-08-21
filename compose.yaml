@@ -1,0 +1,16 @@
+services:
+  cmms:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sugi-cmms
+    restart: unless-stopped
+    ports:
+      - "${CMMS_PORT:-3300}:3300"
+    volumes:
+      - cmms-data:/app/apps/api/data
+      - cmms-uploads:/app/apps/api/uploads
+
+volumes:
+  cmms-data:
+  cmms-uploads:

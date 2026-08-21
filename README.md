@@ -85,6 +85,42 @@ To cancel the conflicted rebase and return to the state before the pull:
 git rebase --abort
 ```
 
+### Update the Docker deployment on a Linux Atom PC
+
+On the Linux PC, go to the cloned project and confirm that there are no unfinished local changes:
+
+```bash
+cd /opt/sugi-cmms
+git status
+```
+
+Pull the latest code, rebuild the image, and recreate the app container:
+
+```bash
+git pull --ff-only origin main
+docker compose up -d --build --remove-orphans
+docker compose ps
+```
+
+The SQLite database and uploaded images are stored in the `cmms-data` and `cmms-uploads` Docker volumes. Rebuilding or recreating the container keeps this data. **Do not run `docker compose down -v`**, because `-v` deletes those volumes and their CMMS data.
+
+Useful Docker commands:
+
+```bash
+# Follow the app logs
+docker compose logs -f --tail=100 cmms
+
+# Restart without rebuilding
+docker compose restart cmms
+
+# Check the API from the Linux PC
+curl http://localhost:3300/api/health
+
+# Stop and start the app while keeping its data
+docker compose stop
+docker compose start
+```
+
 ### Update the Raspberry Pi deployment
 
 After pushing an update, run these commands on the Raspberry Pi:
@@ -97,6 +133,66 @@ corepack pnpm build
 sudo systemctl restart sugi-cmms
 sudo systemctl status sugi-cmms --no-pager
 ```
+
+## Docker Install on a Linux Atom PC
+
+This repository includes a production `Dockerfile` and `compose.yaml`. The Docker image uses Node.js 24 and serves both the API and built website on port `3300`.
+
+Install Docker Engine with the official instructions for your Linux distribution, including the Docker Compose plugin. Confirm that both commands work:
+
+```bash
+docker --version
+docker compose version
+```
+
+Clone and start Sugi CMMS:
+
+```bash
+sudo mkdir -p /opt/sugi-cmms
+sudo chown "$USER":"$USER" /opt/sugi-cmms
+git clone https://github.com/digitalsgisb/cmms.git /opt/sugi-cmms
+cd /opt/sugi-cmms
+docker compose up -d --build
+```
+
+Open the application from another device on the same network:
+
+- CMMS: `http://<atom-pc-ip>:3300`
+- API health: `http://<atom-pc-ip>:3300/api/health`
+
+Find the Atom PC's IP address with:
+
+```bash
+hostname -I
+```
+
+If port `3300` is already used, create a `.env` file beside `compose.yaml` with another host port:
+
+```dotenv
+CMMS_PORT=8080
+```
+
+Then recreate the container and open `http://<atom-pc-ip>:8080`:
+
+```bash
+docker compose up -d
+```
+
+### Back up Docker data
+
+Stop the app briefly so the SQLite backup is consistent, copy both persistent folders, and start it again:
+
+```bash
+cd /opt/sugi-cmms
+backup_dir="backups/$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$backup_dir"
+docker compose stop cmms
+docker compose cp cmms:/app/apps/api/data "$backup_dir/data"
+docker compose cp cmms:/app/apps/api/uploads "$backup_dir/uploads"
+docker compose start cmms
+```
+
+Keep the resulting `backups/<date-time>` folder somewhere safe outside the Atom PC as well.
 
 ## Raspberry Pi Service Install
 
