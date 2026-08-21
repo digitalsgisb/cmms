@@ -46,7 +46,7 @@ function isTechnicianTabActive(tabPath: string, pathname: string) {
 }
 
 export function Layout() {
-  const { currentUser, loadingUsers, logout } = useCurrentUser();
+  const { currentUser, loadingUsers, logout, refreshWorkOrders } = useCurrentUser();
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const knownNotificationIdsRef = useRef<Set<string> | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -73,6 +73,7 @@ export function Layout() {
         (notification) => notification.workOrderId && !knownNotificationIds.has(notification.id)
       );
       if (incomingWorkOrderNotification) {
+        void refreshWorkOrders().catch(console.error);
         window.dispatchEvent(new CustomEvent("sugi:work-orders-changed", {
           detail: { workOrderId: incomingWorkOrderNotification.workOrderId }
         }));

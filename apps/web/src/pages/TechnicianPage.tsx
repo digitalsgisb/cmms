@@ -10,7 +10,6 @@ import { ActionButton } from "../components/ActionButton";
 import { EmptyState } from "../components/EmptyState";
 import { useCurrentUser } from "../state/UserContext";
 import { formatDateTime } from "../utils/format";
-import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
 const actionSettleMs = 620;
 
@@ -43,7 +42,7 @@ function appearsInTechnicianQueue(workOrder: WorkOrder, currentUser: User | null
 }
 
 export function TechnicianPage() {
-  const { currentUser } = useCurrentUser();
+  const { currentUser, workOrders: liveWorkOrders, workOrdersReady, refreshWorkOrders } = useCurrentUser();
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [busyId, setBusyId] = useState("");
   const [busyAction, setBusyAction] = useState("");
@@ -72,9 +71,8 @@ export function TechnicianPage() {
     }, 8000);
   }
 
-  async function loadWorkOrders(announceIncoming = false) {
-    const nextWorkOrders = await api.workOrders();
-    if (announceIncoming && hasLoadedWorkOrdersRef.current) {
+  function applyLiveWorkOrders(nextWorkOrders: WorkOrder[]) {
+    if (hasLoadedWorkOrdersRef.current) {
       const knownIds = new Set(workOrdersRef.current.map((workOrder) => workOrder.id));
       const newArrival = nextWorkOrders.find(
         (workOrder) => !knownIds.has(workOrder.id) && appearsInTechnicianQueue(workOrder, currentUser)
@@ -88,20 +86,15 @@ export function TechnicianPage() {
   }
 
   useEffect(() => {
-    loadWorkOrders().catch(console.error);
-  }, []);
-
-  useLiveRefresh(["work-orders"], () => loadWorkOrders(true), { fallbackMs: 5000 });
+    if (!workOrdersReady) return;
+    applyLiveWorkOrders(liveWorkOrders);
+  }, [liveWorkOrders, workOrdersReady, currentUser?.id]);
 
   useEffect(() => {
-    const refreshFromNotification = () => void loadWorkOrders(true).catch(console.error);
-    const visibleSafetyRefresh = window.setInterval(() => {
-      if (document.visibilityState === "visible") refreshFromNotification();
-    }, 2500);
+    const refreshFromNotification = () => void refreshWorkOrders().catch(console.error);
     window.addEventListener("sugi:work-orders-changed", refreshFromNotification);
 
     return () => {
-      window.clearInterval(visibleSafetyRefresh);
       window.removeEventListener("sugi:work-orders-changed", refreshFromNotification);
       if (liveArrivalTimerRef.current) window.clearTimeout(liveArrivalTimerRef.current);
     };
@@ -191,7 +184,7 @@ export function TechnicianPage() {
         .catch(console.error);
     } catch (error) {
       setQueueError(error instanceof Error ? error.message : "Unable to accept this work order.");
-      void loadWorkOrders().catch(console.error);
+      void refreshWorkOrders().catch(console.error);
     } finally {
       setSubmitting(false);
       setBusyId("");
@@ -331,6 +324,7 @@ export function TechnicianPage() {
           <p className="eyebrow">Mobile-first</p>
           <h1>Technician Queue</h1>
         </div>
+        <span className="technician-live-version"><i />Live Sync R5</span>
       </div>
 
       <div className="technician-focus-strip">

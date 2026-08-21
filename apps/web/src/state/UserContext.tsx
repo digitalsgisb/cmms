@@ -1,6 +1,7 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import type { User } from "@sugi-cmms/shared";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import type { User, WorkOrder } from "@sugi-cmms/shared";
 import { api } from "../api/client";
+import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
 interface UserContextValue {
   users: User[];
@@ -11,6 +12,9 @@ interface UserContextValue {
   logout: () => void;
   setCurrentUserId: (id: string) => void;
   refreshUsers: () => Promise<void>;
+  workOrders: WorkOrder[];
+  workOrdersReady: boolean;
+  refreshWorkOrders: () => Promise<WorkOrder[]>;
 }
 
 const UserContext = createContext<UserContextValue | null>(null);
@@ -20,6 +24,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [users, setUsers] = useState<User[]>([]);
   const [currentUserId, setCurrentUserIdState] = useState(() => localStorage.getItem(sessionUserKey) || "");
   const [loadingUsers, setLoadingUsers] = useState(true);
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [workOrdersReady, setWorkOrdersReady] = useState(false);
+  const workOrdersRequestRef = useRef<Promise<WorkOrder[]> | null>(null);
 
   async function refreshUsers() {
     setLoadingUsers(true);
@@ -51,6 +58,22 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     setCurrentUserIdState("");
   }
 
+  async function refreshWorkOrders() {
+    if (workOrdersRequestRef.current) return workOrdersRequestRef.current;
+
+    const request = api.workOrders()
+      .then((nextWorkOrders) => {
+        setWorkOrders(nextWorkOrders);
+        setWorkOrdersReady(true);
+        return nextWorkOrders;
+      })
+      .finally(() => {
+        workOrdersRequestRef.current = null;
+      });
+    workOrdersRequestRef.current = request;
+    return request;
+  }
+
   useEffect(() => {
     refreshUsers().catch(console.error);
   }, []);
@@ -60,9 +83,33 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }, [currentUserId, users]);
   const isAuthenticated = Boolean(currentUser);
 
+  useEffect(() => {
+    if (!currentUser) {
+      setWorkOrders([]);
+      setWorkOrdersReady(false);
+      return;
+    }
+
+    setWorkOrdersReady(false);
+    void refreshWorkOrders().catch(console.error);
+    const interval = window.setInterval(() => void refreshWorkOrders().catch(console.error), currentUser.role === "technician" ? 2000 : 10000);
+    const refreshNow = () => void refreshWorkOrders().catch(console.error);
+    window.addEventListener("focus", refreshNow);
+    window.addEventListener("online", refreshNow);
+    document.addEventListener("visibilitychange", refreshNow);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshNow);
+      window.removeEventListener("online", refreshNow);
+      document.removeEventListener("visibilitychange", refreshNow);
+    };
+  }, [currentUser?.id, currentUser?.role]);
+
+  useLiveRefresh(["work-orders"], async () => { await refreshWorkOrders(); }, { enabled: Boolean(currentUser), fallbackMs: 5000 });
+
   const value = useMemo<UserContextValue>(
-    () => ({ users, currentUser, loadingUsers, isAuthenticated, login, logout, setCurrentUserId, refreshUsers }),
-    [users, currentUser, loadingUsers, isAuthenticated]
+    () => ({ users, currentUser, loadingUsers, isAuthenticated, login, logout, setCurrentUserId, refreshUsers, workOrders, workOrdersReady, refreshWorkOrders }),
+    [users, currentUser, loadingUsers, isAuthenticated, workOrders, workOrdersReady]
   );
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
