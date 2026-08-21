@@ -23,6 +23,7 @@ import {
   Wrench
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLiveRefresh } from "../hooks/useLiveRefresh";
 import {
   Area,
   AreaChart,
@@ -179,6 +180,8 @@ export function ReportsPage() {
   useEffect(() => {
     loadData().catch(console.error);
   }, [loadData]);
+
+  useLiveRefresh(["work-orders", "spare-parts", "pm"], () => loadData(true), { enabled: Boolean(currentUser) });
 
   const selectPreset = (preset: ReportPreset) => {
     setActivePreset(preset.id);

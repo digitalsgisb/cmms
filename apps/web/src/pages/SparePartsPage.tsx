@@ -27,6 +27,7 @@ import type { SparePart, SparePartDetail, SpareSyncSettings, StockMovementDetail
 import { api } from "../api/client";
 import { useCurrentUser } from "../state/UserContext";
 import { formatDateTime } from "../utils/format";
+import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
 type SpareView = "dashboard" | "inventory" | "scanner" | "setup" | "detail";
 type StockFilter = "all" | "low" | "out";
@@ -226,6 +227,13 @@ export function SparePartsPage() {
     if (!currentUser || currentUser.role === "requester") return;
     setMyMovements(await api.spareMovementsForActor(currentUser.id));
   }
+
+  useLiveRefresh(["spare-parts"], async () => {
+    await loadInventory();
+    if (routeItemNo && !["setup", "scanner", "inventory"].includes(routeItemNo)) await loadDetail(routeItemNo);
+    if (technicianMode) await loadMyMovements();
+  });
+  useLiveRefresh(["work-orders"], async () => setWorkOrders(await api.workOrders()));
 
   useEffect(() => {
     loadInventory().catch(console.error);

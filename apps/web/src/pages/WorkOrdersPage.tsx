@@ -7,6 +7,7 @@ import { api } from "../api/client";
 import { PriorityBadge, StatusBadge } from "../components/Badges";
 import { formatDateTime, formatLiveDuration, userName } from "../utils/format";
 import { useCurrentUser } from "../state/UserContext";
+import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
 const statusOptions: Array<WorkOrderStatus | "all"> = [
   "all",
@@ -40,6 +41,8 @@ export function WorkOrdersPage() {
     loadWorkOrders().catch(console.error);
     api.masterData().then(setMasterData).catch(console.error);
   }, []);
+
+  useLiveRefresh(["work-orders"], loadWorkOrders);
 
   useEffect(() => {
     const interval = window.setInterval(() => setTimerNow(new Date().toISOString()), 1000);

@@ -44,6 +44,8 @@ import type {
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
 
+export const liveEventsUrl = `${API_BASE}/api/events`;
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,

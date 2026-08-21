@@ -7,6 +7,7 @@ import { PwaInstallButton } from "../components/PwaInstallButton";
 import { SearchableSelect } from "../components/SearchableSelect";
 import { StatusBadge } from "../components/Badges";
 import { formatDateTime } from "../utils/format";
+import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
 function todayDate() {
   return new Date().toISOString().slice(0, 10);
@@ -48,6 +49,8 @@ export function PublicRequesterPage() {
   useEffect(() => {
     loadRequesterData().catch(console.error);
   }, []);
+
+  useLiveRefresh(["work-orders", "master-data"], loadRequesterData);
 
   const activeSections = useMemo(() => masterData.sections.filter((section) => section.active), [masterData.sections]);
   const activeIssueCategories = useMemo(() => masterData.issueCategories.filter((category) => category.active), [masterData.issueCategories]);

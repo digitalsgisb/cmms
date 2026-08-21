@@ -22,6 +22,7 @@ import { PriorityBadge, StatusBadge } from "../components/Badges";
 import { MetricTile } from "../components/MetricTile";
 import { useCurrentUser } from "../state/UserContext";
 import { formatDateTime, formatLongDisplayDate } from "../utils/format";
+import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
 function percent(value: number, total: number) {
   return total > 0 ? Math.round((value / total) * 100) : 0;
@@ -45,9 +46,9 @@ export function DashboardPage() {
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
 
-  async function loadDashboard() {
+  async function loadDashboard(showLoading = false) {
     if (!currentUser) return;
-    setLoading(true);
+    if (showLoading) setLoading(true);
     try {
       const year = new Date().getFullYear();
       const [nextSummary, nextWorkOrders, nextInventory, nextPm, nextAssets] = await Promise.all([
@@ -68,8 +69,10 @@ export function DashboardPage() {
   }
 
   useEffect(() => {
-    loadDashboard().catch(console.error);
+    loadDashboard(true).catch(console.error);
   }, [currentUser?.id]);
+
+  useLiveRefresh(["dashboard"], () => loadDashboard(false), { enabled: Boolean(currentUser) });
 
   const activeWorkOrders = useMemo(
     () => workOrders

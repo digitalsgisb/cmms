@@ -10,6 +10,7 @@ import { ActionButton } from "../components/ActionButton";
 import { EmptyState } from "../components/EmptyState";
 import { useCurrentUser } from "../state/UserContext";
 import { formatDateTime } from "../utils/format";
+import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
 const actionSettleMs = 620;
 
@@ -54,6 +55,8 @@ export function TechnicianPage() {
   useEffect(() => {
     loadWorkOrders().catch(console.error);
   }, []);
+
+  useLiveRefresh(["work-orders"], loadWorkOrders, { fallbackMs: 10000 });
 
   useEffect(() => {
     if (!resolveTarget) {

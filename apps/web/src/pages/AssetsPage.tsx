@@ -24,6 +24,7 @@ import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useCurrentUser } from "../state/UserContext";
+import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
 const conditionLabels: Record<AssetCondition, string> = {
   operational: "Operational",
@@ -61,8 +62,8 @@ export function AssetsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  async function loadAssets() {
-    setLoading(true);
+  async function loadAssets(showLoading = false) {
+    if (showLoading) setLoading(true);
     try {
       const next = await api.assetDashboard();
       setDashboard(next);
@@ -75,8 +76,10 @@ export function AssetsPage() {
   }
 
   useEffect(() => {
-    loadAssets().catch(console.error);
+    loadAssets(true).catch(console.error);
   }, []);
+
+  useLiveRefresh(["assets"], () => loadAssets(false));
 
   const filteredAssets = useMemo(() => {
     const query = search.trim().toLowerCase();

@@ -5,6 +5,7 @@ import { workOrderStatusLabels } from "@sugi-cmms/shared";
 import { api } from "../api/client";
 import { PriorityBadge } from "../components/Badges";
 import { formatDateTime } from "../utils/format";
+import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
 const columns: Array<{ title: string; statuses: WorkOrderStatus[]; tone: string }> = [
   { title: "New", statuses: ["open"], tone: "danger" },
@@ -23,13 +24,13 @@ export function TvDashboardPage() {
 
   useEffect(() => {
     loadWorkOrders().catch(console.error);
-    const refresh = window.setInterval(() => loadWorkOrders().catch(console.error), 30000);
     const clock = window.setInterval(() => setNow(new Date()), 1000);
     return () => {
-      window.clearInterval(refresh);
       window.clearInterval(clock);
     };
   }, []);
+
+  useLiveRefresh(["work-orders"], loadWorkOrders, { fallbackMs: 10000 });
 
   const activeCount = useMemo(
     () => workOrders.filter((workOrder) => !["closed", "cancelled"].includes(workOrder.status)).length,

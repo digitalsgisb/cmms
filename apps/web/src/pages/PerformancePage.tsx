@@ -21,6 +21,7 @@ import {
   Wrench
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLiveRefresh } from "../hooks/useLiveRefresh";
 import {
   Area,
   AreaChart,
@@ -170,11 +171,10 @@ export function PerformancePage() {
     loadPerformance().catch(console.error);
   }, [loadPerformance]);
 
-  useEffect(() => {
-    if (!live) return;
-    const timer = window.setInterval(() => loadPerformance(true).catch(console.error), 30000);
-    return () => window.clearInterval(timer);
-  }, [live, loadPerformance]);
+  useLiveRefresh(["work-orders", "spare-parts", "pm"], () => loadPerformance(true), {
+    enabled: live && Boolean(currentUser),
+    fallbackMs: 30000
+  });
 
   const now = reportDate;
   const scopedWorkOrders = useMemo(

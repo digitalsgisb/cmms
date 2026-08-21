@@ -21,6 +21,7 @@ import type { NotificationRecord } from "@sugi-cmms/shared";
 import { api, mediaUrl } from "../api/client";
 import { useCurrentUser } from "../state/UserContext";
 import { formatShortDate } from "../utils/format";
+import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
 const navItems = [
   { to: "/performance", label: "Performance", icon: ChartNoAxesCombined },
@@ -70,9 +71,9 @@ export function Layout() {
 
   useEffect(() => {
     loadNotifications().catch(console.error);
-    const interval = window.setInterval(() => loadNotifications().catch(console.error), 15000);
-    return () => window.clearInterval(interval);
   }, [currentUser?.id]);
+
+  useLiveRefresh(["notifications"], loadNotifications, { enabled: Boolean(currentUser), fallbackMs: 15000 });
 
   const unreadCount = useMemo(() => notifications.filter((notification) => !notification.readAt).length, [notifications]);
   const breadcrumb = useMemo(() => {

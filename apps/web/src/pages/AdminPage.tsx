@@ -4,6 +4,7 @@ import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import type { IssueCategory, Machine, MasterData, Section } from "@sugi-cmms/shared";
 import { api, mediaUrl } from "../api/client";
 import { useCurrentUser } from "../state/UserContext";
+import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
 const roleNotes = {
   requester: "Issues and tracks department work orders.",
@@ -95,6 +96,8 @@ export function AdminPage() {
   useEffect(() => {
     loadMasterData().catch(console.error);
   }, []);
+
+  useLiveRefresh(["master-data"], loadMasterData);
 
   useEffect(() => {
     QRCode.toString(qrTargetUrl, { type: "svg", margin: 1, width: 220 })

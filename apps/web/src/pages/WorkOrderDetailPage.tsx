@@ -9,6 +9,7 @@ import { PriorityBadge, StatusBadge } from "../components/Badges";
 import { ActionButton } from "../components/ActionButton";
 import { useCurrentUser } from "../state/UserContext";
 import { formatDate, formatDateTime, formatDuration, userName } from "../utils/format";
+import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
 const workflowSteps: WorkOrderStatus[] = ["open", "acknowledged", "in_progress", "pending_material", "resolved", "closed"];
 const actionSettleMs = 620;
@@ -108,6 +109,8 @@ export function WorkOrderDetailPage() {
     updateDetailWithoutJump(() => nextDetail);
     setAssignedToId(nextDetail.assignedToId || "");
   }
+
+  useLiveRefresh(["work-orders"], refreshDetailQuietly, { enabled: Boolean(id) });
 
   const technicians = useMemo(() => users.filter((user) => user.role === "technician"), [users]);
   const canMaintain = currentUser ? ["technician", "executive", "admin"].includes(currentUser.role) : false;

@@ -68,6 +68,7 @@ import {
 
 const app = express();
 const port = Number(process.env.PORT || 3300);
+const liveClients = new Set<Response>();
 const uploadsTempDir = path.join(uploadsRoot, "tmp");
 const webDistRoot = [
   path.resolve(process.cwd(), "../web/dist"),
@@ -151,6 +152,67 @@ seed();
 app.use(cors());
 app.use(express.json({ limit: "12mb" }));
 app.use("/uploads", express.static(uploadsRoot));
+
+type LiveTopic = "work-orders" | "notifications" | "dashboard" | "spare-parts" | "pm" | "assets" | "master-data" | "users";
+
+function topicsForMutation(pathname: string): LiveTopic[] {
+  if (pathname.startsWith("/api/requester/work-orders") || pathname.startsWith("/api/work-orders")) {
+    return ["work-orders", "notifications", "dashboard"];
+  }
+  if (pathname.startsWith("/api/spare-parts")) return ["spare-parts", "dashboard"];
+  if (pathname.startsWith("/api/pm")) return ["pm", "dashboard"];
+  if (pathname.startsWith("/api/assets")) return ["assets", "dashboard"];
+  if (pathname.startsWith("/api/master-data")) return ["master-data"];
+  if (pathname.startsWith("/api/users")) return ["users"];
+  if (pathname.startsWith("/api/notifications")) return ["notifications"];
+  return [];
+}
+
+function publishLiveChange(topic: LiveTopic, request: Request) {
+  const message = JSON.stringify({ topic, path: request.path, method: request.method, at: new Date().toISOString() });
+  for (const client of liveClients) {
+    client.write(`data: ${message}\n\n`);
+  }
+}
+
+app.get("/api/events", (request, response) => {
+  response.set({
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no"
+  });
+  response.flushHeaders();
+  response.write(`retry: 2000\ndata: ${JSON.stringify({ topic: "connected", at: new Date().toISOString() })}\n\n`);
+  liveClients.add(response);
+
+  request.on("close", () => {
+    liveClients.delete(response);
+  });
+});
+
+// Broadcast only after a successful write has fully completed. This covers every
+// current and future mutation without coupling the database layer to HTTP clients.
+app.use((request, response, next) => {
+  if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) {
+    next();
+    return;
+  }
+
+  response.on("finish", () => {
+    if (response.statusCode < 400) {
+      topicsForMutation(request.path).forEach((topic) => publishLiveChange(topic, request));
+    }
+  });
+  next();
+});
+
+const liveHeartbeat = setInterval(() => {
+  for (const client of liveClients) {
+    client.write(`: keep-alive ${Date.now()}\n\n`);
+  }
+}, 25000);
+liveHeartbeat.unref();
 
 app.get("/api/health", (_request, response) => {
   response.json({

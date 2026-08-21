@@ -43,6 +43,7 @@ import type {
 } from "@sugi-cmms/shared";
 import { api, mediaUrl } from "../api/client";
 import { useCurrentUser } from "../state/UserContext";
+import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
 const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const shortMonths = months.map((month) => month.slice(0, 3));
@@ -137,6 +138,8 @@ function PmCommandCenter() {
   useEffect(() => {
     load().catch(console.error);
   }, [currentUser?.id]);
+
+  useLiveRefresh(["pm"], load, { enabled: Boolean(currentUser) });
 
   const technicians = useMemo(() => {
     return [...new Set((data?.plans || []).map((plan) => plan.technicianName))].sort();
@@ -813,6 +816,7 @@ function PmChecklistExecution({ scheduleId }: { scheduleId: string }) {
   }
 
   useEffect(() => { load().catch(console.error); }, [scheduleId, currentUser?.id]);
+  useLiveRefresh(["pm"], load, { enabled: Boolean(currentUser) });
   useEffect(() => {
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
