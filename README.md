@@ -85,40 +85,68 @@ To cancel the conflicted rebase and return to the state before the pull:
 git rebase --abort
 ```
 
-### Update the Docker deployment on a Linux Atom PC
+### Update the existing production Docker deployment on the Atom PC
 
-On the Linux PC, go to the cloned project and confirm that there are no unfinished local changes:
+The current Sugi CMMS production server uses these locations:
+
+- App repository: `/srv/apps/cmms`
+- Compose file: `/srv/apps/cmms/docker-compose.yml`
+- SQLite data: `/srv/app-data/cmms/data`
+- Uploaded images: `/srv/app-data/cmms/uploads`
+- Container: `sugi-cmms`
+- Port: `3300`
+
+The repository also contains a default `compose.yaml` for fresh installations. On this existing server, always include `-f docker-compose.yml` so Docker uses the production bind mounts above and does not accidentally start a separate empty installation.
+
+First, check that the repository has no unfinished local changes:
 
 ```bash
-cd /opt/sugi-cmms
+cd /srv/apps/cmms
 git status
+git remote -v
+git branch --show-current
 ```
 
-Pull the latest code, rebuild the image, and recreate the app container:
+Before an update, make a timestamped backup. The short stop ensures the SQLite file is copied consistently:
 
 ```bash
+backup_file="/srv/app-data/cmms-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
+
+docker stop sugi-cmms
+sudo tar -czf "$backup_file" -C /srv/app-data/cmms data uploads
+docker start sugi-cmms
+
+echo "Backup saved to: $backup_file"
+```
+
+Pull the latest code, rebuild the image, and recreate the container using the existing production configuration:
+
+```bash
+cd /srv/apps/cmms
 git pull --ff-only origin main
-docker compose up -d --build --remove-orphans
-docker compose ps
+docker compose -f docker-compose.yml up -d --build --remove-orphans
+docker compose -f docker-compose.yml ps
+docker compose -f docker-compose.yml logs --tail=100 cmms
+curl http://localhost:3300/api/health
 ```
 
-The SQLite database and uploaded images are stored in the `cmms-data` and `cmms-uploads` Docker volumes. Rebuilding or recreating the container keeps this data. **Do not run `docker compose down -v`**, because `-v` deletes those volumes and their CMMS data.
+The bind-mounted database and uploads remain in `/srv/app-data/cmms` when the container is rebuilt. Do not delete that directory. Also avoid `docker compose down -v` because it can delete Docker-managed volumes in other Compose configurations.
 
-Useful Docker commands:
+Useful commands for this production deployment:
 
 ```bash
-# Follow the app logs
-docker compose logs -f --tail=100 cmms
+# Follow app logs
+docker compose -f /srv/apps/cmms/docker-compose.yml logs -f --tail=100 cmms
 
 # Restart without rebuilding
-docker compose restart cmms
+docker compose -f /srv/apps/cmms/docker-compose.yml restart cmms
 
-# Check the API from the Linux PC
+# Check the API
 curl http://localhost:3300/api/health
 
-# Stop and start the app while keeping its data
-docker compose stop
-docker compose start
+# Stop and start while retaining the bind-mounted data
+docker compose -f /srv/apps/cmms/docker-compose.yml stop cmms
+docker compose -f /srv/apps/cmms/docker-compose.yml start cmms
 ```
 
 ### Update the Raspberry Pi deployment
