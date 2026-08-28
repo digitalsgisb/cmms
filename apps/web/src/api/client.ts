@@ -109,6 +109,7 @@ export const api = {
     });
   },
   dashboardSummary: () => request<DashboardSummary>("/api/dashboard-summary"),
+  publicConfig: () => request<{ requesterUrl: string }>("/api/system/public-config"),
   assetDashboard: () => request<AssetDashboardResponse>("/api/assets"),
   updateAsset: (id: string, input: UpdateAssetInput) =>
     request<AssetRecord>(`/api/assets/${id}`, {

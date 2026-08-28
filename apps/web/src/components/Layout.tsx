@@ -32,6 +32,7 @@ const navItems = [
 ];
 
 const technicianTabs = [
+  { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/technician", label: "Jobs", icon: ClipboardCheck },
   { to: "/spare-parts/scanner", label: "Parts", icon: Package },
   { to: "/preventive-maintenance", label: "PM", icon: ShieldCheck, locked: true },
@@ -39,6 +40,9 @@ const technicianTabs = [
 ];
 
 function isTechnicianTabActive(tabPath: string, pathname: string) {
+  if (tabPath === "/") {
+    return pathname === "/";
+  }
   if (tabPath === "/technician") {
     return pathname.startsWith("/technician") || pathname.startsWith("/work-orders");
   }
@@ -310,10 +314,10 @@ export function Layout() {
         </div>
 
         <nav className="nav-list" aria-label="Main navigation">
-          {hasDeveloperAccess ? <NavLink to="/" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} onClick={() => setMobileNavOpen(false)}>
+          <NavLink to="/" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} onClick={() => setMobileNavOpen(false)}>
             <LayoutDashboard size={18} aria-hidden="true" />
             <span>Dashboard</span>
-          </NavLink> : <span className="nav-item locked" aria-disabled="true"><LayoutDashboard size={18} aria-hidden="true" /><span>Dashboard</span><LockKeyhole className="nav-lock" size={14} aria-hidden="true" /></span>}
+          </NavLink>
 
           <div className={`nav-group ${workOrdersOpen ? "open" : ""}`}>
             <NavLink

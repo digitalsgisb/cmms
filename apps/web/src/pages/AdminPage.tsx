@@ -108,6 +108,11 @@ export function AdminPage() {
 
   useEffect(() => {
     loadMasterData().catch(console.error);
+    api.publicConfig()
+      .then((config) => {
+        if (config.requesterUrl) setRequesterUrl(config.requesterUrl);
+      })
+      .catch(console.error);
   }, []);
 
   useLiveRefresh(["master-data"], loadMasterData);
@@ -521,6 +526,7 @@ export function AdminPage() {
               <label className="requester-url-field">
                 QR URL
                 <input value={requesterUrl} onChange={(event) => setRequesterUrl(event.target.value)} />
+                <small>The live system address is filled automatically. Change it only when the wall poster needs a different public or factory-network URL.</small>
               </label>
               <button type="button" onClick={copyRequesterUrl}>
                 <ClipboardCopy size={16} aria-hidden="true" />
@@ -539,7 +545,7 @@ export function AdminPage() {
               </button>
               <button className="poster-download-button" type="button" onClick={downloadPoster} disabled={posterBusy || !qrTargetUrl}>
                 <FileDown size={16} aria-hidden="true" />
-                {posterBusy ? "Creating PDF..." : "Download PDF Poster"}
+                {posterBusy ? "Creating print PDF..." : "Download Print-Ready PDF"}
               </button>
             </div>
           </div>

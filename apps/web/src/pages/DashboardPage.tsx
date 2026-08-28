@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   ClipboardList,
   Factory,
+  LockKeyhole,
   Package,
   PackageCheck,
   Plus,
@@ -45,24 +46,29 @@ export function DashboardPage() {
   const [assets, setAssets] = useState<AssetDashboardResponse | null>(null);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const canUseInProgressModules = Boolean(currentUser && ["admin", "developer"].includes(currentUser.role));
 
   async function loadDashboard(showLoading = false) {
     if (!currentUser) return;
     if (showLoading) setLoading(true);
     try {
-      const year = new Date().getFullYear();
-      const [nextSummary, nextWorkOrders, nextInventory, nextPm, nextAssets] = await Promise.all([
+      const [nextSummary, nextWorkOrders, nextInventory] = await Promise.all([
         api.dashboardSummary(),
         api.workOrders(),
-        api.spareInventory(),
-        api.pmDashboard(currentUser.id, year),
-        api.assetDashboard()
+        api.spareInventory()
       ]);
       setSummary(nextSummary);
       setWorkOrders(nextWorkOrders);
       setInventory(nextInventory);
-      setPm(nextPm);
-      setAssets(nextAssets);
+      if (canUseInProgressModules) {
+        const year = new Date().getFullYear();
+        const [nextPm, nextAssets] = await Promise.all([api.pmDashboard(currentUser.id, year), api.assetDashboard()]);
+        setPm(nextPm);
+        setAssets(nextAssets);
+      } else {
+        setPm(null);
+        setAssets(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -70,7 +76,7 @@ export function DashboardPage() {
 
   useEffect(() => {
     loadDashboard(true).catch(console.error);
-  }, [currentUser?.id]);
+  }, [canUseInProgressModules, currentUser?.id]);
 
   useLiveRefresh(["dashboard"], () => loadDashboard(false), { enabled: Boolean(currentUser) });
 
@@ -127,15 +133,15 @@ export function DashboardPage() {
         <div className="dashboard-hero-main">
           <p className="hero-eyebrow"><span aria-hidden="true" /> Live maintenance command · {formatLongDisplayDate()}</p>
           <h1>Good day, {currentUser?.name.split(" ")[0] ?? "team"}.</h1>
-          <p>Everything that needs attention across work orders, spare parts and preventive maintenance—kept in one readable view.</p>
+          <p>Everything that needs attention across work orders and spare parts—kept in one readable view.</p>
           <div className="hero-actions">
             <Link className="primary-action" to="/work-orders/new"><Plus size={17} /> New Work Order</Link>
-            <Link className="secondary-action" to="/performance"><BarChart3 size={17} /> Open Performance</Link>
+            {canUseInProgressModules ? <Link className="secondary-action" to="/performance"><BarChart3 size={17} /> Open Performance</Link> : <Link className="secondary-action" to="/spare-parts"><Package size={17} /> Open Spare Parts</Link>}
           </div>
         </div>
         <div className="dashboard-hero-signals">
           <article><Wrench size={17} /><span>Critical work</span><strong>{criticalOpen}</strong><small>open now</small></article>
-          <article><CalendarClock size={17} /><span>PM due</span><strong>{pm?.summary.dueThisWeek ?? 0}</strong><small>this week</small></article>
+          <article><CalendarClock size={17} /><span>PM due</span><strong>{canUseInProgressModules ? pm?.summary.dueThisWeek ?? 0 : "—"}</strong><small>{canUseInProgressModules ? "this week" : "module locked"}</small></article>
           <article><Package size={17} /><span>Parts risk</span><strong>{partsRisk}</strong><small>below minimum</small></article>
         </div>
       </div>
@@ -145,7 +151,7 @@ export function DashboardPage() {
         <MetricTile icon={AlertTriangle} label="New requests" value={summary?.newWorkOrders ?? 0} tone="danger" />
         <MetricTile icon={Wrench} label="In progress" value={summary?.inProgress ?? 0} />
         <MetricTile icon={CheckCircle2} label="Closed today" value={summary?.closedToday ?? 0} tone="success" />
-        <MetricTile icon={ShieldCheck} label="PM compliance" value={`${pmCompliance}%`} tone={pmCompliance >= 95 ? "success" : undefined} />
+        <MetricTile icon={ShieldCheck} label="PM compliance" value={canUseInProgressModules ? `${pmCompliance}%` : "Locked"} tone={canUseInProgressModules && pmCompliance >= 95 ? "success" : undefined} />
         <MetricTile icon={PackageCheck} label="Parts available" value={`${inventory ? percent(inventory.summary.totalParts - inventory.summary.outOfStock, inventory.summary.totalParts) : 0}%`} tone="success" />
       </div>
 
@@ -165,15 +171,15 @@ export function DashboardPage() {
         </section>
 
         <section className="dashboard-command-card dashboard-pm-card">
-          <div className="dashboard-card-heading"><div><span>Preventive maintenance</span><h2>PM discipline</h2></div><Link to="/preventive-maintenance"><ArrowRight size={15} /></Link></div>
-          <div className="dashboard-pm-overview">
+          <div className="dashboard-card-heading"><div><span>Preventive maintenance</span><h2>PM discipline</h2></div>{canUseInProgressModules ? <Link to="/preventive-maintenance"><ArrowRight size={15} /></Link> : <span className="dashboard-feature-lock"><LockKeyhole size={14} />Locked</span>}</div>
+          {canUseInProgressModules ? <div className="dashboard-pm-overview">
             <div className="dashboard-compliance-ring" style={{ "--dashboard-ring": `${pmCompliance}%` } as React.CSSProperties}><div><strong>{pmCompliance}%</strong><span>compliance</span></div></div>
             <div className="dashboard-pm-stats">
               <span><strong>{pm?.summary.completedThisMonth ?? 0}</strong> completed this month</span>
               <span className={(pm?.summary.overdue ?? 0) > 0 ? "risk" : ""}><strong>{pm?.summary.overdue ?? 0}</strong> overdue schedules</span>
               <span><strong>{pm?.summary.checklistCoveragePercent ?? 0}%</strong> checklist coverage</span>
             </div>
-          </div>
+          </div> : <DashboardLockedMessage />}
         </section>
 
         <section className="dashboard-command-card dashboard-stock-card">
@@ -192,18 +198,18 @@ export function DashboardPage() {
 
         <section className="dashboard-command-card dashboard-attention-card">
           <div className="dashboard-card-heading"><div><span>Next actions</span><h2>PM attention queue</h2><p>Recover overdue work first, then protect this week’s plan.</p></div><Sparkles size={18} /></div>
-          <div className="dashboard-attention-list">
+          {canUseInProgressModules ? <div className="dashboard-attention-list">
             {pmAttention.length > 0 ? pmAttention.map((item) => (
               <Link to="/preventive-maintenance/schedule" key={item.id} className={item.overdue ? "overdue" : ""}>
                 <i /><span><strong>{item.machineName}</strong><small>{item.technicianName} · {item.scheduledDate}</small></span><b>{item.overdue ? "Overdue" : item.status.replace("_", " ")}</b>
               </Link>
             )) : <p className="dashboard-clear-line"><CheckCircle2 size={15} /> No PM schedules need attention.</p>}
-          </div>
+          </div> : <DashboardLockedMessage />}
         </section>
 
         <section className="dashboard-command-card dashboard-asset-card">
-          <div className="dashboard-card-heading"><div><span>Asset management</span><h2>Production fleet readiness</h2><p>Lifecycle intelligence from the controlled 2026 machine register.</p></div><Link to="/assets">Open assets <ArrowRight size={14} /></Link></div>
-          <div className="dashboard-asset-layout">
+          <div className="dashboard-card-heading"><div><span>Asset management</span><h2>Production fleet readiness</h2><p>Lifecycle intelligence from the controlled 2026 machine register.</p></div>{canUseInProgressModules ? <Link to="/assets">Open assets <ArrowRight size={14} /></Link> : <span className="dashboard-feature-lock"><LockKeyhole size={14} />Locked</span>}</div>
+          {canUseInProgressModules ? <div className="dashboard-asset-layout">
             <div className="dashboard-asset-score">
               <div className="dashboard-compliance-ring dashboard-asset-ring" style={{ "--dashboard-ring": `${assets?.summary.totalAssets ? Math.round((assets.summary.operational / assets.summary.totalAssets) * 100) : 0}%` } as React.CSSProperties}><div><strong>{assets?.summary.totalAssets ?? 0}</strong><span>assets</span></div></div>
               <span><Factory size={15} /><strong>{assets?.summary.operational ?? 0}</strong> operational</span>
@@ -216,7 +222,7 @@ export function DashboardPage() {
               ))}
               {assetAttention.length === 0 ? <p className="dashboard-clear-line"><CheckCircle2 size={15} /> No assets are in the high-risk band.</p> : null}
             </div>
-          </div>
+          </div> : <DashboardLockedMessage />}
         </section>
       </div>
 
@@ -243,4 +249,8 @@ export function DashboardPage() {
       </section>
     </section>
   );
+}
+
+function DashboardLockedMessage() {
+  return <div className="dashboard-locked-message"><LockKeyhole size={20} /><div><strong>Module still in progress</strong><span>The overview stays visible, but this section remains locked for production users.</span></div></div>;
 }

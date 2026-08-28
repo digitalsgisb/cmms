@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Route, Routes, useLocation } from "react-router-dom";
 import { LockKeyhole } from "lucide-react";
 import { Layout } from "./components/Layout";
 import { AdminPage } from "./pages/AdminPage";
@@ -61,12 +61,6 @@ export function App() {
 }
 
 function HomePage() {
-  const { currentUser } = useCurrentUser();
-
-  if (currentUser && !["admin", "developer"].includes(currentUser.role)) {
-    return <Navigate to={currentUser.role === "technician" ? "/technician" : "/work-orders"} replace />;
-  }
-
   return <DashboardPage />;
 }
 

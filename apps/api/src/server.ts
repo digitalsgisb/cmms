@@ -323,6 +323,11 @@ app.get("/api/dashboard-summary", (_request, response) => {
   response.json(dashboardSummary());
 });
 
+app.get("/api/system/public-config", (_request, response) => {
+  const publicUrl = (process.env.APP_PUBLIC_URL || "").trim().replace(/\/$/, "");
+  response.json({ requesterUrl: publicUrl ? `${publicUrl}/requester` : "" });
+});
+
 app.get("/api/tv/work-orders", (_request, response) => {
   response.json(listTvWorkOrders());
 });

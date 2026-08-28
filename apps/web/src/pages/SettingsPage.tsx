@@ -1,4 +1,4 @@
-import { BellRing, Database, HardDrive, RadioTower, RefreshCw, Save, Settings2, Smartphone, Tv, Wrench } from "lucide-react";
+import { BellRing, Database, HardDrive, QrCode, RadioTower, RefreshCw, Save, Settings2, Smartphone, Tv, Wrench } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import type { WorkOrderSyncSettings } from "@sugi-cmms/shared";
 import { Link } from "react-router-dom";
@@ -90,6 +90,7 @@ export function SettingsPage() {
       </form>
 
       <div className="settings-grid">
+        <section className="section-panel settings-card"><QrCode size={22} aria-hidden="true" /><h2>Requester QR Poster</h2><p>The live requester URL is inserted automatically into a branded, print-ready A4 PDF.</p><Link className="secondary-action" to="/users?tab=qr">Generate print-ready PDF</Link></section>
         <section className="section-panel settings-card"><Wrench size={22} aria-hidden="true" /><h2>Work Order Master Data</h2><p>Manage the production machine list, areas, sections, and issue categories.</p><Link className="secondary-action" to="/users?tab=machines">Manage machines</Link></section>
         <section className="section-panel settings-card"><BellRing size={22} aria-hidden="true" /><h2>Notification Rules</h2><div className="settings-list">{notificationRows.map(([event, receiver]) => <div key={event}><span>{event}</span><strong>{receiver}</strong></div>)}</div></section>
         <section className="section-panel settings-card"><HardDrive size={22} aria-hidden="true" /><h2>Upload Storage</h2><div className="settings-list"><div><span>Mode</span><strong>Local server</strong></div><div><span>Folder</span><strong>apps/api/uploads</strong></div><div><span>Max file</span><strong>8 MB</strong></div></div></section>
