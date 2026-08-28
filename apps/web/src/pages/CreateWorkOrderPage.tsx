@@ -1,10 +1,11 @@
-import { ArrowLeft, CalendarDays, Factory, ImagePlus, Send, UserRound } from "lucide-react";
+import { ArrowLeft, CalendarDays, Factory, Send, UserRound } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import type { MasterData, ShiftGroup, WorkOrderType } from "@sugi-cmms/shared";
 import { workOrderTypeLabels } from "@sugi-cmms/shared";
 import { api } from "../api/client";
 import { SearchableSelect } from "../components/SearchableSelect";
+import { MultiPhotoPicker } from "../components/MultiPhotoPicker";
 import { useCurrentUser } from "../state/UserContext";
 
 function todayDate() {
@@ -33,7 +34,7 @@ export function CreateWorkOrderPage() {
   const [form, setForm] = useState(initialForm);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [issueFiles, setIssueFiles] = useState<FileList | null>(null);
+  const [issueFiles, setIssueFiles] = useState<File[]>([]);
 
   useEffect(() => {
     api.masterData()
@@ -199,12 +200,12 @@ export function CreateWorkOrderPage() {
           <textarea value={form.issueDescription} onChange={(event) => setForm({ ...form, issueDescription: event.target.value })} rows={5} required />
         </label>
 
-        <label className="issue-upload-field">
-          <ImagePlus size={15} aria-hidden="true" />
-          Photo issue
-          <input type="file" accept="image/*" multiple onChange={(event) => setIssueFiles(event.target.files)} />
-          <span>{issueFiles?.length ? `${issueFiles.length} image${issueFiles.length > 1 ? "s" : ""} selected` : "Optional, but useful for technician diagnosis."}</span>
-        </label>
+        <MultiPhotoPicker
+          files={issueFiles}
+          onChange={setIssueFiles}
+          disabled={submitting}
+          help="Choose several issue photos before creating the work order."
+        />
 
         {error ? <p className="error-line">{error}</p> : null}
 

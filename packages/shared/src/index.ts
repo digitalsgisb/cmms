@@ -276,6 +276,7 @@ export interface PublicRequesterWorkOrder {
   issueDescription: string;
   reportedByName: string;
   reportedByDepartment: string;
+  attachments: WorkOrderAttachment[];
   createdAt: string;
   updatedAt: string;
 }

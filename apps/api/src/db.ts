@@ -3428,7 +3428,7 @@ export function addAttachment(input: {
 }
 
 export function listRequesterWorkOrders(): PublicRequesterWorkOrder[] {
-  return rows<PublicRequesterWorkOrder>(
+  const workOrders = rows<Omit<PublicRequesterWorkOrder, "attachments">>(
     db.prepare(`
       SELECT
         wo.id,
@@ -3454,6 +3454,15 @@ export function listRequesterWorkOrders(): PublicRequesterWorkOrder[] {
       ORDER BY wo.updatedAt DESC
     `).all()
   );
+  const attachmentsForWorkOrder = db.prepare(`
+    SELECT * FROM work_order_attachments
+    WHERE workOrderId = ?
+    ORDER BY createdAt ASC, id ASC
+  `);
+  return workOrders.map((workOrder) => ({
+    ...workOrder,
+    attachments: rows<WorkOrderAttachment>(attachmentsForWorkOrder.all(workOrder.id))
+  }));
 }
 
 export function publicRequesterIdForUploads() {

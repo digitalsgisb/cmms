@@ -89,7 +89,7 @@ const upload = multer({
   dest: uploadsTempDir,
   limits: {
     fileSize: 8 * 1024 * 1024,
-    files: 6
+    files: 10
   },
   fileFilter: (_request, file, callback) => {
     if (file.mimetype.startsWith("image/")) {
@@ -595,7 +595,7 @@ app.post("/api/requester/work-orders", (request, response) => {
   response.status(201).json(workOrder);
 });
 
-app.post("/api/requester/work-orders/:id/attachments", upload.array("attachments", 6), (request, response) => {
+app.post("/api/requester/work-orders/:id/attachments", upload.array("attachments", 10), (request, response) => {
   const files = request.files as Express.Multer.File[];
   const workOrder = getWorkOrderDetail(request.params.id);
   const uploadWindowOpen = Date.now() - Date.parse(workOrder.createdAt) <= 5 * 60 * 1000;
@@ -672,7 +672,7 @@ app.post("/api/work-orders/:id/comments", (request, response) => {
   response.status(201).json(activity);
 });
 
-app.post("/api/work-orders/:id/attachments", upload.array("attachments", 6), (request, response) => {
+app.post("/api/work-orders/:id/attachments", upload.array("attachments", 10), (request, response) => {
   const files = request.files as Express.Multer.File[];
   const uploadedBy = request.cmmsUser!.id;
   const kind = String(request.body.kind || "general");

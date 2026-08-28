@@ -1,11 +1,12 @@
 import {
   Activity, ArrowLeft, Building2, CalendarDays, CheckCircle2, ClipboardList, Clock3, Factory,
-  Hammer, ImagePlus, Lightbulb, MapPin, Send, ShieldCheck, UserRound, Wrench, type LucideIcon
+  Hammer, Lightbulb, MapPin, Send, ShieldCheck, UserRound, Wrench, type LucideIcon
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { MasterData, PublicRequesterWorkOrder, ShiftGroup, WorkOrderType } from "@sugi-cmms/shared";
 import { workOrderStatusLabels, workOrderTypeLabels } from "@sugi-cmms/shared";
-import { api } from "../api/client";
+import { api, mediaUrl } from "../api/client";
+import { MultiPhotoPicker } from "../components/MultiPhotoPicker";
 import { PwaInstallButton } from "../components/PwaInstallButton";
 import { SearchableSelect } from "../components/SearchableSelect";
 import { StatusBadge } from "../components/Badges";
@@ -42,7 +43,7 @@ export function PublicRequesterPage() {
   const [workOrders, setWorkOrders] = useState<PublicRequesterWorkOrder[]>([]);
   const [selectedType, setSelectedType] = useState<WorkOrderType | null>(null);
   const [form, setForm] = useState(initialRequesterForm);
-  const [issueFiles, setIssueFiles] = useState<FileList | null>(null);
+  const [issueFiles, setIssueFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -143,7 +144,7 @@ export function PublicRequesterPage() {
       setSuccess(`${workOrder.number} submitted successfully.`);
       setSelectedType(null);
       setForm({ ...initialRequesterForm, workDate: todayDate(), sectionId: form.sectionId });
-      setIssueFiles(null);
+      setIssueFiles([]);
       await loadRequesterData();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to submit work order.");
@@ -222,7 +223,7 @@ export function PublicRequesterPage() {
 
             <div className="requester-step-label"><span>3</span>Describe the issue</div>
             <label>What happened?<textarea value={form.issueDescription} onChange={(event) => setForm({ ...form, issueDescription: event.target.value })} rows={5} placeholder="Describe what is wrong, when it started, and anything the maintenance team should know" required /></label>
-            <label className="issue-upload-field"><ImagePlus size={15} aria-hidden="true" />Add photo <small>Optional</small><input type="file" accept="image/*" capture="environment" multiple onChange={(event) => setIssueFiles(event.target.files)} /><span>{issueFiles?.length ? `${issueFiles.length} photo${issueFiles.length > 1 ? "s" : ""} selected` : "Take a photo or choose from your phone"}</span></label>
+            <MultiPhotoPicker files={issueFiles} onChange={setIssueFiles} disabled={submitting} />
 
             {error ? <p className="error-line">{error}</p> : null}
             <button className="primary-action" type="submit" disabled={submitting}><Send size={17} aria-hidden="true" />{submitting ? "Submitting..." : "Submit Work Order"}</button>
@@ -241,6 +242,16 @@ export function PublicRequesterPage() {
                   {workOrder.type === "office" ? <span>{workOrder.machineName}</span> : <><span>{workOrder.sectionName}</span><span>{workOrder.machineName}</span><span>{workOrder.issueCategoryName}</span></>}
                   <span>Shift {workOrder.shiftGroup}</span>
                 </div>
+                {workOrder.attachments.length ? (
+                  <div className="requester-photo-strip" aria-label={`${workOrder.attachments.length} photos for ${workOrder.number}`}>
+                    {workOrder.attachments.map((attachment) => (
+                      <a key={attachment.id} href={mediaUrl(attachment.url)} target="_blank" rel="noreferrer" title={attachment.originalName}>
+                        <img src={mediaUrl(attachment.url)} alt={attachment.originalName} loading="lazy" />
+                        <span>{attachment.kind.replace("_", " ")}</span>
+                      </a>
+                    ))}
+                  </div>
+                ) : null}
                 <div className="card-footer"><span>{workOrderStatusLabels[workOrder.status]}</span><time>{formatDateTime(workOrder.updatedAt)}</time></div>
               </article>
             ))}
