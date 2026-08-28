@@ -54,6 +54,12 @@ PostgreSQL is not used by this repository: the server database in this version i
 3. Sign in as admin/developer, open **Settings**, and enter the `/exec` URL, shared token, and Sheet tab name.
 4. Use **Sync now** to send queued records and verify the status counters.
 
+In row 1 of the `WorkOrders` tab, paste these column names exactly (the Apps Script also creates missing headers when it receives its first record):
+
+```text
+WorkOrderID	DateSubmitted	Date	Shift	Type	Section	Area	Machine Name	MachineID	IssueCategory	ReportedBy	Department	Priority	IssueDescription	PhotoIssue	Downtime Actual	Total Downtime	Status	MaintenanceBy	MaintenanceNotes	PhotoFix	DateAcknowledge	AcknowledgeTime	DateRepair	RepairTime	FinishTime	VerifyTime	Change Spare Part	Part Name	Quantity	Part Number	DateResolved	Date Finish	DateClosed	Remarks	ReturnPhoto	UpdatedAt
+```
+
 The same screen accepts the existing Node-RED endpoint (for example `http://node-red:1880/workorderpk`). CMMS posts the compatible `{ "Data": ... }` payload only for work-order lifecycle events, allowing the supplied Telegram flow to keep handling Open/Returned alerts and Resolved/Closed removal.
 
 These values can also be supplied without the UI:

@@ -49,6 +49,7 @@ export function PublicRequesterPage() {
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [view, setView] = useState<RequesterView>("new");
   const [selectedType, setSelectedType] = useState<WorkOrderType | null>(null);
+  const [categoryClosing, setCategoryClosing] = useState(false);
   const [form, setForm] = useState(initialRequesterForm);
   const [issueFiles, setIssueFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -114,8 +115,10 @@ export function PublicRequesterPage() {
   }, [search, statusFilter, workOrders]);
 
   function chooseType(type: WorkOrderType) {
-    setSelectedType(type); setError(""); setSuccess("");
+    if (categoryClosing) return;
+    setCategoryClosing(true); setError(""); setSuccess("");
     setForm((current) => ({ ...current, type, machineId: type === "office" ? "" : current.machineId, placeOrEquipment: "", issueCategoryId: type === "office" ? "" : current.issueCategoryId, reportedByName: signedRequester ? currentUser.name : current.reportedByName, reportedByDepartment: signedRequester ? currentUser.department : current.reportedByDepartment }));
+    window.setTimeout(() => { setSelectedType(type); setCategoryClosing(false); }, 260);
   }
 
   function openView(next: RequesterView) {
@@ -216,7 +219,7 @@ export function PublicRequesterPage() {
 
     <nav className="requester-app-tabbar" aria-label="Requester navigation">{signedRequester ? <><RequesterTab active={view === "dashboard"} label="Home" Icon={Home} onClick={() => openView("dashboard")} /><RequesterTab active={view === "new"} label="New" Icon={Send} onClick={() => openView("new")} /><RequesterTab active={view === "tracking"} label="Track" Icon={History} onClick={() => openView("tracking")} /><RequesterTab active={view === "verify"} label="Verify" Icon={ShieldCheck} badge={pendingVerification.length} onClick={() => openView("verify")} /><RequesterTab active={view === "account"} label="Account" Icon={UserCircle2} onClick={() => openView("account")} /></> : <><RequesterTab active label="New Request" Icon={Send} onClick={() => openView("new")} /><RequesterTab active={false} label="Sign in to track" Icon={LogIn} onClick={() => setLoginOpen(true)} /></>}</nav>
 
-    {view === "new" && !selectedType ? <div className="requester-category-gate" role="dialog" aria-modal="true" aria-labelledby="requester-category-title"><section className="requester-category-card"><div className="requester-category-heading"><span><img src="/brand/sugi_symbol.png" alt="" /></span><div><p>{signedRequester ? "ACCOUNT REQUEST" : "CONTINUE AS GUEST"}</p><h1 id="requester-category-title">What do you need help with?</h1></div></div><p className="requester-category-copy">Choose one category first. The request form will open next.</p><div className="requester-type-grid">{requestTypes.map(({ type, Icon, title, description }) => <button className={`requester-type-card type-${type}`} type="button" key={type} onClick={() => chooseType(type)}><span><Icon size={24} /></span><strong>{title}</strong><small>{description}</small></button>)}</div><small className="requester-category-note"><ShieldCheck size={14} />{signedRequester ? `Signed in as ${currentUser.name}` : "Guest access · new requests only"}</small>{!signedRequester ? currentUser ? <a className="requester-category-signin" href="/"><Home size={15} />Return to staff CMMS</a> : <button className="requester-category-signin" type="button" onClick={() => setLoginOpen(true)}><LogIn size={15} />Production user? Sign in to track</button> : null}</section></div> : null}
+    {view === "new" && !selectedType ? <div className={`requester-category-gate ${categoryClosing ? "is-exiting" : ""}`} role="dialog" aria-modal="true" aria-labelledby="requester-category-title" aria-busy={categoryClosing}><section className="requester-category-card"><div className="requester-category-heading"><span><img src="/brand/sugi_symbol.png" alt="" /></span><div><p>{signedRequester ? "ACCOUNT REQUEST" : "CONTINUE AS GUEST"}</p><h1 id="requester-category-title">What do you need help with?</h1></div></div><p className="requester-category-copy">Choose one category first. The request form will open next.</p><div className="requester-type-grid">{requestTypes.map(({ type, Icon, title, description }) => <button className={`requester-type-card type-${type}`} type="button" key={type} disabled={categoryClosing} onClick={() => chooseType(type)}><span><Icon size={24} /></span><strong>{title}</strong><small>{description}</small></button>)}</div><small className="requester-category-note"><ShieldCheck size={14} />{signedRequester ? `Signed in as ${currentUser.name}` : "Guest access · new requests only"}</small>{!signedRequester ? currentUser ? <a className="requester-category-signin" href="/"><Home size={15} />Return to staff CMMS</a> : <button className="requester-category-signin" type="button" onClick={() => setLoginOpen(true)}><LogIn size={15} />Production user? Sign in to track</button> : null}</section></div> : null}
 
     {loginOpen ? <div className="requester-login-backdrop"><form className="requester-login-card" role="dialog" aria-modal="true" aria-labelledby="requester-login-title" onSubmit={submitLogin}><button className="requester-dialog-close" type="button" onClick={() => setLoginOpen(false)} aria-label="Close sign in"><X size={18} /></button><span className="requester-login-icon"><ShieldCheck size={24} /></span><p>Production access</p><h2 id="requester-login-title">Sign in to your requester account</h2><small>Track your own work orders, review maintenance updates, and verify completed work.</small><label>Username<input value={loginUsername} onChange={(event) => setLoginUsername(event.target.value)} autoComplete="username" required /></label><label>Password<input type="password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} autoComplete="current-password" required /></label>{loginError ? <p className="error-line">{loginError}</p> : null}<button className="primary-action" type="submit" disabled={loginBusy}>{loginBusy ? "Signing in..." : "Open my requester app"}<LogIn size={17} /></button><button className="requester-guest-continue" type="button" onClick={() => setLoginOpen(false)}>Continue as guest</button></form></div> : null}
     {detail ? <RequesterDetailDialog detail={detail} onClose={() => setDetail(null)} onVerify={verifyWorkOrder} actionId={actionId} note={verificationNotes[detail.id] || ""} onNote={(note) => setVerificationNotes((current) => ({ ...current, [detail.id]: note }))} /> : null}
@@ -228,7 +231,47 @@ function RequesterForm({ selectedType, form, setForm, isOffice, sectionOptions, 
   sectionOptions: Array<{ value: string; label: string }>; machineOptions: Array<{ value: string; label: string; meta: string }>; issueCategoryOptions: Array<{ value: string; label: string }>;
   issueFiles: File[]; setIssueFiles: (files: File[]) => void; submitting: boolean; signedRequester: boolean; onChangeType: () => void; onSubmit: (event: FormEvent) => void;
 }) {
-  return <form className="requester-form-panel requester-account-form" onSubmit={onSubmit}><div className="requester-panel-heading requester-form-heading"><span className="requester-panel-icon"><Send size={18} /></span><div><h2>{workOrderTypeLabels[selectedType]} Request</h2><span>{isOffice ? "Tell us the place and what happened" : "Tell us which machine and what happened"}</span></div><button className="change-request-type" type="button" onClick={onChangeType}><ArrowLeft size={15} />Change</button></div><div className="requester-step-label"><span>1</span>Request details</div><div className="form-grid two-columns"><label><CalendarDays size={15} />Date<input type="date" value={form.workDate} onChange={(event) => setForm({ ...form, workDate: event.target.value })} required /></label><label>Shift group<select value={form.shiftGroup} onChange={(event) => setForm({ ...form, shiftGroup: event.target.value as ShiftGroup })}><option value="A">A</option><option value="B">B</option></select></label></div>{isOffice ? <label><MapPin size={15} />Place / location<input value={form.placeOrEquipment} onChange={(event) => setForm({ ...form, placeOrEquipment: event.target.value })} placeholder="Example: Finance office, meeting room, pantry" required /></label> : <><SearchableSelect label="Section" icon={<Factory size={15} />} value={form.sectionId} options={sectionOptions} placeholder="Choose section" onChange={(sectionId) => setForm({ ...form, sectionId, machineId: "", placeOrEquipment: "" })} /><SearchableSelect label="Machine / equipment" value={form.machineId} options={machineOptions} placeholder="Choose or search machine" onChange={(machineId) => setForm({ ...form, machineId, placeOrEquipment: "" })} />{form.machineId === otherMachineValue ? <label><MapPin size={15} />Place or equipment<input value={form.placeOrEquipment} onChange={(event) => setForm({ ...form, placeOrEquipment: event.target.value })} placeholder="Enter the exact place or equipment" required /></label> : null}<SearchableSelect label="Issue category" value={form.issueCategoryId} options={issueCategoryOptions} placeholder="Choose or search issue" onChange={(issueCategoryId) => setForm({ ...form, issueCategoryId })} /></>}<div className="requester-step-label"><span>2</span>Your details</div><div className="form-grid two-columns"><label><UserRound size={15} />Your name<input value={form.reportedByName} onChange={(event) => setForm({ ...form, reportedByName: event.target.value })} placeholder="Enter your name" readOnly={signedRequester} required /></label><label>Department / company <small>{signedRequester ? "Account" : "Optional"}</small><input value={form.reportedByDepartment} onChange={(event) => setForm({ ...form, reportedByDepartment: event.target.value })} placeholder="Example: Production" readOnly={signedRequester} /></label></div><div className="requester-step-label"><span>3</span>Describe the issue</div><label>What happened?<textarea value={form.issueDescription} onChange={(event) => setForm({ ...form, issueDescription: event.target.value })} rows={5} placeholder="Describe what is wrong, when it started, and anything maintenance should know" required /></label><MultiPhotoPicker files={issueFiles} onChange={setIssueFiles} disabled={submitting} /><button className="primary-action" type="submit" disabled={submitting}><Send size={17} />{submitting ? "Submitting..." : "Submit Work Order"}</button></form>;
+  return (
+    <form className="requester-form-panel requester-account-form requester-form-enter" onSubmit={onSubmit}>
+      <div className="requester-panel-heading requester-form-heading">
+        <span className="requester-panel-icon"><Send size={18} /></span>
+        <div><h2>{workOrderTypeLabels[selectedType]} Request</h2><span>{isOffice ? "Tell us the department, place, and what happened" : "Tell us which machine and what happened"}</span></div>
+        <button className="change-request-type" type="button" onClick={onChangeType}><ArrowLeft size={15} />Change</button>
+      </div>
+
+      <div className="requester-step-label"><span>1</span>Request details</div>
+      <div className="form-grid two-columns">
+        <label><CalendarDays size={15} />Date<input type="date" value={form.workDate} onChange={(event) => setForm({ ...form, workDate: event.target.value })} required /></label>
+        {isOffice ? (
+          <label>Department<input value={form.reportedByDepartment} onChange={(event) => setForm({ ...form, reportedByDepartment: event.target.value })} placeholder="Example: Finance, HR, IT" readOnly={signedRequester} required /></label>
+        ) : (
+          <label>Shift group<select value={form.shiftGroup} onChange={(event) => setForm({ ...form, shiftGroup: event.target.value as ShiftGroup })}><option value="A">A</option><option value="B">B</option></select></label>
+        )}
+      </div>
+
+      {isOffice ? (
+        <label><MapPin size={15} />Place / location<input value={form.placeOrEquipment} onChange={(event) => setForm({ ...form, placeOrEquipment: event.target.value })} placeholder="Example: Finance office, meeting room, pantry" required /></label>
+      ) : (
+        <>
+          <SearchableSelect label="Section" icon={<Factory size={15} />} value={form.sectionId} options={sectionOptions} placeholder="Choose section" onChange={(sectionId) => setForm({ ...form, sectionId, machineId: "", placeOrEquipment: "" })} />
+          <SearchableSelect label="Machine / equipment" value={form.machineId} options={machineOptions} placeholder="Choose or search machine" onChange={(machineId) => setForm({ ...form, machineId, placeOrEquipment: "" })} />
+          {form.machineId === otherMachineValue ? <label><MapPin size={15} />Place or equipment<input value={form.placeOrEquipment} onChange={(event) => setForm({ ...form, placeOrEquipment: event.target.value })} placeholder="Enter the exact place or equipment" required /></label> : null}
+          <SearchableSelect label="Issue category" value={form.issueCategoryId} options={issueCategoryOptions} placeholder="Choose or search issue" onChange={(issueCategoryId) => setForm({ ...form, issueCategoryId })} />
+        </>
+      )}
+
+      <div className="requester-step-label"><span>2</span>Your details</div>
+      <div className={`form-grid ${isOffice ? "requester-single-field" : "two-columns"}`}>
+        <label><UserRound size={15} />Your name<input value={form.reportedByName} onChange={(event) => setForm({ ...form, reportedByName: event.target.value })} placeholder="Enter your name" readOnly={signedRequester} required /></label>
+        {!isOffice ? <label>Department <small>{signedRequester ? "Account" : "Optional"}</small><input value={form.reportedByDepartment} onChange={(event) => setForm({ ...form, reportedByDepartment: event.target.value })} placeholder="Example: Production" readOnly={signedRequester} /></label> : null}
+      </div>
+
+      <div className="requester-step-label"><span>3</span>Describe the issue</div>
+      <label>What happened?<textarea value={form.issueDescription} onChange={(event) => setForm({ ...form, issueDescription: event.target.value })} rows={5} placeholder="Describe what is wrong, when it started, and anything maintenance should know" required /></label>
+      <MultiPhotoPicker files={issueFiles} onChange={setIssueFiles} disabled={submitting} />
+      <button className="primary-action" type="submit" disabled={submitting}><Send size={17} />{submitting ? "Submitting..." : "Submit Work Order"}</button>
+    </form>
+  );
 }
 
 function RequesterDashboard({ user, workOrders, stats, pendingVerification, onStatus, onView, onDetail }: { user: User; workOrders: WorkOrder[]; stats: Record<Exclude<RequesterStatusFilter, "all">, number>; pendingVerification: WorkOrder[]; onStatus: (filter: Exclude<RequesterStatusFilter, "all">) => void; onView: (view: RequesterView) => void; onDetail: (workOrder: WorkOrder) => void; }) {
@@ -244,7 +287,7 @@ function RequesterVerification({ workOrders, notes, actionId, detailLoading, onN
 }
 
 function RequesterWorkOrderCard({ workOrder, onDetail, busy = false }: { workOrder: WorkOrder; onDetail: (workOrder: WorkOrder) => void; busy?: boolean }) {
-  return <article className={`requester-account-card status-${workOrder.status}`}><div className="card-topline"><strong>{workOrder.number}</strong><StatusBadge status={workOrder.status} /></div><h3>{workOrder.machineName || workOrder.location}</h3><p>{workOrder.issueDescription}</p><div className="card-meta"><span>{workOrderTypeLabels[workOrder.type]}</span><span>{workOrder.area}</span><span>Shift {workOrder.shiftGroup}</span></div><footer><time>{formatDateTime(workOrder.updatedAt)}</time><button type="button" disabled={busy} onClick={() => onDetail(workOrder)}><Eye size={15} />Details</button></footer></article>;
+  return <article className={`requester-account-card status-${workOrder.status}`}><div className="card-topline"><strong>{workOrder.number}</strong><StatusBadge status={workOrder.status} /></div><h3>{workOrder.machineName || workOrder.location}</h3><p>{workOrder.issueDescription}</p><div className="card-meta"><span>{workOrderTypeLabels[workOrder.type]}</span><span>{workOrder.area}</span>{workOrder.type !== "office" ? <span>Shift {workOrder.shiftGroup}</span> : null}</div><footer><time>{formatDateTime(workOrder.updatedAt)}</time><button type="button" disabled={busy} onClick={() => onDetail(workOrder)}><Eye size={15} />Details</button></footer></article>;
 }
 
 function RequesterDetailDialog({ detail, onClose, onVerify, actionId, note, onNote }: { detail: WorkOrderDetail; onClose: () => void; onVerify: (workOrder: WorkOrder, status: "closed" | "returned") => void; actionId: string; note: string; onNote: (note: string) => void; }) {

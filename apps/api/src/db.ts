@@ -3068,6 +3068,7 @@ function workOrderSheetRow(workOrderId: string) {
     MachineID: detail.machineName,
     IssueCategory: detail.issueCategory?.name || "Other",
     ReportedBy: detail.reportedByName,
+    Department: detail.reportedByDepartment,
     Priority: detail.priority[0].toUpperCase() + detail.priority.slice(1),
     IssueDescription: detail.issueDescription,
     PhotoIssue: publicMediaUrl(issuePhoto?.url),

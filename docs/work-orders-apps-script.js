@@ -10,11 +10,12 @@
 
 const WORK_ORDER_HEADERS = [
   "WorkOrderID", "DateSubmitted", "Date", "Shift", "Type", "Section", "Area",
-  "Machine Name", "IssueCategory", "ReportedBy", "Priority", "IssueDescription",
-  "PhotoIssue", "Downtime Actual", "Total Downtime", "Status", "MaintenanceBy",
-  "MaintenanceNotes", "PhotoFix", "DateAcknowledge", "AcknowledgeTime", "DateRepair",
-  "RepairTime", "FinishTime", "VerifyTime", "Change Spare Part", "Part Name", "Quantity",
-  "Part Number", "DateResolved", "Date Finish", "DateClosed", "Remarks", "ReturnPhoto", "UpdatedAt"
+  "Machine Name", "MachineID", "IssueCategory", "ReportedBy", "Department", "Priority",
+  "IssueDescription", "PhotoIssue", "Downtime Actual", "Total Downtime", "Status",
+  "MaintenanceBy", "MaintenanceNotes", "PhotoFix", "DateAcknowledge", "AcknowledgeTime",
+  "DateRepair", "RepairTime", "FinishTime", "VerifyTime", "Change Spare Part", "Part Name",
+  "Quantity", "Part Number", "DateResolved", "Date Finish", "DateClosed", "Remarks",
+  "ReturnPhoto", "UpdatedAt"
 ];
 
 function doPost(event) {
