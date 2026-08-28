@@ -96,7 +96,7 @@ function PmCommandCenter() {
   const { currentUser } = useCurrentUser();
   const navigate = useNavigate();
   const location = useLocation();
-  const isManager = currentUser ? ["executive", "admin"].includes(currentUser.role) : false;
+  const isManager = currentUser ? ["executive", "admin", "developer"].includes(currentUser.role) : false;
   const [data, setData] = useState<PmDashboardResponse | null>(null);
   const [maintenanceTechnicians, setMaintenanceTechnicians] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -749,7 +749,7 @@ function PmChecklistExecutionLegacy({ scheduleId }: { scheduleId: string }) {
   const [error, setError] = useState("");
   const [remarks, setRemarks] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const isManager = currentUser ? ["executive", "admin"].includes(currentUser.role) : false;
+  const isManager = currentUser ? ["executive", "admin", "developer"].includes(currentUser.role) : false;
 
   async function load() {
     if (!currentUser) return;
@@ -798,8 +798,8 @@ function PmChecklistExecution({ scheduleId }: { scheduleId: string }) {
   const [error, setError] = useState("");
   const [remarks, setRemarks] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const isManager = currentUser ? ["executive", "admin"].includes(currentUser.role) : false;
-  const isAdmin = currentUser?.role === "admin";
+  const isManager = currentUser ? ["executive", "admin", "developer"].includes(currentUser.role) : false;
+  const isAdmin = currentUser ? ["admin", "developer"].includes(currentUser.role) : false;
 
   async function load() {
     if (!currentUser) return;

@@ -4,7 +4,8 @@ A learning-friendly CMMS foundation using:
 
 - React + TypeScript PWA frontend
 - Node/Express API backend
-- SQLite database through Node 24's built-in `node:sqlite`
+- SQLite primary database through Node 24's built-in `node:sqlite`
+- Optional Google Sheets work-order mirror through a secured Apps Script web app
 - Local server upload storage
 
 ## How To Run
@@ -25,6 +26,46 @@ Default local URLs:
 
 - Web app: http://localhost:5173
 - API health: http://localhost:3300/api/health
+
+## Production Access and Integrations
+
+Production users can use Work Orders and Spare Parts. Dashboard, Preventive Maintenance, Assets, Performance, Reports, Users, Profile, and Settings remain visible but locked. Admin and developer accounts have full access. API sessions are random bearer tokens with a 30-day expiry; the login screen does not publish development credentials.
+
+Create a `.env` file on the production host and use strong, unique passwords:
+
+```dotenv
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=replace-with-a-long-unique-password
+DEVELOPER_USERNAME=developer
+DEVELOPER_PASSWORD=replace-with-a-different-long-unique-password
+DEVELOPER_NAME=CMMS Developer
+USER_PASSWORDS_JSON={"hafiz":"replace-with-unique-password","kumar":"replace-with-another-password","azlan":"replace-with-third-password"}
+APP_PUBLIC_URL=http://cmms-server-ip:3300
+```
+
+`DEVELOPER_PASSWORD` enables developer sign-in. `ADMIN_PASSWORD` replaces the seeded admin password on startup. `USER_PASSWORDS_JSON` applies per-user passwords (minimum 12 characters) using usernames as keys. Do not leave the original local-development passwords active on a production network.
+
+### Google Sheets work-order mirror
+
+PostgreSQL is not used by this repository: the server database in this version is SQLite. It is the authoritative store, and Google Sheets is a secondary mirror. Failed Sheet updates stay in a durable outbox and retry every minute, so work-order submission continues during Google or network outages.
+
+1. Create the target Google Sheet.
+2. Follow [docs/work-orders-apps-script.js](docs/work-orders-apps-script.js), deploy it as an Apps Script web app, and set a strong `CMMS_SHARED_TOKEN` script property.
+3. Sign in as admin/developer, open **Settings**, and enter the `/exec` URL, shared token, and Sheet tab name.
+4. Use **Sync now** to send queued records and verify the status counters.
+
+The same screen accepts the existing Node-RED endpoint (for example `http://node-red:1880/workorderpk`). CMMS posts the compatible `{ "Data": ... }` payload only for work-order lifecycle events, allowing the supplied Telegram flow to keep handling Open/Returned alerts and Resolved/Closed removal.
+
+These values can also be supplied without the UI:
+
+```dotenv
+WORK_ORDER_SYNC_SCRIPT_URL=https://script.google.com/macros/s/DEPLOYMENT_ID/exec
+WORK_ORDER_SYNC_TOKEN=the-same-shared-token
+WORK_ORDER_SYNC_SHEET_NAME=WorkOrders
+WORK_ORDER_WEBHOOK_URL=http://node-red:1880/workorderpk
+```
+
+The generated IDs use `WO-<section>-<type>-<YYMM>-<sequence>`, for example `WO-CV-MNT-2608-001` or `WO-RM-KZN-2608-001`. The monthly counter is atomic, avoiding duplicate numbers during simultaneous submissions.
 
 ## GitHub: Pull and Push Updates
 

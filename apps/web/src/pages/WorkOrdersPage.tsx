@@ -67,7 +67,7 @@ export function WorkOrdersPage() {
         currentUser?.role === "requester"
           ? workOrder.requesterId === currentUser.id
           : scope === "all" || workOrder.requesterId === currentUser?.id || workOrder.assignedToId === currentUser?.id;
-      const searchable = `${workOrder.number} ${workOrder.title} ${workOrder.description} ${workOrder.location} ${workOrder.assetName} ${workOrder.machineName} ${workOrder.reportedByName} ${workOrder.reportedByDepartment} ${workOrder.issueDescription}`.toLowerCase();
+      const searchable = `${workOrder.number} ${workOrder.title} ${workOrder.description} ${workOrder.location} ${workOrder.area} ${workOrder.assetName} ${workOrder.machineName} ${workOrder.reportedByName} ${workOrder.reportedByDepartment} ${workOrder.issueDescription}`.toLowerCase();
       return matchesStatus && matchesMonth && matchesSection && matchesMachine && matchesScope && searchable.includes(search.toLowerCase());
     });
   }, [workOrders, status, month, sectionId, machineId, scope, search, currentUser?.id, currentUser?.role]);
@@ -213,7 +213,7 @@ export function WorkOrdersPage() {
                   users={users}
                   currentUserId={currentUser?.id}
                   timerNow={timerNow}
-                  canDelete={currentUser?.role === "admin"}
+                  canDelete={Boolean(currentUser && ["admin", "developer"].includes(currentUser.role))}
                   onDelete={removeWorkOrder}
                 />
               ))}
@@ -241,7 +241,7 @@ export function WorkOrdersPage() {
               users={users}
               currentUserId={currentUser?.id}
               timerNow={timerNow}
-              canDelete={currentUser?.role === "admin"}
+              canDelete={Boolean(currentUser && ["admin", "developer"].includes(currentUser.role))}
               onDelete={removeWorkOrder}
             />
           ))}
@@ -290,6 +290,7 @@ function WorkOrderCard({
         <div className="card-meta">
           <span>{workOrderTypeLabels[workOrder.type]}</span>
           <span>{workOrder.location}</span>
+          <span>{workOrder.area}</span>
           <span>{workOrder.machineName || workOrder.assetName}</span>
           <span>Shift {workOrder.shiftGroup}</span>
         </div>

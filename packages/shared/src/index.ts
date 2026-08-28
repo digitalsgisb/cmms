@@ -1,6 +1,6 @@
-export type UserRole = "requester" | "technician" | "executive" | "admin";
+export type UserRole = "requester" | "technician" | "executive" | "admin" | "developer";
 
-export type WorkOrderType = "standard_maintenance" | "kaizen";
+export type WorkOrderType = "office" | "maintenance" | "project" | "kaizen";
 
 export type WorkOrderStatus =
   | "open"
@@ -26,6 +26,7 @@ export interface Section {
 export interface Machine {
   id: string;
   sectionId: string;
+  area: string;
   name: string;
   active: boolean;
   createdAt: string;
@@ -69,6 +70,12 @@ export interface User {
   avatarUrl: string | null;
 }
 
+export interface AuthSession {
+  user: User;
+  token: string;
+  expiresAt: string;
+}
+
 export interface WorkOrder {
   id: string;
   number: string;
@@ -87,6 +94,7 @@ export interface WorkOrder {
   shiftGroup: ShiftGroup;
   sectionId: string | null;
   machineId: string | null;
+  area: string;
   machineName: string;
   reportedByName: string;
   reportedByDepartment: string;
@@ -95,6 +103,10 @@ export interface WorkOrder {
   createdAt: string;
   updatedAt: string;
 }
+
+export type TvWorkOrder = Pick<WorkOrder,
+  "id" | "number" | "title" | "location" | "area" | "machineName" | "assetName" | "priority" | "status" | "updatedAt"
+>;
 
 export interface WorkOrderAttachment {
   id: string;
@@ -230,6 +242,7 @@ export interface CreateWorkOrderInput {
   shiftGroup?: ShiftGroup;
   sectionId?: string | null;
   machineId?: string | null;
+  area?: string;
   machineName?: string;
   reportedByName?: string;
   reportedByDepartment?: string;
@@ -257,6 +270,7 @@ export interface PublicRequesterWorkOrder {
   workDate: string;
   shiftGroup: ShiftGroup;
   sectionName: string;
+  area: string;
   machineName: string;
   issueCategoryName: string;
   issueDescription: string;
@@ -281,6 +295,7 @@ export interface UpsertMachineInput {
 
 export interface MachineImportRow {
   sectionName: string;
+  areaName: string;
   machineName: string;
 }
 
@@ -451,6 +466,36 @@ export interface UpdateSpareSyncSettingsInput {
   masterSheetName: string;
   supplierSheetName: string;
   movementSheetName: string;
+}
+
+export interface WorkOrderSyncSettings {
+  scriptUrl: string;
+  hasToken: boolean;
+  sheetName: string;
+  webhookUrl: string;
+  configured: boolean;
+  pendingCount: number;
+  failedCount: number;
+  lastSyncAt: string | null;
+  lastError: string | null;
+}
+
+export interface UpdateWorkOrderSyncSettingsInput {
+  actorId: string;
+  scriptUrl: string;
+  token?: string;
+  sheetName: string;
+  webhookUrl?: string;
+}
+
+export interface WorkOrderSyncResult {
+  configured: boolean;
+  ok: boolean;
+  synced: number;
+  failed: number;
+  message: string;
+  errors: string[];
+  settings: WorkOrderSyncSettings;
 }
 
 export interface UpsertIssueCategoryInput {
@@ -645,7 +690,9 @@ export const workOrderStatusLabels: Record<WorkOrderStatus, string> = {
 };
 
 export const workOrderTypeLabels: Record<WorkOrderType, string> = {
-  standard_maintenance: "Standard maintenance",
+  office: "Office",
+  maintenance: "Maintenance",
+  project: "Project",
   kaizen: "Kaizen"
 };
 

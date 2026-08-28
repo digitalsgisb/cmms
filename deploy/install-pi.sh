@@ -50,6 +50,7 @@ sudo install -m 0644 "${APP_DIR}/deploy/${SERVICE_NAME}.service" "${SERVICE_PATH
 sudo sed -i "s/^User=.*/User=${APP_USER}/" "${SERVICE_PATH}"
 sudo sed -i "s/^Group=.*/Group=${APP_USER}/" "${SERVICE_PATH}"
 sudo sed -i "s|^WorkingDirectory=.*|WorkingDirectory=${APP_DIR}|" "${SERVICE_PATH}"
+sudo sed -i "s|^EnvironmentFile=.*|EnvironmentFile=-${APP_DIR}/.env|" "${SERVICE_PATH}"
 sudo sed -i "s/^Environment=PORT=.*/Environment=PORT=${PORT}/" "${SERVICE_PATH}"
 
 sudo systemctl daemon-reload

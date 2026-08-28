@@ -8,6 +8,7 @@ import {
   Factory,
   LayoutDashboard,
   LogOut,
+  LockKeyhole,
   Menu,
   Package,
   Settings,
@@ -33,8 +34,8 @@ const navItems = [
 const technicianTabs = [
   { to: "/technician", label: "Jobs", icon: ClipboardCheck },
   { to: "/spare-parts/scanner", label: "Parts", icon: Package },
-  { to: "/preventive-maintenance", label: "PM", icon: ShieldCheck },
-  { to: "/profile", label: "Profile", icon: Settings }
+  { to: "/preventive-maintenance", label: "PM", icon: ShieldCheck, locked: true },
+  { to: "/profile", label: "Profile", icon: Settings, locked: true }
 ];
 
 function isTechnicianTabActive(tabPath: string, pathname: string) {
@@ -53,6 +54,7 @@ export function Layout() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const location = useLocation();
   const isRequester = currentUser?.role === "requester";
+  const hasDeveloperAccess = Boolean(currentUser && ["admin", "developer"].includes(currentUser.role));
   const canUseTechnicianViews = currentUser ? currentUser.role !== "requester" : true;
   const workOrdersActive = location.pathname.startsWith("/work-orders") || (!isRequester && location.pathname.startsWith("/technician"));
   const sparePartsActive = location.pathname.startsWith("/spare-parts");
@@ -253,6 +255,15 @@ export function Layout() {
         <nav className="technician-tabbar" aria-label="Technician navigation">
           {technicianTabs.map((item) => {
             const active = isTechnicianTabActive(item.to, location.pathname);
+            if (item.locked) {
+              return (
+                <span key={item.to} className="technician-tab locked" aria-disabled="true" title="Feature in development">
+                  <item.icon size={20} aria-hidden="true" />
+                  <span>{item.label}</span>
+                  <LockKeyhole className="nav-lock" size={11} aria-hidden="true" />
+                </span>
+              );
+            }
             return (
               <NavLink key={item.to} to={item.to} className={`technician-tab ${active ? "active" : ""}`}>
                 <item.icon size={20} aria-hidden="true" />
@@ -299,10 +310,10 @@ export function Layout() {
         </div>
 
         <nav className="nav-list" aria-label="Main navigation">
-          <NavLink to="/" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} onClick={() => setMobileNavOpen(false)}>
+          {hasDeveloperAccess ? <NavLink to="/" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} onClick={() => setMobileNavOpen(false)}>
             <LayoutDashboard size={18} aria-hidden="true" />
             <span>Dashboard</span>
-          </NavLink>
+          </NavLink> : <span className="nav-item locked" aria-disabled="true"><LayoutDashboard size={18} aria-hidden="true" /><span>Dashboard</span><LockKeyhole className="nav-lock" size={14} aria-hidden="true" /></span>}
 
           <div className={`nav-group ${workOrdersOpen ? "open" : ""}`}>
             <NavLink
@@ -373,7 +384,7 @@ export function Layout() {
                   QR Scanner
                 </NavLink>
               ) : null}
-              {["executive", "admin"].includes(currentUser.role) ? (
+              {["executive", "admin", "developer"].includes(currentUser.role) ? (
                 <NavLink to="/spare-parts/setup" tabIndex={sparePartsOpen ? 0 : -1} className={({ isActive }) => (isActive ? "active" : "")} onClick={() => setMobileNavOpen(false)}>
                   Sheet Setup
                 </NavLink>
@@ -381,7 +392,7 @@ export function Layout() {
             </div>
           </div>
 
-          <div className={`nav-group ${preventiveOpen ? "open" : ""}`}>
+          {hasDeveloperAccess ? <div className={`nav-group ${preventiveOpen ? "open" : ""}`}>
             <NavLink
               to="/preventive-maintenance"
               className={`nav-item nav-parent ${preventiveActive ? "active" : ""}`}
@@ -430,18 +441,26 @@ export function Layout() {
                 </NavLink>
               ) : null}
             </div>
-          </div>
+          </div> : <span className="nav-item locked" aria-disabled="true"><ShieldCheck size={18} aria-hidden="true" /><span>Preventive</span><LockKeyhole className="nav-lock" size={14} aria-hidden="true" /></span>}
 
-          <NavLink to="/assets" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} onClick={() => setMobileNavOpen(false)}>
+          {hasDeveloperAccess ? <NavLink to="/assets" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} onClick={() => setMobileNavOpen(false)}>
             <Factory size={18} aria-hidden="true" />
             <span>Assets</span>
-          </NavLink>
+          </NavLink> : <span className="nav-item locked" aria-disabled="true"><Factory size={18} aria-hidden="true" /><span>Assets</span><LockKeyhole className="nav-lock" size={14} aria-hidden="true" /></span>}
 
           {navItems.map((item) => (
-            <NavLink key={item.to} to={item.to} className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} onClick={() => setMobileNavOpen(false)}>
-              <item.icon size={18} aria-hidden="true" />
-              <span>{item.label}</span>
-            </NavLink>
+            hasDeveloperAccess ? (
+              <NavLink key={item.to} to={item.to} className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} onClick={() => setMobileNavOpen(false)}>
+                <item.icon size={18} aria-hidden="true" />
+                <span>{item.label}</span>
+              </NavLink>
+            ) : (
+              <span key={item.to} className="nav-item locked" aria-disabled="true">
+                <item.icon size={18} aria-hidden="true" />
+                <span>{item.label}</span>
+                <LockKeyhole className="nav-lock" size={14} aria-hidden="true" />
+              </span>
+            )
           ))}
         </nav>
 

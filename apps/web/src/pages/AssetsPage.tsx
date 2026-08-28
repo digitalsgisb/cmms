@@ -100,7 +100,7 @@ export function AssetsPage() {
     }));
   }, [dashboard?.assets]);
 
-  const canManage = currentUser ? ["executive", "admin"].includes(currentUser.role) : false;
+  const canManage = currentUser ? ["executive", "admin", "developer"].includes(currentUser.role) : false;
   const summary = dashboard?.summary;
   const highRiskAssets = useMemo(
     () => [...(dashboard?.assets ?? [])].filter((asset) => asset.riskScore >= 75).sort((a, b) => b.riskScore - a.riskScore || b.assetNo - a.assetNo).slice(0, 5),

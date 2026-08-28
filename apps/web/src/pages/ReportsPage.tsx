@@ -206,7 +206,7 @@ export function ReportsPage() {
 
   const validOrders = scopedWorkOrders.filter((item) => item.status !== "cancelled");
   const closedOrders = validOrders.filter((item) => item.status === "closed");
-  const standardOrders = validOrders.filter((item) => item.type === "standard_maintenance");
+  const standardOrders = validOrders.filter((item) => item.type === "maintenance");
   const kaizenOrders = validOrders.filter((item) => item.type === "kaizen");
   const closure = percent(closedOrders.length, validOrders.length);
   const standardClosure = percent(standardOrders.filter((item) => item.status === "closed").length, standardOrders.length);

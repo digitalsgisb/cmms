@@ -50,10 +50,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       const exists = current.some((item) => item.id === user.id);
       return exists ? current.map((item) => (item.id === user.id ? user : item)) : [user, ...current];
     });
+    await refreshUsers();
     return user;
   }
 
   function logout() {
+    api.clearSession();
     localStorage.removeItem(sessionUserKey);
     setCurrentUserIdState("");
   }
@@ -75,7 +77,25 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    refreshUsers().catch(console.error);
+    if (!api.hasSession()) {
+      localStorage.removeItem(sessionUserKey);
+      setCurrentUserIdState("");
+      setLoadingUsers(false);
+      return;
+    }
+    api.me()
+      .then(async (user) => {
+        setCurrentUserId(user.id);
+        setUsers([user]);
+        await refreshUsers();
+      })
+      .catch(() => {
+        api.clearSession();
+        localStorage.removeItem(sessionUserKey);
+        setCurrentUserIdState("");
+        setUsers([]);
+        setLoadingUsers(false);
+      });
   }, []);
 
   const currentUser = useMemo(() => {

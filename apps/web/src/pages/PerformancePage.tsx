@@ -198,7 +198,7 @@ export function PerformancePage() {
       total: valid.length,
       closed: closed.length,
       rate: percent(closed.length, valid.length),
-      standardRate: closureRate(valid, "standard_maintenance"),
+      standardRate: closureRate(valid, "maintenance"),
       kaizenRate: closureRate(valid, "kaizen"),
       criticalOpen: open.filter((item) => item.priority === "critical").length,
       pendingMaterial: open.filter((item) => item.status === "pending_material").length,
@@ -230,7 +230,7 @@ export function PerformancePage() {
       const closed = scopedWorkOrders.filter((item) => item.status === "closed" && bucketIndex(item.updatedAt, period) === index);
       return {
         label,
-        standard: created.filter((item) => item.type === "standard_maintenance").length,
+        standard: created.filter((item) => item.type === "maintenance").length,
         kaizen: created.filter((item) => item.type === "kaizen").length,
         closed: closed.length,
         closeRate: percent(closed.length, created.length)
@@ -281,7 +281,7 @@ export function PerformancePage() {
     const priorities: Array<WorkOrder["priority"]> = ["critical", "high", "medium", "low"];
     return priorities.map((priority) => ({
       priority: priority[0].toUpperCase() + priority.slice(1),
-      standard: woStats.open.filter((item) => item.priority === priority && item.type === "standard_maintenance").length,
+      standard: woStats.open.filter((item) => item.priority === priority && item.type === "maintenance").length,
       kaizen: woStats.open.filter((item) => item.priority === priority && item.type === "kaizen").length
     }));
   }, [woStats.open]);

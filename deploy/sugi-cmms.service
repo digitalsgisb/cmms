@@ -10,6 +10,7 @@ Group=pi
 WorkingDirectory=/opt/sugi-cmms
 Environment=NODE_ENV=production
 Environment=PORT=3300
+EnvironmentFile=-/opt/sugi-cmms/.env
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=/usr/bin/env node apps/api/dist/server.js
 Restart=always

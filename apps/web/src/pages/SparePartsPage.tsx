@@ -114,7 +114,7 @@ export function SparePartsPage() {
   const navigate = useNavigate();
   const routeItemNo = params.itemNo || "";
   const issueRoute = location.pathname.startsWith("/spare-parts/issue/");
-  const canManage = currentUser ? ["executive", "admin"].includes(currentUser.role) : false;
+  const canManage = currentUser ? ["executive", "admin", "developer"].includes(currentUser.role) : false;
   const canIssue = currentUser ? currentUser.role !== "requester" : false;
   const technicianMode = currentUser?.role === "technician";
   const view: SpareView =

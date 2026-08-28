@@ -14,7 +14,7 @@ function todayDate() {
 }
 
 const initialRequesterForm = {
-  type: "standard_maintenance" as WorkOrderType,
+  type: "maintenance" as WorkOrderType,
   workDate: todayDate(),
   shiftGroup: "A" as ShiftGroup,
   sectionId: "",
@@ -61,7 +61,7 @@ export function PublicRequesterPage() {
   const machineOptions = useMemo(
     () => [
       { value: "", label: "Others", meta: "Unregistered machine" },
-      ...filteredMachines.map((machine) => ({ value: machine.id, label: machine.name }))
+      ...filteredMachines.map((machine) => ({ value: machine.id, label: machine.name, meta: machine.area }))
     ],
     [filteredMachines]
   );
@@ -94,6 +94,7 @@ export function PublicRequesterPage() {
         shiftGroup: form.shiftGroup,
         sectionId: form.sectionId || null,
         machineId: selectedMachine?.id || null,
+        area: selectedMachine?.area || "General",
         machineName: selectedMachine?.name || customMachineName || "Others",
         reportedByName: form.reportedByName,
         reportedByDepartment: form.reportedByDepartment,
@@ -297,6 +298,7 @@ export function PublicRequesterPage() {
                 <p>{workOrder.issueDescription}</p>
                 <div className="card-meta">
                   <span>{workOrder.sectionName}</span>
+                  <span>{workOrder.area}</span>
                   <span>{workOrder.machineName}</span>
                   <span>{workOrder.issueCategoryName}</span>
                   <span>Shift {workOrder.shiftGroup}</span>

@@ -113,10 +113,10 @@ export function WorkOrderDetailPage() {
   useLiveRefresh(["work-orders"], refreshDetailQuietly, { enabled: Boolean(id) });
 
   const technicians = useMemo(() => users.filter((user) => user.role === "technician"), [users]);
-  const canMaintain = currentUser ? ["technician", "executive", "admin"].includes(currentUser.role) : false;
+  const canMaintain = currentUser ? ["technician", "executive", "admin", "developer"].includes(currentUser.role) : false;
   const canVerify =
     currentUser && detail
-      ? currentUser.id === detail.requesterId || ["executive", "admin"].includes(currentUser.role)
+      ? currentUser.id === detail.requesterId || ["executive", "admin", "developer"].includes(currentUser.role)
       : false;
   const isRequesterOwner = Boolean(currentUser && detail && currentUser.id === detail.requesterId && currentUser.role === "requester");
 
@@ -296,7 +296,7 @@ export function WorkOrderDetailPage() {
         <div>
           <p className="eyebrow">{detail.number}</p>
           <h1>{detail.title}</h1>
-          <p>{detail.location} - {detail.machineName || detail.assetName}</p>
+          <p>{detail.location} - {detail.area} - {detail.machineName || detail.assetName}</p>
           <div className="command-badges">
             <StatusBadge status={detail.status} />
             <PriorityBadge priority={detail.priority} />
@@ -363,6 +363,10 @@ export function WorkOrderDetailPage() {
                 <div>
                   <dt>Section</dt>
                   <dd>{detail.location}</dd>
+                </div>
+                <div>
+                  <dt>Area</dt>
+                  <dd>{detail.area}</dd>
                 </div>
                 <div>
                   <dt>Reported by</dt>

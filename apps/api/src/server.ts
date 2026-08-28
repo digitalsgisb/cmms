@@ -1,10 +1,11 @@
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import multer from "multer";
-import { existsSync, mkdirSync, renameSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { MachineImportRow } from "@sugi-cmms/shared";
+import type { User } from "@sugi-cmms/shared";
 import {
   addAttachment,
   addPmResultPhoto,
@@ -12,8 +13,10 @@ import {
   adjustSparePart,
   assignPmTemplate,
   assignWorkOrder,
+  authenticateSession,
   claimWorkOrder,
   createIssueCategory,
+  createAuthSession,
   createMachine,
   createSection,
   createWorkOrder,
@@ -30,14 +33,15 @@ import {
   issueSparePart,
   getSparePartDetail,
   getSpareSyncSettings,
+  getWorkOrderSyncSettings,
   listMasterData,
-  loginUser,
   listNotifications,
   listPmTemplates,
   listRequesterWorkOrders,
   listSpareInventory,
   listSpareMovementsForActor,
   listSparePartMovements,
+  listTvWorkOrders,
   listUsers,
   listWorkOrders,
   lookupSpareQr,
@@ -47,6 +51,7 @@ import {
   pullSparePartsFromSheet,
   publicRequesterIdForUploads,
   retrySpareSync,
+  flushWorkOrderSyncQueue,
   savePmResult,
   savePmTemplate,
   seed,
@@ -57,6 +62,7 @@ import {
   updateMachine,
   updatePmPlan,
   updateSpareSyncSettings,
+  updateWorkOrderSyncSettings,
   updateSection,
   updateUserAvatar,
   updateWorkOrderStatus,
@@ -159,6 +165,44 @@ app.use("/api", (_request, response, next) => {
   next();
 });
 
+declare global {
+  namespace Express {
+    interface Request { cmmsUser?: User }
+  }
+}
+
+app.use("/api", (request, response, next) => {
+  const publicRequest =
+    request.path === "/health" ||
+    request.path === "/auth/login" ||
+    request.path === "/events" ||
+    request.path.startsWith("/requester/") ||
+    (request.method === "GET" && request.path.startsWith("/pm/photos/")) ||
+    (request.method === "GET" && ["/master-data", "/tv/work-orders", "/dashboard-summary"].includes(request.path));
+  if (publicRequest) { next(); return; }
+
+  const authorization = request.header("authorization") || "";
+  const token = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+  if (!token) { response.status(401).json({ error: "Authentication is required." }); return; }
+  try {
+    request.cmmsUser = authenticateSession(token);
+  } catch {
+    response.status(401).json({ error: "Your session has expired. Sign in again." });
+    return;
+  }
+
+  const actorId = request.body?.actorId || request.body?.uploadedBy || request.body?.requesterId || request.query.actorId || request.query.userId;
+  if (actorId && String(actorId) !== request.cmmsUser.id) {
+    response.status(403).json({ error: "You cannot perform an action as another user." });
+    return;
+  }
+  if ((request.path.startsWith("/assets") || request.path.startsWith("/pm") || request.path.startsWith("/work-orders/sync")) && !["admin", "developer"].includes(request.cmmsUser.role)) {
+    response.status(403).json({ error: "This feature is locked while development is in progress." });
+    return;
+  }
+  next();
+});
+
 type LiveTopic = "work-orders" | "notifications" | "dashboard" | "spare-parts" | "pm" | "assets" | "master-data" | "users";
 
 function topicsForMutation(pathname: string): LiveTopic[] {
@@ -207,7 +251,9 @@ app.use((request, response, next) => {
 
   response.on("finish", () => {
     if (response.statusCode < 400) {
-      topicsForMutation(request.path).forEach((topic) => publishLiveChange(topic, request));
+      const topics = topicsForMutation(request.path);
+      topics.forEach((topic) => publishLiveChange(topic, request));
+      if (topics.includes("work-orders")) void flushWorkOrderSyncQueue().catch(console.error);
     }
   });
   next();
@@ -219,6 +265,11 @@ const liveHeartbeat = setInterval(() => {
   }
 }, 25000);
 liveHeartbeat.unref();
+
+const workOrderSyncRetry = setInterval(() => {
+  void flushWorkOrderSyncQueue().catch(console.error);
+}, 60000);
+workOrderSyncRetry.unref();
 
 app.get("/api/health", (_request, response) => {
   response.json({
@@ -237,10 +288,18 @@ app.post("/api/auth/login", (request, response) => {
     throw new Error("Username and password are required.");
   }
 
-  response.json(loginUser(String(request.body.username), String(request.body.password)));
+  response.json(createAuthSession(String(request.body.username), String(request.body.password)));
+});
+
+app.get("/api/auth/me", (request, response) => {
+  response.json(request.cmmsUser);
 });
 
 app.post("/api/users/:id/avatar", upload.single("avatar"), (request, response) => {
+  if (request.cmmsUser?.id !== request.params.id && !["admin", "developer"].includes(request.cmmsUser?.role || "")) {
+    response.status(403).json({ error: "You can only update your own profile photo." });
+    return;
+  }
   const file = request.file;
   if (!file) {
     throw new Error("avatar image is required.");
@@ -262,6 +321,10 @@ app.post("/api/users/:id/avatar", upload.single("avatar"), (request, response) =
 
 app.get("/api/dashboard-summary", (_request, response) => {
   response.json(dashboardSummary());
+});
+
+app.get("/api/tv/work-orders", (_request, response) => {
+  response.json(listTvWorkOrders());
 });
 
 app.get("/api/assets", (_request, response) => {
@@ -302,6 +365,7 @@ app.post("/api/master-data/machines", (request, response) => {
   response.status(201).json(createMachine({
     actorId: String(request.body.actorId || ""),
     sectionId: String(request.body.sectionId || ""),
+    area: String(request.body.area || "General"),
     name: String(request.body.name || ""),
     active: request.body.active === undefined ? true : Boolean(request.body.active)
   }));
@@ -313,6 +377,7 @@ app.post("/api/master-data/machines/import", (request, response) => {
     actorId: String(request.body.actorId || ""),
     rows: rows.map((row: Partial<MachineImportRow>) => ({
       sectionName: String(row.sectionName || ""),
+      areaName: String(row.areaName || "General"),
       machineName: String(row.machineName || "")
     }))
   }));
@@ -322,6 +387,7 @@ app.patch("/api/master-data/machines/:id", (request, response) => {
   response.json(updateMachine(request.params.id, {
     actorId: String(request.body.actorId || ""),
     sectionId: String(request.body.sectionId || ""),
+    area: String(request.body.area || "General"),
     name: String(request.body.name || ""),
     active: request.body.active === undefined ? true : Boolean(request.body.active)
   }));
@@ -406,7 +472,7 @@ app.post("/api/pm/schedules/:id/results/:itemId/photos", pmProofUpload.single("p
   response.status(201).json(addPmResultPhoto({
     scheduleId: request.params.id,
     itemId: request.params.itemId,
-    actorId: String(request.body.actorId || ""),
+    actorId: request.cmmsUser!.id,
     originalName: request.file.originalname,
     mimeType: request.file.mimetype,
     size: request.file.size,
@@ -472,6 +538,24 @@ app.post("/api/spare-parts/sync/retry", asyncHandler(async (request, response) =
   response.json(await retrySpareSync(String(request.body.actorId || "")));
 }));
 
+app.get("/api/work-orders/sync/settings", (_request, response) => {
+  response.json(getWorkOrderSyncSettings());
+});
+
+app.patch("/api/work-orders/sync/settings", (request, response) => {
+  response.json(updateWorkOrderSyncSettings({
+    actorId: String(request.body.actorId || ""),
+    scriptUrl: String(request.body.scriptUrl || ""),
+    token: request.body.token === undefined ? undefined : String(request.body.token || ""),
+    sheetName: String(request.body.sheetName || "WorkOrders"),
+    webhookUrl: String(request.body.webhookUrl || "")
+  }));
+});
+
+app.post("/api/work-orders/sync/retry", asyncHandler(async (request, response) => {
+  response.json(await flushWorkOrderSyncQueue(String(request.body.actorId || "")));
+}));
+
 app.get("/api/spare-parts/:itemNo", (request, response) => {
   response.json(getSparePartDetail(request.params.itemNo));
 });
@@ -513,6 +597,13 @@ app.post("/api/requester/work-orders", (request, response) => {
 
 app.post("/api/requester/work-orders/:id/attachments", upload.array("attachments", 6), (request, response) => {
   const files = request.files as Express.Multer.File[];
+  const workOrder = getWorkOrderDetail(request.params.id);
+  const uploadWindowOpen = Date.now() - Date.parse(workOrder.createdAt) <= 5 * 60 * 1000;
+  if (workOrder.requesterId !== publicRequesterIdForUploads() || workOrder.status !== "open" || !uploadWindowOpen) {
+    files.forEach((file) => rmSync(file.path, { force: true }));
+    response.status(403).json({ error: "The public upload window for this work order has closed." });
+    return;
+  }
   const saved = saveWorkOrderAttachments(request.params.id, publicRequesterIdForUploads(), "issue", files);
   response.status(201).json(saved);
 });
@@ -583,12 +674,8 @@ app.post("/api/work-orders/:id/comments", (request, response) => {
 
 app.post("/api/work-orders/:id/attachments", upload.array("attachments", 6), (request, response) => {
   const files = request.files as Express.Multer.File[];
-  const uploadedBy = String(request.body.uploadedBy || "");
+  const uploadedBy = request.cmmsUser!.id;
   const kind = String(request.body.kind || "general");
-
-  if (!uploadedBy) {
-    throw new Error("uploadedBy is required.");
-  }
 
   const saved = saveWorkOrderAttachments(
     request.params.id,

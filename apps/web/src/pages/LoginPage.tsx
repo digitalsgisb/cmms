@@ -1,25 +1,18 @@
-import { ArrowRight, LockKeyhole, UserRound } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
+import { ArrowRight, LockKeyhole } from "lucide-react";
+import { FormEvent, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import type { User } from "@sugi-cmms/shared";
 import { useCurrentUser } from "../state/UserContext";
 
 export function LoginPage() {
-  const { users, currentUser, loadingUsers, login } = useCurrentUser();
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("admin123");
+  const { currentUser, loadingUsers, login } = useCurrentUser();
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || "/";
-
-  const demoUsers = useMemo(() => {
-    const preferredRoles: User["role"][] = ["admin", "executive", "technician", "requester"];
-    return preferredRoles
-      .map((role) => users.find((user) => user.role === role))
-      .filter((user): user is User => Boolean(user));
-  }, [users]);
 
   if (!loadingUsers && currentUser) {
     return <Navigate to={preferredLandingPath(currentUser, from)} replace />;
@@ -42,12 +35,6 @@ export function LoginPage() {
     } finally {
       setSubmitting(false);
     }
-  }
-
-  function fillDemo(user: User) {
-    setUsername(user.username);
-    setPassword(defaultPasswordForRole(user.role));
-    setError("");
   }
 
   return (
@@ -93,20 +80,6 @@ export function LoginPage() {
             <ArrowRight size={18} aria-hidden="true" />
           </button>
 
-          <div className="login-demo-panel">
-            <span>Development accounts</span>
-            <div className="login-user-grid">
-              {demoUsers.map((user) => (
-                <button className="login-user-card compact" key={user.id} type="button" onClick={() => fillDemo(user)}>
-                  <UserRound size={17} aria-hidden="true" />
-                  <span>
-                    <strong>{user.username}</strong>
-                    <small>{user.role} / {defaultPasswordForRole(user.role)}</small>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
         </form>
       </section>
     </main>
@@ -119,20 +92,4 @@ function preferredLandingPath(user: User, from: string) {
   }
 
   return from;
-}
-
-function defaultPasswordForRole(role: User["role"]) {
-  if (role === "admin") {
-    return "admin123";
-  }
-
-  if (role === "executive") {
-    return "exec123";
-  }
-
-  if (role === "technician") {
-    return "tech123";
-  }
-
-  return "requester123";
 }

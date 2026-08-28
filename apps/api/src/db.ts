@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import type {
   ActivityAction,
   AssetCondition,
@@ -10,6 +10,7 @@ import type {
   AssetDashboardResponse,
   AssetLifecycleBand,
   AssetRecord,
+  AuthSession,
   CreateWorkOrderInput,
   DashboardSummary,
   IssueCategory,
@@ -30,6 +31,7 @@ import type {
   SavePmResultInput,
   SavePmTemplateInput,
   SubmitPmScheduleInput,
+  TvWorkOrder,
   PublicRequesterWorkOrder,
   Section,
   SpareAdjustmentInput,
@@ -57,8 +59,12 @@ import type {
   WorkOrderAttachment,
   WorkOrderDetail,
   WorkOrderStatus,
+  WorkOrderSyncResult,
+  WorkOrderSyncSettings,
+  UpdateWorkOrderSyncSettingsInput,
   WorkOrderType
 } from "@sugi-cmms/shared";
+import { workOrderStatusLabels } from "@sugi-cmms/shared";
 import { productionAssets2026 } from "./production-assets-2026.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -127,6 +133,14 @@ export function migrate() {
       passwordSalt TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+      tokenHash TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      expiresAt TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS work_orders (
       id TEXT PRIMARY KEY,
       number TEXT NOT NULL UNIQUE,
@@ -145,6 +159,7 @@ export function migrate() {
       shiftGroup TEXT NOT NULL,
       sectionId TEXT,
       machineId TEXT,
+      area TEXT NOT NULL DEFAULT '',
       machineName TEXT NOT NULL,
       reportedByName TEXT NOT NULL,
       reportedByDepartment TEXT NOT NULL,
@@ -167,6 +182,7 @@ export function migrate() {
     CREATE TABLE IF NOT EXISTS machines (
       id TEXT PRIMARY KEY,
       sectionId TEXT NOT NULL,
+      area TEXT NOT NULL DEFAULT '',
       name TEXT NOT NULL,
       active INTEGER NOT NULL,
       createdAt TEXT NOT NULL,
@@ -319,6 +335,28 @@ export function migrate() {
       updatedAt TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS work_order_sync_queue (
+      workOrderId TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'pending',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      lastError TEXT,
+      queuedAt TEXT NOT NULL,
+      syncedAt TEXT,
+      webhookPending INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (workOrderId) REFERENCES work_orders(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS work_order_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS work_order_counters (
+      counterKey TEXT PRIMARY KEY,
+      value INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS pm_checklist_templates (
       id TEXT PRIMARY KEY,
       machineName TEXT NOT NULL,
@@ -433,6 +471,8 @@ export function migrate() {
     CREATE INDEX IF NOT EXISTS idx_pm_schedules_date ON pm_schedules(scheduledDate, status);
     CREATE INDEX IF NOT EXISTS idx_pm_results_schedule ON pm_results(scheduleId);
     CREATE INDEX IF NOT EXISTS idx_pm_photos_result ON pm_result_photos(scheduleId, itemId, createdAt);
+    CREATE INDEX IF NOT EXISTS idx_work_order_sync_status ON work_order_sync_queue(status, queuedAt);
+    CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(userId, expiresAt);
   `);
 
   const userColumns = rows<{ name: string }>(db.prepare("PRAGMA table_info(users)").all());
@@ -454,6 +494,7 @@ export function migrate() {
   addWorkOrderColumnIfMissing(workOrderColumns, "shiftGroup", "TEXT");
   addWorkOrderColumnIfMissing(workOrderColumns, "sectionId", "TEXT");
   addWorkOrderColumnIfMissing(workOrderColumns, "machineId", "TEXT");
+  addWorkOrderColumnIfMissing(workOrderColumns, "area", "TEXT NOT NULL DEFAULT ''");
   addWorkOrderColumnIfMissing(workOrderColumns, "machineName", "TEXT");
   addWorkOrderColumnIfMissing(workOrderColumns, "reportedByName", "TEXT");
   addWorkOrderColumnIfMissing(workOrderColumns, "reportedByDepartment", "TEXT");
@@ -466,6 +507,17 @@ export function migrate() {
   db.prepare("UPDATE work_orders SET reportedByName = COALESCE(reportedByName, 'Requester') WHERE reportedByName IS NULL").run();
   db.prepare("UPDATE work_orders SET reportedByDepartment = COALESCE(reportedByDepartment, 'Production') WHERE reportedByDepartment IS NULL").run();
   db.prepare("UPDATE work_orders SET issueDescription = COALESCE(issueDescription, description, title) WHERE issueDescription IS NULL").run();
+  db.prepare("UPDATE work_orders SET area = COALESCE(NULLIF(area, ''), location, '') WHERE area IS NULL OR area = ''").run();
+  db.prepare("UPDATE work_orders SET type = 'maintenance' WHERE type = 'standard_maintenance'").run();
+
+  const machineColumns = rows<{ name: string }>(db.prepare("PRAGMA table_info(machines)").all());
+  if (!machineColumns.some((column) => column.name === "area")) {
+    db.exec("ALTER TABLE machines ADD COLUMN area TEXT NOT NULL DEFAULT ''");
+  }
+  const workOrderSyncColumns = rows<{ name: string }>(db.prepare("PRAGMA table_info(work_order_sync_queue)").all());
+  if (!workOrderSyncColumns.some((column) => column.name === "webhookPending")) {
+    db.exec("ALTER TABLE work_order_sync_queue ADD COLUMN webhookPending INTEGER NOT NULL DEFAULT 0");
+  }
 
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_work_orders_work_date ON work_orders(workDate);
@@ -481,6 +533,17 @@ function addWorkOrderColumnIfMissing(columns: Array<{ name: string }>, name: str
 }
 
 export function seed() {
+  let passwordOverrides: Record<string, string> = {};
+  if (process.env.USER_PASSWORDS_JSON) {
+    try {
+      passwordOverrides = JSON.parse(process.env.USER_PASSWORDS_JSON) as Record<string, string>;
+    } catch {
+      throw new Error("USER_PASSWORDS_JSON must be a valid JSON object keyed by username.");
+    }
+    if (Object.values(passwordOverrides).some((password) => typeof password !== "string" || password.length < 12)) {
+      throw new Error("Every USER_PASSWORDS_JSON password must contain at least 12 characters.");
+    }
+  }
   const users: Array<User & { password: string }> = [
     { id: "u-requester-1", username: "nurul", name: "Nurul Aina", role: "requester", department: "Production", title: "Production Executive", avatarUrl: null, password: "requester123" },
     { id: "u-requester-2", username: "raj", name: "Raj Kumar", role: "requester", department: "Quality", title: "QA Engineer", avatarUrl: null, password: "requester123" },
@@ -494,8 +557,24 @@ export function seed() {
     { id: "u-tech-hazwan", username: "hazwan", name: "Hazwan", role: "technician", department: "Maintenance", title: "Maintenance Technician", avatarUrl: null, password: "tech123" },
     { id: "u-tech-ammar", username: "ammar", name: "Ammar", role: "technician", department: "Maintenance", title: "Maintenance Technician", avatarUrl: null, password: "tech123" },
     { id: "u-exec-1", username: "azlan", name: "Azlan Musa", role: "executive", department: "Maintenance", title: "Maintenance Executive", avatarUrl: null, password: "exec123" },
-    { id: "u-admin-1", username: "admin", name: "System Admin", role: "admin", department: "IT", title: "Administrator", avatarUrl: null, password: "admin123" }
+    { id: "u-admin-1", username: process.env.ADMIN_USERNAME?.trim() || "admin", name: "System Admin", role: "admin", department: "IT", title: "Administrator", avatarUrl: null, password: process.env.ADMIN_PASSWORD || "admin123" }
   ];
+  if (process.env.DEVELOPER_PASSWORD) {
+    users.push({
+      id: "u-developer-1",
+      username: process.env.DEVELOPER_USERNAME?.trim() || "developer",
+      name: process.env.DEVELOPER_NAME?.trim() || "CMMS Developer",
+      role: "developer",
+      department: "Digital Transformation Unit",
+      title: "System Developer",
+      avatarUrl: null,
+      password: process.env.DEVELOPER_PASSWORD
+    });
+  }
+  users.forEach((user) => {
+    const override = passwordOverrides[user.username];
+    if (typeof override === "string" && override.length >= 12) user.password = override;
+  });
   const userCount = row<{ count: number }>(db.prepare("SELECT COUNT(*) as count FROM users").get()).count;
   if (userCount === 0) {
     const insertUser = db.prepare("INSERT INTO users (id, username, name, role, department, title, avatarUrl, passwordHash, passwordSalt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
@@ -513,6 +592,16 @@ export function seed() {
         const passwordRecord = createPasswordRecord(user.password);
         db.prepare("INSERT INTO users (id, username, name, role, department, title, avatarUrl, passwordHash, passwordSalt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
           .run(user.id, user.username, user.name, user.role, user.department, user.title, user.avatarUrl, passwordRecord.passwordHash, passwordRecord.passwordSalt);
+        continue;
+      }
+
+      const managedPassword = (user.id === "u-admin-1" && Boolean(process.env.ADMIN_PASSWORD)) || user.id === "u-developer-1" || Boolean(passwordOverrides[user.username]);
+      if (managedPassword) {
+        const passwordRecord = createPasswordRecord(user.password);
+        db.prepare(`
+          UPDATE users SET username = ?, name = ?, role = ?, department = ?, title = ?,
+            passwordHash = ?, passwordSalt = ? WHERE id = ?
+        `).run(user.username, user.name, user.role, user.department, user.title, passwordRecord.passwordHash, passwordRecord.passwordSalt, user.id);
         continue;
       }
 
@@ -534,7 +623,7 @@ export function seed() {
   const workOrderCount = row<{ count: number }>(db.prepare("SELECT COUNT(*) as count FROM work_orders").get()).count;
   if (workOrderCount === 0) {
     const first = createWorkOrder({
-      type: "standard_maintenance",
+      type: "maintenance",
       title: "Hydraulic press oil leakage",
       description: "Oil leaking near the left side hydraulic hose. Production can still run slowly but area is slippery.",
       assetName: "Hydraulic Press HP-02",
@@ -586,7 +675,7 @@ export function seed() {
     });
 
     createWorkOrder({
-      type: "standard_maintenance",
+      type: "maintenance",
       title: "Air leak at compressor drop point",
       description: "Hissing sound from air line near QA bench. Please check fitting.",
       assetName: "Compressed air line",
@@ -604,6 +693,11 @@ export function seed() {
       dueDate: null
     });
   }
+
+  db.prepare(`
+    INSERT OR IGNORE INTO work_order_sync_queue (workOrderId, status, attempts, lastError, queuedAt, syncedAt)
+    SELECT id, 'pending', 0, NULL, updatedAt, NULL FROM work_orders
+  `).run();
 }
 
 function seedMasterData() {
@@ -612,10 +706,49 @@ function seedMasterData() {
   insertSection.run(defaultSectionIds.conversion, "Conversion", 1, timestamp, timestamp);
   insertSection.run(defaultSectionIds.rollMaking, "Roll Making", 1, timestamp, timestamp);
 
-  const insertMachine = db.prepare("INSERT OR IGNORE INTO machines (id, sectionId, name, active, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)");
-  insertMachine.run("machine-conversion-1", defaultSectionIds.conversion, "Conversion Line 1", 1, timestamp, timestamp);
-  insertMachine.run("machine-conversion-2", defaultSectionIds.conversion, "Conversion Line 2", 1, timestamp, timestamp);
-  insertMachine.run("machine-roll-making-1", defaultSectionIds.rollMaking, "Roll Maker 1", 1, timestamp, timestamp);
+  const productionMachines: Array<[string, string, string]> = [
+    ["Conversion", "Waterjet", "WJ 7A"], ["Conversion", "Waterjet", "WJ 1"],
+    ["Conversion", "Waterjet", "WJ 2A"], ["Conversion", "Waterjet", "WJ 2B"],
+    ["Conversion", "Waterjet", "WJ 3A"], ["Conversion", "Waterjet", "WJ 3B"],
+    ["Conversion", "Waterjet", "WJ 4A"], ["Conversion", "Waterjet", "WJ 4B"],
+    ["Conversion", "Forming", "F4"], ["Conversion", "Waterjet", "WJ 7B"],
+    ["Conversion", "Forming", "F5"], ["Conversion", "Forming", "F6"],
+    ["Conversion", "Forming", "F7"], ["Conversion", "Oven", "OVEN 4"],
+    ["Conversion", "Oven", "OVEN 5"], ["Conversion", "Oven", "MINI OVEN 1"],
+    ["Conversion", "Oven", "MINI OVEN 2"], ["Conversion", "Forming", "MINI OVEN 3"],
+    ["Conversion", "Forming", "MINI F1"], ["Conversion", "Forming", "MINI F2"],
+    ["Conversion", "Forming", "MINI F3"], ["Conversion", "Forming", "MINI F4"],
+    ["Conversion", "Forming", "MINI F5"], ["Conversion", "Forming", "MINI F6"],
+    ["Conversion", "Hotmelt", "HOTMELT NORDSON"], ["Conversion", "Hotmelt", "HOTMELT NDC"],
+    ["Conversion", "Hotmelt", "HOTMELT DYNATEC"], ["Conversion", "Autoglue", "GLUE TANK"],
+    ["Conversion", "Autoglue", "PRESS JIGS"], ["Conversion", "Others", "OTHERS"],
+    ["Conversion", "Pump", "PUMP 30HP"], ["Conversion", "Pump", "PUMP 50HP(SL-IV)"],
+    ["Conversion", "Pump", "PUMP 60HP"], ["Conversion", "Pump", "PUMP 100HP"],
+    ["Conversion", "Pump", "PUMP 50HP(JETLINE)"], ["Conversion", "Forming", "MINI F7"],
+    ["Conversion", "FLOOR CARPET", "WATERJET"], ["Conversion", "FLOOR CARPET", "AUTO GLUE (2)"],
+    ["Conversion", "MF", "MINI OVEN 4"], ["Roll Making", "General", "4 MTR"],
+    ["Roll Making", "General", "2 MTR"], ["Roll Making", "General", "PE 1"],
+    ["Roll Making", "General", "PE 2"], ["Roll Making", "General", "DILLO"],
+    ["Roll Making", "General", "LATEX"], ["Roll Making", "General", "HOT ROLLER"],
+    ["Roll Making", "General", "MINI PRESS CUT"], ["Roll Making", "General", "PE MIXER"],
+    ["Roll Making", "General", "HOT PRESS"], ["Conversion", "LM", "PRESS CUT"]
+  ];
+  const insertMachine = db.prepare("INSERT OR IGNORE INTO machines (id, sectionId, area, name, active, createdAt, updatedAt) VALUES (?, ?, ?, ?, 1, ?, ?)");
+  const findMachine = db.prepare("SELECT id FROM machines WHERE sectionId = ? AND lower(name) = lower(?) ORDER BY createdAt, id");
+  const activateMachine = db.prepare("UPDATE machines SET area = ?, active = 1, updatedAt = ? WHERE id = ?");
+  const deactivateMachine = db.prepare("UPDATE machines SET active = 0, updatedAt = ? WHERE id = ?");
+  productionMachines.forEach(([sectionName, area, machineName], index) => {
+    const sectionId = sectionName === "Roll Making" ? defaultSectionIds.rollMaking : defaultSectionIds.conversion;
+    const matches = rows<{ id: string }>(findMachine.all(sectionId, machineName));
+    if (matches.length === 0) {
+      insertMachine.run(`machine-production-${String(index + 1).padStart(3, "0")}`, sectionId, area, machineName, timestamp, timestamp);
+      return;
+    }
+    activateMachine.run(area, timestamp, matches[0].id);
+    matches.slice(1).forEach((duplicate) => deactivateMachine.run(timestamp, duplicate.id));
+  });
+  db.prepare("UPDATE machines SET active = 0, updatedAt = ? WHERE id IN ('machine-conversion-1', 'machine-conversion-2', 'machine-roll-making-1')")
+    .run(timestamp);
 
   db.prepare("INSERT OR IGNORE INTO issue_categories (id, name, active, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)")
     .run(otherIssueCategoryId, "Other", 1, timestamp, timestamp);
@@ -1014,9 +1147,38 @@ export function loginUser(username: string, password: string): User {
   if (!authUser || !authUser.passwordHash || !authUser.passwordSalt || !verifyPassword(password, authUser.passwordSalt, authUser.passwordHash)) {
     throw new Error("Invalid username or password.");
   }
+  if (authUser.role === "developer" && !process.env.DEVELOPER_PASSWORD) {
+    throw new Error("Developer sign-in is disabled on this server.");
+  }
 
   const { passwordHash: _passwordHash, passwordSalt: _passwordSalt, ...user } = authUser;
   return user;
+}
+
+function sessionTokenHash(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+export function createAuthSession(username: string, password: string): AuthSession {
+  const user = loginUser(username, password);
+  const token = randomBytes(32).toString("base64url");
+  const createdAt = now();
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  db.prepare("DELETE FROM auth_sessions WHERE expiresAt <= ?").run(createdAt);
+  db.prepare("INSERT INTO auth_sessions (tokenHash, userId, expiresAt, createdAt) VALUES (?, ?, ?, ?)")
+    .run(sessionTokenHash(token), user.id, expiresAt, createdAt);
+  return { user, token, expiresAt };
+}
+
+export function authenticateSession(token: string): User {
+  const timestamp = now();
+  const authenticated = db.prepare(`
+    SELECT u.id, u.username, u.name, u.role, u.department, u.title, u.avatarUrl
+    FROM auth_sessions session JOIN users u ON u.id = session.userId
+    WHERE session.tokenHash = ? AND session.expiresAt > ?
+  `).get(sessionTokenHash(token), timestamp);
+  if (!authenticated) throw new Error("Session expired or invalid.");
+  return row<User>(authenticated);
 }
 
 export function updateUserAvatar(id: string, avatarUrl: string): User {
@@ -1182,8 +1344,8 @@ export function getAssetDashboard(): AssetDashboardResponse {
 
 export function updateAsset(id: string, input: UpdateAssetInput): AssetRecord {
   const actor = getUser(input.actorId);
-  if (!["executive", "admin"].includes(actor.role)) {
-    throw new Error("Executive or admin access is required to update an asset.");
+  if (!["executive", "admin", "developer"].includes(actor.role)) {
+    throw new Error("Executive, admin, or developer access is required to update an asset.");
   }
   if (!["operational", "watch", "obsolete", "decommissioned"].includes(input.condition)) {
     throw new Error("Select a valid asset condition.");
@@ -1256,8 +1418,8 @@ function getOptionalIssueCategory(id: string | null): IssueCategory | null {
 
 function requireAdmin(actorId: string) {
   const actor = getUser(actorId);
-  if (actor.role !== "admin") {
-    throw new Error("Admin access is required.");
+  if (!["admin", "developer"].includes(actor.role)) {
+    throw new Error("Admin or developer access is required.");
   }
 
   return actor;
@@ -1274,8 +1436,8 @@ function requireSpareActor(actorId: string) {
 
 function requireSpareManager(actorId: string) {
   const actor = getUser(actorId);
-  if (!["executive", "admin"].includes(actor.role)) {
-    throw new Error("Executive or admin access is required.");
+  if (!["executive", "admin", "developer"].includes(actor.role)) {
+    throw new Error("Executive, admin, or developer access is required.");
   }
 
   return actor;
@@ -1291,8 +1453,8 @@ function requirePmActor(actorId: string) {
 
 function requirePmManager(actorId: string) {
   const actor = requirePmActor(actorId);
-  if (!["executive", "admin"].includes(actor.role)) {
-    throw new Error("Executive or admin access is required.");
+  if (!["executive", "admin", "developer"].includes(actor.role)) {
+    throw new Error("Executive, admin, or developer access is required.");
   }
   return actor;
 }
@@ -1871,33 +2033,35 @@ export function updateSection(id: string, input: { actorId: string; name: string
   return getSection(id);
 }
 
-export function createMachine(input: { actorId: string; sectionId: string; name: string; active?: boolean }): Machine {
+export function createMachine(input: { actorId: string; sectionId: string; area: string; name: string; active?: boolean }): Machine {
   requireAdmin(input.actorId);
   getSection(input.sectionId);
   const id = randomUUID();
   const timestamp = now();
   const name = input.name.trim();
+  const area = input.area.trim() || "General";
   if (!name) {
     throw new Error("Machine name is required.");
   }
 
-  db.prepare("INSERT INTO machines (id, sectionId, name, active, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)")
-    .run(id, input.sectionId, name, boolNumber(input.active ?? true), timestamp, timestamp);
+  db.prepare("INSERT INTO machines (id, sectionId, area, name, active, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .run(id, input.sectionId, area, name, boolNumber(input.active ?? true), timestamp, timestamp);
 
   return getMachine(id);
 }
 
-export function updateMachine(id: string, input: { actorId: string; sectionId: string; name: string; active?: boolean }): Machine {
+export function updateMachine(id: string, input: { actorId: string; sectionId: string; area: string; name: string; active?: boolean }): Machine {
   requireAdmin(input.actorId);
   getMachine(id);
   getSection(input.sectionId);
   const name = input.name.trim();
+  const area = input.area.trim() || "General";
   if (!name) {
     throw new Error("Machine name is required.");
   }
 
-  db.prepare("UPDATE machines SET sectionId = ?, name = ?, active = ?, updatedAt = ? WHERE id = ?")
-    .run(input.sectionId, name, boolNumber(input.active ?? true), now(), id);
+  db.prepare("UPDATE machines SET sectionId = ?, area = ?, name = ?, active = ?, updatedAt = ? WHERE id = ?")
+    .run(input.sectionId, area, name, boolNumber(input.active ?? true), now(), id);
   return getMachine(id);
 }
 
@@ -1910,12 +2074,13 @@ export function importMachines(input: { actorId: string; rows: MachineImportRow[
 
   const getSectionByName = db.prepare("SELECT * FROM sections WHERE lower(name) = lower(?)");
   const insertSection = db.prepare("INSERT INTO sections (id, name, active, createdAt, updatedAt) VALUES (?, ?, 1, ?, ?)");
-  const getMachineBySectionName = db.prepare("SELECT * FROM machines WHERE sectionId = ? AND lower(name) = lower(?)");
-  const insertMachine = db.prepare("INSERT INTO machines (id, sectionId, name, active, createdAt, updatedAt) VALUES (?, ?, ?, 1, ?, ?)");
-  const reactivateMachine = db.prepare("UPDATE machines SET active = 1, updatedAt = ? WHERE id = ?");
+  const getMachineBySectionName = db.prepare("SELECT * FROM machines WHERE sectionId = ? AND lower(area) = lower(?) AND lower(name) = lower(?)");
+  const insertMachine = db.prepare("INSERT INTO machines (id, sectionId, area, name, active, createdAt, updatedAt) VALUES (?, ?, ?, ?, 1, ?, ?)");
+  const reactivateMachine = db.prepare("UPDATE machines SET area = ?, active = 1, updatedAt = ? WHERE id = ?");
 
   for (const [index, rowInput] of input.rows.entries()) {
     const sectionName = rowInput.sectionName.trim();
+    const areaName = rowInput.areaName.trim() || "General";
     const machineName = rowInput.machineName.trim();
     if (!sectionName && !machineName) {
       continue;
@@ -1938,16 +2103,16 @@ export function importMachines(input: { actorId: string; rows: MachineImportRow[
       continue;
     }
 
-    const existingMachine = row<RawMachine | undefined>(getMachineBySectionName.get(section.id, machineName));
+    const existingMachine = row<RawMachine | undefined>(getMachineBySectionName.get(section.id, areaName, machineName));
     if (existingMachine) {
       if (!existingMachine.active) {
-        reactivateMachine.run(timestamp, existingMachine.id);
+        reactivateMachine.run(areaName, timestamp, existingMachine.id);
       }
       skippedMachines += 1;
       continue;
     }
 
-    insertMachine.run(randomUUID(), section.id, machineName, timestamp, timestamp);
+    insertMachine.run(randomUUID(), section.id, areaName, machineName, timestamp, timestamp);
     importedMachines += 1;
   }
 
@@ -2628,7 +2793,7 @@ async function trySyncMovement(movementId: string) {
 
 export async function issueSparePart(itemNo: string, input: SpareIssueInput): Promise<StockMovementDetail> {
   const actor = requireSpareActor(input.actorId);
-  if (!["technician", "executive", "admin"].includes(actor.role)) {
+  if (!["technician", "executive", "admin", "developer"].includes(actor.role)) {
     throw new Error("Only maintenance users can issue spare parts.");
   }
   const workOrder = getWorkOrder(input.workOrderId);
@@ -2774,8 +2939,219 @@ export async function retrySpareSync(actorId: string): Promise<SpareSyncResult> 
   };
 }
 
+function getWorkOrderSetting(key: string) {
+  const setting = row<{ value: string } | undefined>(db.prepare("SELECT value FROM work_order_settings WHERE key = ?").get(key));
+  return setting?.value || "";
+}
+
+function setWorkOrderSetting(key: string, value: string) {
+  db.prepare(`
+    INSERT INTO work_order_settings (key, value, updatedAt) VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt
+  `).run(key, value, now());
+}
+
+function workOrderSyncRuntimeSettings() {
+  const scriptUrl = getWorkOrderSetting("scriptUrl") || process.env.WORK_ORDER_SYNC_SCRIPT_URL || "";
+  const token = getWorkOrderSetting("token") || process.env.WORK_ORDER_SYNC_TOKEN || "";
+  return {
+    scriptUrl,
+    token,
+    sheetName: getWorkOrderSetting("sheetName") || process.env.WORK_ORDER_SYNC_SHEET_NAME || "WorkOrders",
+    webhookUrl: getWorkOrderSetting("webhookUrl") || process.env.WORK_ORDER_WEBHOOK_URL || "",
+    configured: Boolean(scriptUrl && token)
+  };
+}
+
+export function getWorkOrderSyncSettings(): WorkOrderSyncSettings {
+  const runtime = workOrderSyncRuntimeSettings();
+  const counts = row<{ pendingCount: number; failedCount: number }>(db.prepare(`
+    SELECT
+      SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pendingCount,
+      SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failedCount
+    FROM work_order_sync_queue
+  `).get());
+  return {
+    scriptUrl: runtime.scriptUrl,
+    hasToken: Boolean(runtime.token),
+    sheetName: runtime.sheetName,
+    webhookUrl: runtime.webhookUrl,
+    configured: runtime.configured,
+    pendingCount: counts.pendingCount || 0,
+    failedCount: counts.failedCount || 0,
+    lastSyncAt: getWorkOrderSetting("lastSyncAt") || null,
+    lastError: getWorkOrderSetting("lastError") || null
+  };
+}
+
+export function updateWorkOrderSyncSettings(input: UpdateWorkOrderSyncSettingsInput): WorkOrderSyncSettings {
+  requireAdmin(input.actorId);
+  const scriptUrl = input.scriptUrl.trim();
+  const webhookUrl = input.webhookUrl?.trim() || "";
+  for (const [label, value] of [["Apps Script URL", scriptUrl], ["Webhook URL", webhookUrl]] as const) {
+    if (value && !/^https?:\/\//i.test(value)) throw new Error(`${label} must start with http:// or https://.`);
+  }
+  setWorkOrderSetting("scriptUrl", scriptUrl);
+  setWorkOrderSetting("sheetName", input.sheetName.trim() || "WorkOrders");
+  setWorkOrderSetting("webhookUrl", webhookUrl);
+  if (input.token !== undefined && input.token.trim()) setWorkOrderSetting("token", input.token.trim());
+  return getWorkOrderSyncSettings();
+}
+
+function enqueueWorkOrderSync(workOrderId: string, notifyWebhook = false) {
+  db.prepare(`
+    INSERT INTO work_order_sync_queue (workOrderId, status, attempts, lastError, queuedAt, syncedAt, webhookPending)
+    VALUES (?, 'pending', 0, NULL, ?, NULL, ?)
+    ON CONFLICT(workOrderId) DO UPDATE SET
+      status = 'pending', attempts = 0, lastError = NULL, queuedAt = excluded.queuedAt, syncedAt = NULL,
+      webhookPending = MAX(work_order_sync_queue.webhookPending, excluded.webhookPending)
+  `).run(workOrderId, now(), boolNumber(notifyWebhook));
+}
+
+function publicMediaUrl(url: string | undefined) {
+  if (!url) return "";
+  if (/^https?:\/\//i.test(url)) return url;
+  const base = (process.env.APP_PUBLIC_URL || "").replace(/\/$/, "");
+  return base ? `${base}${url.startsWith("/") ? "" : "/"}${url}` : url;
+}
+
+function workOrderSheetRow(workOrderId: string) {
+  const detail = getWorkOrderDetail(workOrderId);
+  const activityAt = (action: ActivityAction) => detail.activities.find((item) => item.action === action)?.createdAt || "";
+  const issuePhoto = detail.attachments.find((item) => item.kind === "issue");
+  const fixPhoto = detail.attachments.find((item) => item.kind === "after");
+  const returnPhoto = detail.attachments.find((item) => item.kind === "return_evidence");
+  const parts = rows<{ searchName: string; itemNo: string; quantity: number }>(db.prepare(`
+    SELECT sp.searchName, sm.itemNo, SUM(sm.quantity) AS quantity
+    FROM stock_movements sm JOIN spare_parts sp ON sp.itemNo = sm.itemNo
+    WHERE sm.workOrderId = ? AND sm.type = 'issue'
+    GROUP BY sm.itemNo, sp.searchName ORDER BY sm.createdAt
+  `).all(workOrderId));
+  const comments = detail.activities.filter((item) => item.action === "commented").reverse();
+  return {
+    WorkOrderID: detail.number,
+    DateSubmitted: detail.createdAt,
+    Date: detail.workDate,
+    Shift: detail.shiftGroup,
+    Type: detail.type[0].toUpperCase() + detail.type.slice(1),
+    Section: detail.section?.name || detail.location,
+    Area: detail.area,
+    "Machine Name": detail.machineName,
+    MachineID: detail.machineName,
+    IssueCategory: detail.issueCategory?.name || "Other",
+    ReportedBy: detail.reportedByName,
+    Priority: detail.priority[0].toUpperCase() + detail.priority.slice(1),
+    IssueDescription: detail.issueDescription,
+    PhotoIssue: publicMediaUrl(issuePhoto?.url),
+    "Downtime Actual": "",
+    "Total Downtime": "",
+    Status: workOrderStatusLabels[detail.status],
+    MaintenanceBy: detail.assignedTo?.name || "",
+    MaintenanceNotes: detail.completionNote || "",
+    PhotoFix: publicMediaUrl(fixPhoto?.url),
+    DateAcknowledge: activityAt("acknowledged"),
+    AcknowledgeTime: activityAt("acknowledged"),
+    DateRepair: activityAt("started"),
+    RepairTime: activityAt("started"),
+    FinishTime: activityAt("resolved"),
+    VerifyTime: activityAt("closed"),
+    "Change Spare Part": parts.length ? "Yes" : "No",
+    "Part Name": parts.map((part) => part.searchName).join(" | "),
+    Quantity: parts.map((part) => part.quantity).join(" | "),
+    "Part Number": parts.map((part) => part.itemNo).join(" | "),
+    DateResolved: activityAt("resolved"),
+    "Date Finish": activityAt("resolved"),
+    DateClosed: activityAt("closed"),
+    Remarks: comments.map((item) => item.message).join(" | "),
+    ReturnPhoto: publicMediaUrl(returnPhoto?.url),
+    UpdatedAt: detail.updatedAt
+  };
+}
+
+async function postJson(url: string, body: unknown) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(12000)
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
+  const result = await response.json().catch(() => ({ ok: true }));
+  if (result?.ok === false || result?.success === false) throw new Error(String(result.error || result.message || "Integration rejected the update."));
+}
+
+let activeWorkOrderSync: Promise<WorkOrderSyncResult> | null = null;
+
+export function flushWorkOrderSyncQueue(actorId?: string): Promise<WorkOrderSyncResult> {
+  if (activeWorkOrderSync) return activeWorkOrderSync;
+  activeWorkOrderSync = runWorkOrderSyncQueue(actorId).finally(() => { activeWorkOrderSync = null; });
+  return activeWorkOrderSync;
+}
+
+async function runWorkOrderSyncQueue(actorId?: string): Promise<WorkOrderSyncResult> {
+  if (actorId) requireAdmin(actorId);
+  const runtime = workOrderSyncRuntimeSettings();
+  if (!runtime.configured) {
+    return { configured: false, ok: false, synced: 0, failed: 0, message: "Google Sheets sync is not configured.", errors: [], settings: getWorkOrderSyncSettings() };
+  }
+  const queued = rows<{ workOrderId: string; status: string; webhookPending: number }>(db.prepare("SELECT workOrderId, status, webhookPending FROM work_order_sync_queue WHERE status IN ('pending', 'failed') OR webhookPending = 1 ORDER BY queuedAt LIMIT 100").all());
+  let synced = 0;
+  let failed = 0;
+  const errors: string[] = [];
+  for (const item of queued) {
+    const data = workOrderSheetRow(item.workOrderId);
+    let itemFailed = false;
+    try {
+      if (item.status !== "synced") {
+        await postJson(runtime.scriptUrl, { token: runtime.token, action: "upsertWorkOrder", sheetName: runtime.sheetName, Data: data });
+        const syncedAt = now();
+        db.prepare("UPDATE work_order_sync_queue SET status = 'synced', attempts = attempts + 1, lastError = NULL, syncedAt = ? WHERE workOrderId = ?").run(syncedAt, item.workOrderId);
+        setWorkOrderSetting("lastSyncAt", syncedAt);
+        synced += 1;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown sync error";
+      db.prepare("UPDATE work_order_sync_queue SET status = 'failed', attempts = attempts + 1, lastError = ? WHERE workOrderId = ?").run(message, item.workOrderId);
+      setWorkOrderSetting("lastError", message);
+      errors.push(`${item.workOrderId} Google Sheet: ${message}`);
+      itemFailed = true;
+    }
+    const waitingForIssuePhoto = data.Status === "Open" && !data.PhotoIssue && Date.now() - Date.parse(data.DateSubmitted) < 10000;
+    if (item.webhookPending && runtime.webhookUrl && !waitingForIssuePhoto) {
+      try {
+        await postJson(runtime.webhookUrl, { Data: data });
+        db.prepare("UPDATE work_order_sync_queue SET webhookPending = 0 WHERE workOrderId = ?").run(item.workOrderId);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown webhook error";
+        db.prepare("UPDATE work_order_sync_queue SET lastError = ? WHERE workOrderId = ?").run(message, item.workOrderId);
+        setWorkOrderSetting("lastError", message);
+        errors.push(`${item.workOrderId} webhook: ${message}`);
+        itemFailed = true;
+      }
+    }
+    if (itemFailed) failed += 1;
+  }
+  if (failed === 0) setWorkOrderSetting("lastError", "");
+  return {
+    configured: true,
+    ok: failed === 0,
+    synced,
+    failed,
+    message: queued.length ? `${synced} work orders synced, ${failed} failed.` : "All work orders are already synced.",
+    errors,
+    settings: getWorkOrderSyncSettings()
+  };
+}
+
 export function listWorkOrders(): WorkOrder[] {
   return rows<WorkOrder>(db.prepare("SELECT * FROM work_orders ORDER BY updatedAt DESC").all());
+}
+
+export function listTvWorkOrders(): TvWorkOrder[] {
+  return rows<TvWorkOrder>(db.prepare(`
+    SELECT id, number, title, location, area, machineName, assetName, priority, status, updatedAt
+    FROM work_orders WHERE status NOT IN ('closed', 'cancelled') ORDER BY updatedAt DESC
+  `).all());
 }
 
 export function getWorkOrder(id: string): WorkOrder {
@@ -2807,12 +3183,13 @@ export function getWorkOrderDetail(id: string): WorkOrderDetail {
 export function createWorkOrder(input: CreateWorkOrderInput): WorkOrder {
   const id = randomUUID();
   const createdAt = now();
-  const number = nextWorkOrderNumber();
   const requester = getUser(input.requesterId);
   const section = input.sectionId ? getSection(input.sectionId) : null;
   const machine = input.machineId ? getMachine(input.machineId) : null;
+  const number = nextWorkOrderNumber(input.type, section?.name || input.location || "General");
   const issueCategory = input.issueCategoryId ? getIssueCategory(input.issueCategoryId) : null;
   const machineName = input.machineName?.trim() || machine?.name || input.assetName?.trim() || "Others";
+  const area = input.area?.trim() || machine?.area || "General";
   const sectionName = section?.name || input.location?.trim() || "Unassigned";
   const issueDescription = input.issueDescription?.trim() || input.description?.trim() || input.title?.trim() || "No issue description provided.";
   const title = input.title?.trim() || `${machineName} - ${issueCategory?.name || "Issue"}`;
@@ -2826,9 +3203,9 @@ export function createWorkOrder(input: CreateWorkOrderInput): WorkOrder {
     INSERT INTO work_orders (
       id, number, type, title, description, assetName, location, priority, status,
       requesterId, assignedToId, dueDate, completionNote, workDate, shiftGroup, sectionId,
-      machineId, machineName, reportedByName, reportedByDepartment, issueCategoryId,
+      machineId, area, machineName, reportedByName, reportedByDepartment, issueCategoryId,
       issueDescription, createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     number,
@@ -2847,6 +3224,7 @@ export function createWorkOrder(input: CreateWorkOrderInput): WorkOrder {
     shiftGroup,
     section?.id || null,
     machine?.id || null,
+    area,
     machineName,
     reportedByName,
     reportedByDepartment,
@@ -2863,22 +3241,39 @@ export function createWorkOrder(input: CreateWorkOrderInput): WorkOrder {
     `New work order ${number}`,
     `${title} at ${sectionName}`
   );
+  enqueueWorkOrderSync(id, true);
 
   return getWorkOrder(id);
 }
 
-function nextWorkOrderNumber() {
-  const year = new Date().getFullYear();
-  const prefix = `WO-${year}-`;
-  const count = row<{ count: number }>(
-    db.prepare("SELECT COUNT(*) as count FROM work_orders WHERE number LIKE ?").get(`${prefix}%`)
-  ).count;
-
-  return `${prefix}${String(count + 1).padStart(4, "0")}`;
+function nextWorkOrderNumber(type: WorkOrderType, sectionName: string) {
+  const date = new Date();
+  const yearMonth = `${String(date.getFullYear()).slice(-2)}${String(date.getMonth() + 1).padStart(2, "0")}`;
+  const sectionCode = sectionName.toLowerCase().includes("roll") ? "RM" : sectionName.toLowerCase().includes("conversion") ? "CV" : "GEN";
+  const typeCode: Record<WorkOrderType, string> = { office: "OFF", maintenance: "MNT", project: "PRJ", kaizen: "KZN" };
+  const counterKey = `${yearMonth}-${sectionCode}-${typeCode[type]}`;
+  const counter = row<{ value: number }>(db.prepare(`
+    INSERT INTO work_order_counters (counterKey, value) VALUES (?, 1)
+    ON CONFLICT(counterKey) DO UPDATE SET value = value + 1
+    RETURNING value
+  `).get(counterKey));
+  return `WO-${sectionCode}-${typeCode[type]}-${yearMonth}-${String(counter.value).padStart(3, "0")}`;
 }
 
 export function updateWorkOrderStatus(id: string, input: UpdateWorkOrderStatusInput): WorkOrder {
   const current = getWorkOrder(id);
+  const actor = getUser(input.actorId);
+  const elevated = ["executive", "admin", "developer"].includes(actor.role);
+  if (actor.role === "requester" && (current.requesterId !== actor.id || !["closed", "returned", "cancelled"].includes(input.status))) {
+    throw new Error("Requesters may only close, return, or cancel their own work orders.");
+  }
+  const effectiveAssignment = current.assignedToId || input.assignedToId;
+  if (actor.role === "technician" && (effectiveAssignment !== actor.id || !["acknowledged", "in_progress", "pending_material", "resolved"].includes(input.status))) {
+    throw new Error("Technicians may only update work orders assigned to them.");
+  }
+  if (!elevated && !["requester", "technician"].includes(actor.role)) {
+    throw new Error("You do not have permission to update this work order.");
+  }
   const updatedAt = now();
   const assignedToId = input.assignedToId === undefined ? current.assignedToId : input.assignedToId;
   const trimmedNote = input.note.trim();
@@ -2908,6 +3303,7 @@ export function updateWorkOrderStatus(id: string, input: UpdateWorkOrderStatusIn
   const action = statusToAction(input.status);
   addActivity(id, input.actorId, action, input.status, trimmedNote || `Status changed to ${input.status}.`);
   notifyForStatusChange(getWorkOrder(id), input.status);
+  enqueueWorkOrderSync(id, true);
 
   return getWorkOrder(id);
 }
@@ -2938,11 +3334,16 @@ export function claimWorkOrder(id: string, actorId: string, note?: string): Work
 
   const workOrder = getWorkOrder(id);
   notifyUsers([workOrder.requesterId], id, `${workOrder.number} accepted`, `${actor.name} accepted ${workOrder.title}.`);
+  enqueueWorkOrderSync(id, true);
 
   return workOrder;
 }
 
 export function assignWorkOrder(id: string, assignedToId: string, actorId: string, note?: string): WorkOrder {
+  const actor = getUser(actorId);
+  if (!["executive", "admin", "developer"].includes(actor.role)) {
+    throw new Error("Executive, admin, or developer access is required to assign work orders.");
+  }
   const updatedAt = now();
   db.prepare("UPDATE work_orders SET assignedToId = ?, updatedAt = ? WHERE id = ?").run(assignedToId, updatedAt, id);
   const assignedUser = getUser(assignedToId);
@@ -2950,12 +3351,15 @@ export function assignWorkOrder(id: string, assignedToId: string, actorId: strin
 
   const workOrder = getWorkOrder(id);
   notifyUsers([assignedToId, workOrder.requesterId], id, `${workOrder.number} assigned`, `${assignedUser.name} is assigned.`);
+  enqueueWorkOrderSync(id);
 
   return workOrder;
 }
 
 export function addComment(workOrderId: string, actorId: string, message: string): WorkOrderActivity {
-  return addActivity(workOrderId, actorId, "commented", null, message.trim());
+  const activity = addActivity(workOrderId, actorId, "commented", null, message.trim());
+  enqueueWorkOrderSync(workOrderId);
+  return activity;
 }
 
 export function addAttachment(input: {
@@ -2988,6 +3392,7 @@ export function addAttachment(input: {
   );
 
   addActivity(input.workOrderId, input.uploadedBy, "attachment_added", null, `Uploaded ${input.originalName}.`);
+  enqueueWorkOrderSync(input.workOrderId);
 
   return row<WorkOrderAttachment>(
     db.prepare("SELECT * FROM work_order_attachments WHERE id = ?").get(id)
@@ -3005,6 +3410,7 @@ export function listRequesterWorkOrders(): PublicRequesterWorkOrder[] {
         wo.workDate,
         wo.shiftGroup,
         COALESCE(s.name, wo.location) as sectionName,
+        wo.area,
         wo.machineName,
         COALESCE(ic.name, 'Other') as issueCategoryName,
         wo.issueDescription,
@@ -3154,13 +3560,13 @@ function statusToAction(status: WorkOrderStatus): ActivityAction {
 function normalizeWorkOrderType(value: unknown): WorkOrderType {
   const type = String(value || "").toLowerCase();
   if (type === "maintenance" || type === "standard_maintenance") {
-    return "standard_maintenance";
+    return "maintenance";
   }
-  if (type === "kaizen") {
-    return "kaizen";
+  if (["office", "project", "kaizen"].includes(type)) {
+    return type as WorkOrderType;
   }
 
-  throw new Error("Work order type must be maintenance or kaizen.");
+  throw new Error("Work order type must be Office, Maintenance, Project, or Kaizen.");
 }
 
 export function validateCreateWorkOrderInput(body: Partial<CreateWorkOrderInput>): CreateWorkOrderInput {
@@ -3205,6 +3611,7 @@ export function validateCreateWorkOrderInput(body: Partial<CreateWorkOrderInput>
     shiftGroup: body.shiftGroup || "A",
     sectionId: body.sectionId ? String(body.sectionId) : null,
     machineId: body.machineId ? String(body.machineId) : null,
+    area: body.area ? String(body.area) : undefined,
     machineName: body.machineName ? String(body.machineName) : undefined,
     reportedByName: body.reportedByName ? String(body.reportedByName) : undefined,
     reportedByDepartment: body.reportedByDepartment ? String(body.reportedByDepartment) : undefined,

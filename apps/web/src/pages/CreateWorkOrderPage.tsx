@@ -12,7 +12,7 @@ function todayDate() {
 }
 
 const initialForm = {
-  type: "standard_maintenance" as WorkOrderType,
+  type: "maintenance" as WorkOrderType,
   workDate: todayDate(),
   shiftGroup: "A" as ShiftGroup,
   sectionId: "",
@@ -60,7 +60,7 @@ export function CreateWorkOrderPage() {
   const machineOptions = useMemo(
     () => [
       { value: "", label: "Others", meta: "Unregistered machine" },
-      ...filteredMachines.map((machine) => ({ value: machine.id, label: machine.name }))
+      ...filteredMachines.map((machine) => ({ value: machine.id, label: machine.name, meta: machine.area }))
     ],
     [filteredMachines]
   );
@@ -88,6 +88,7 @@ export function CreateWorkOrderPage() {
         shiftGroup: form.shiftGroup,
         sectionId: form.sectionId || null,
         machineId: selectedMachine?.id || null,
+        area: selectedMachine?.area || "General",
         machineName: selectedMachine?.name || customMachineName || "Others",
         reportedByName: form.reportedByName,
         reportedByDepartment: form.reportedByDepartment,

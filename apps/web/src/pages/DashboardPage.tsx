@@ -82,7 +82,7 @@ export function DashboardPage() {
   );
   const visibleWorkOrders = activeWorkOrders.slice(0, 6);
   const criticalOpen = activeWorkOrders.filter((item) => item.priority === "critical").length;
-  const standardOrders = workOrders.filter((item) => item.type === "standard_maintenance" && item.status !== "cancelled");
+  const standardOrders = workOrders.filter((item) => item.type === "maintenance" && item.status !== "cancelled");
   const kaizenOrders = workOrders.filter((item) => item.type === "kaizen" && item.status !== "cancelled");
   const standardClosure = percent(standardOrders.filter((item) => item.status === "closed").length, standardOrders.length);
   const kaizenClosure = percent(kaizenOrders.filter((item) => item.status === "closed").length, kaizenOrders.length);

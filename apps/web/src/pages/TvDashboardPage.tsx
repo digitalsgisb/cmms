@@ -1,6 +1,6 @@
 import { Clock, MonitorCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { WorkOrder, WorkOrderStatus } from "@sugi-cmms/shared";
+import type { TvWorkOrder, WorkOrderStatus } from "@sugi-cmms/shared";
 import { workOrderStatusLabels } from "@sugi-cmms/shared";
 import { api } from "../api/client";
 import { PriorityBadge } from "../components/Badges";
@@ -15,11 +15,11 @@ const columns: Array<{ title: string; statuses: WorkOrderStatus[]; tone: string 
 ];
 
 export function TvDashboardPage() {
-  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [workOrders, setWorkOrders] = useState<TvWorkOrder[]>([]);
   const [now, setNow] = useState(new Date());
 
   async function loadWorkOrders() {
-    setWorkOrders(await api.workOrders());
+    setWorkOrders(await api.tvWorkOrders());
   }
 
   useEffect(() => {

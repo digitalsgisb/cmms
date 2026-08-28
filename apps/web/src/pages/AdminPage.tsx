@@ -1,6 +1,7 @@
 import { BadgeCheck, Building2, Camera, ClipboardCopy, ExternalLink, Factory, ListChecks, MonitorDown, QrCode, Shield, Tags, UserCog, UsersRound, type LucideIcon } from "lucide-react";
 import QRCode from "qrcode";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import type { IssueCategory, Machine, MasterData, Section } from "@sugi-cmms/shared";
 import { api, mediaUrl } from "../api/client";
 import { useCurrentUser } from "../state/UserContext";
@@ -10,7 +11,8 @@ const roleNotes = {
   requester: "Issues and tracks department work orders.",
   technician: "Acknowledges, self-assigns, updates, and resolves jobs.",
   executive: "Monitors workload, reassigns jobs, and keeps completion moving.",
-  admin: "Controls users, roles, departments, and system rules."
+  admin: "Controls users, roles, departments, and system rules.",
+  developer: "Full system access for configuration, testing, and development."
 };
 
 type AdminTab = "people" | "sections" | "machines" | "categories" | "qr";
@@ -42,32 +44,42 @@ function parseMachinePaste(text: string) {
     return [];
   }
 
-  let sectionIndex = 0;
+  let areaIndex = 0;
   let machineIndex = 1;
+  let sectionIndex = 2;
   let startIndex = 0;
   const header = table[0].map((cell) => cell.toLowerCase());
-  const headerSectionIndex = header.findIndex((cell) => cell.includes("section") || cell.includes("area") || cell.includes("department"));
+  const headerSectionIndex = header.findIndex((cell) => cell.includes("section") || cell.includes("department"));
+  const headerAreaIndex = header.findIndex((cell) => cell.includes("area"));
   const headerMachineIndex = header.findIndex((cell) => cell.includes("machine") || cell.includes("asset") || cell.includes("equipment"));
 
   if (headerSectionIndex >= 0 && headerMachineIndex >= 0) {
     sectionIndex = headerSectionIndex;
+    areaIndex = headerAreaIndex >= 0 ? headerAreaIndex : headerSectionIndex;
     machineIndex = headerMachineIndex;
     startIndex = 1;
+  } else if (table[0].length < 3) {
+    sectionIndex = 0;
+    areaIndex = 0;
   }
 
   return table.slice(startIndex).map((cells) => ({
     sectionName: cleanPasteCell(cells[sectionIndex]),
+    areaName: cleanPasteCell(cells[areaIndex]) || "General",
     machineName: cleanPasteCell(cells[machineIndex])
   })).filter((row) => row.sectionName || row.machineName);
 }
 
 export function AdminPage() {
+  const [searchParams] = useSearchParams();
   const { users, currentUser, refreshUsers } = useCurrentUser();
   const [uploadingUserId, setUploadingUserId] = useState("");
-  const [activeTab, setActiveTab] = useState<AdminTab>("people");
+  const requestedTab = searchParams.get("tab") as AdminTab | null;
+  const [activeTab, setActiveTab] = useState<AdminTab>(adminTabs.some((item) => item.tab === requestedTab) ? requestedTab! : "people");
   const [masterData, setMasterData] = useState<MasterData>({ sections: [], machines: [], issueCategories: [] });
   const [newSectionName, setNewSectionName] = useState("");
   const [newMachineName, setNewMachineName] = useState("");
+  const [newMachineArea, setNewMachineArea] = useState("");
   const [newMachineSectionId, setNewMachineSectionId] = useState("");
   const [newCategoryName, setNewCategoryName] = useState("");
   const [machineImportText, setMachineImportText] = useState("");
@@ -76,7 +88,7 @@ export function AdminPage() {
   const [adminError, setAdminError] = useState("");
   const defaultRequesterUrl = `${window.location.origin}/requester`;
   const [requesterUrl, setRequesterUrl] = useState(defaultRequesterUrl);
-  const canAdmin = currentUser?.role === "admin";
+  const canAdmin = Boolean(currentUser && ["admin", "developer"].includes(currentUser.role));
   const qrTargetUrl = requesterUrl.trim() || defaultRequesterUrl;
   const machineImportRows = useMemo(() => parseMachinePaste(machineImportText), [machineImportText]);
 
@@ -159,8 +171,9 @@ export function AdminPage() {
 
     setAdminError("");
     try {
-      await api.createMachine({ actorId: currentUser.id, sectionId: newMachineSectionId, name: newMachineName, active: true });
+      await api.createMachine({ actorId: currentUser.id, sectionId: newMachineSectionId, area: newMachineArea || "General", name: newMachineName, active: true });
       setNewMachineName("");
+      setNewMachineArea("");
       await loadMasterData();
     } catch (error) {
       setAdminError(error instanceof Error ? error.message : "Unable to create machine.");
@@ -196,7 +209,7 @@ export function AdminPage() {
 
     setAdminError("");
     try {
-      await api.updateMachine(machine.id, { actorId: currentUser.id, sectionId: machine.sectionId, name: machine.name, active: machine.active });
+      await api.updateMachine(machine.id, { actorId: currentUser.id, sectionId: machine.sectionId, area: machine.area, name: machine.name, active: machine.active });
       await loadMasterData();
     } catch (error) {
       setAdminError(error instanceof Error ? error.message : "Unable to save machine.");
@@ -386,7 +399,7 @@ export function AdminPage() {
             </div>
             <Factory size={20} aria-hidden="true" />
           </div>
-          <form className="master-add-row master-add-row-three" onSubmit={createMachine}>
+          <form className="master-add-row master-add-row-machine" onSubmit={createMachine}>
             <select value={newMachineSectionId} onChange={(event) => setNewMachineSectionId(event.target.value)} disabled={!canAdmin}>
               <option value="">Select section</option>
               {masterData.sections.map((section) => (
@@ -395,6 +408,7 @@ export function AdminPage() {
                 </option>
               ))}
             </select>
+            <input value={newMachineArea} onChange={(event) => setNewMachineArea(event.target.value)} placeholder="Area (e.g. Waterjet)" disabled={!canAdmin} />
             <input value={newMachineName} onChange={(event) => setNewMachineName(event.target.value)} placeholder="New machine name" disabled={!canAdmin} />
             <button type="submit" disabled={!canAdmin || !newMachineSectionId || !newMachineName.trim()}>Add Machine</button>
           </form>
@@ -410,7 +424,7 @@ export function AdminPage() {
               value={machineImportText}
               onChange={(event) => setMachineImportText(event.target.value)}
               rows={6}
-              placeholder={"Section\tMachine\nConversion\tCV-01\nRoll Making\tRM-01"}
+              placeholder={"Area\tMachine Name\tSection\nWaterjet\tWJ 7A\tConversion\nGeneral\t4 MTR\tRoll Making"}
               disabled={!canAdmin}
             />
             <div className="master-import-actions">
@@ -436,6 +450,7 @@ export function AdminPage() {
                     </option>
                   ))}
                 </select>
+                <input value={machine.area} onChange={(event) => updateMachineDraft(machine.id, { area: event.target.value })} placeholder="Area" disabled={!canAdmin} />
                 <input value={machine.name} onChange={(event) => updateMachineDraft(machine.id, { name: event.target.value })} disabled={!canAdmin} />
                 <label>
                   <input type="checkbox" checked={machine.active} onChange={(event) => updateMachineDraft(machine.id, { active: event.target.checked })} disabled={!canAdmin} />

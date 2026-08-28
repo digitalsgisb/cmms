@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { LockKeyhole } from "lucide-react";
 import { Layout } from "./components/Layout";
 import { AdminPage } from "./pages/AdminPage";
 import { AssetsPage } from "./pages/AssetsPage";
@@ -41,19 +42,19 @@ export function App() {
         <Route path="/work-orders/new" element={<CreateWorkOrderPage />} />
         <Route path="/work-orders/:id" element={<WorkOrderDetailPage />} />
         <Route path="/technician" element={<TechnicianPage />} />
-        <Route path="/assets" element={<AssetsPage />} />
+        <Route path="/assets" element={<RestrictedFeature name="Assets"><AssetsPage /></RestrictedFeature>} />
         <Route path="/spare-parts" element={<SparePartsPage />} />
         <Route path="/spare-parts/inventory" element={<SparePartsPage />} />
         <Route path="/spare-parts/scanner" element={<SparePartsPage />} />
         <Route path="/spare-parts/setup" element={<SparePartsPage />} />
         <Route path="/spare-parts/issue/:itemNo" element={<SparePartsPage />} />
         <Route path="/spare-parts/:itemNo" element={<SparePartsPage />} />
-        <Route path="/preventive-maintenance/*" element={<PreventiveMaintenancePage />} />
-        <Route path="/performance" element={<Suspense fallback={<div className="performance-loading">Preparing live performance view...</div>}><PerformancePage /></Suspense>} />
-        <Route path="/reports" element={<Suspense fallback={<div className="performance-loading">Building live report...</div>}><ReportsPage /></Suspense>} />
-        <Route path="/users" element={<AdminPage />} />
-        <Route path="/profile" element={<TechnicianProfilePage />} />
-        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/preventive-maintenance/*" element={<RestrictedFeature name="Preventive Maintenance"><PreventiveMaintenancePage /></RestrictedFeature>} />
+        <Route path="/performance" element={<RestrictedFeature name="Performance"><Suspense fallback={<div className="performance-loading">Preparing live performance view...</div>}><PerformancePage /></Suspense></RestrictedFeature>} />
+        <Route path="/reports" element={<RestrictedFeature name="Reports"><Suspense fallback={<div className="performance-loading">Building live report...</div>}><ReportsPage /></Suspense></RestrictedFeature>} />
+        <Route path="/users" element={<RestrictedFeature name="Users"><AdminPage /></RestrictedFeature>} />
+        <Route path="/profile" element={<RestrictedFeature name="Profile"><TechnicianProfilePage /></RestrictedFeature>} />
+        <Route path="/settings" element={<RestrictedFeature name="Settings"><SettingsPage /></RestrictedFeature>} />
       </Route>
     </Routes>
   );
@@ -62,9 +63,24 @@ export function App() {
 function HomePage() {
   const { currentUser } = useCurrentUser();
 
-  if (currentUser?.role === "technician") {
-    return <Navigate to="/technician" replace />;
+  if (currentUser && !["admin", "developer"].includes(currentUser.role)) {
+    return <Navigate to={currentUser.role === "technician" ? "/technician" : "/work-orders"} replace />;
   }
 
   return <DashboardPage />;
+}
+
+function RestrictedFeature({ name, children }: { name: string; children: React.ReactNode }) {
+  const { currentUser } = useCurrentUser();
+  if (currentUser && ["admin", "developer"].includes(currentUser.role)) return children;
+
+  return (
+    <section className="locked-feature-page">
+      <span><LockKeyhole size={28} aria-hidden="true" /></span>
+      <p className="eyebrow">Feature locked</p>
+      <h1>{name} is coming later</h1>
+      <p>Production access is currently limited to Work Orders and Spare Parts while this module is being completed.</p>
+      <a href="/work-orders">Go to Work Orders</a>
+    </section>
+  );
 }

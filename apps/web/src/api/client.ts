@@ -1,6 +1,7 @@
 import type {
   AssetDashboardResponse,
   AssetRecord,
+  AuthSession,
   ClaimWorkOrderInput,
   CreateWorkOrderInput,
   DashboardSummary,
@@ -19,6 +20,7 @@ import type {
   SavePmResultInput,
   SavePmTemplateInput,
   SubmitPmScheduleInput,
+  TvWorkOrder,
   PublicRequesterWorkOrder,
   Section,
   SpareAdjustmentInput,
@@ -35,23 +37,29 @@ import type {
   UpdateAssetInput,
   UpdatePmPlanInput,
   UpdateWorkOrderStatusInput,
+  UpdateWorkOrderSyncSettingsInput,
   User,
   WorkOrder,
   WorkOrderActivity,
   WorkOrderAttachment,
-  WorkOrderDetail
+  WorkOrderDetail,
+  WorkOrderSyncResult,
+  WorkOrderSyncSettings
 } from "@sugi-cmms/shared";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
+const authTokenKey = "sugi-cmms-auth-token-v1";
 
 export const liveEventsUrl = `${API_BASE}/api/events`;
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const token = localStorage.getItem(authTokenKey);
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     cache: options.cache ?? "no-store",
     headers: {
       ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers
     }
   });
@@ -78,11 +86,17 @@ export function mediaUrl(url: string) {
 
 export const api = {
   health: () => request<{ ok: boolean; service: string; timestamp: string }>("/api/health"),
-  login: (username: string, password: string) =>
-    request<User>("/api/auth/login", {
+  login: async (username: string, password: string) => {
+    const session = await request<AuthSession>("/api/auth/login", {
       method: "POST",
       body: JSON.stringify({ username, password })
-    }),
+    });
+    localStorage.setItem(authTokenKey, session.token);
+    return session.user;
+  },
+  me: () => request<User>("/api/auth/me"),
+  hasSession: () => Boolean(localStorage.getItem(authTokenKey)),
+  clearSession: () => localStorage.removeItem(authTokenKey),
   users: () => request<User[]>("/api/users"),
   usersByRole: (role: User["role"]) => request<User[]>(`/api/users?role=${role}`),
   uploadUserAvatar: (id: string, file: File) => {
@@ -112,7 +126,7 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(input)
     }),
-  createMachine: (input: { actorId: string; sectionId: string; name: string; active?: boolean }) =>
+  createMachine: (input: { actorId: string; sectionId: string; area: string; name: string; active?: boolean }) =>
     request<Machine>("/api/master-data/machines", {
       method: "POST",
       body: JSON.stringify(input)
@@ -122,7 +136,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input)
     }),
-  updateMachine: (id: string, input: { actorId: string; sectionId: string; name: string; active?: boolean }) =>
+  updateMachine: (id: string, input: { actorId: string; sectionId: string; area: string; name: string; active?: boolean }) =>
     request<Machine>(`/api/master-data/machines/${id}`, {
       method: "PATCH",
       body: JSON.stringify(input)
@@ -235,6 +249,18 @@ export const api = {
       body: JSON.stringify(input)
     }),
   workOrders: () => request<WorkOrder[]>("/api/work-orders"),
+  tvWorkOrders: () => request<TvWorkOrder[]>("/api/tv/work-orders"),
+  workOrderSyncSettings: () => request<WorkOrderSyncSettings>("/api/work-orders/sync/settings"),
+  updateWorkOrderSyncSettings: (input: UpdateWorkOrderSyncSettingsInput) =>
+    request<WorkOrderSyncSettings>("/api/work-orders/sync/settings", {
+      method: "PATCH",
+      body: JSON.stringify(input)
+    }),
+  retryWorkOrderSync: (actorId: string) =>
+    request<WorkOrderSyncResult>("/api/work-orders/sync/retry", {
+      method: "POST",
+      body: JSON.stringify({ actorId })
+    }),
   requesterWorkOrders: () => request<PublicRequesterWorkOrder[]>("/api/requester/work-orders"),
   createRequesterWorkOrder: (input: Omit<CreateWorkOrderInput, "requesterId">) =>
     request<WorkOrder>("/api/requester/work-orders", {
