@@ -1,4 +1,4 @@
-import { ImagePlus, Trash2 } from "lucide-react";
+import { Camera, Images, Trash2 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
 interface MultiPhotoPickerProps {
@@ -22,11 +22,12 @@ export function MultiPhotoPicker({
   onChange,
   disabled = false,
   label = "Issue photos",
-  help = "Take photos or select several from your phone.",
+  help = "Open the camera or select several photos from your phone.",
   maxFiles = 10
 }: MultiPhotoPickerProps) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const [previews, setPreviews] = useState<PhotoPreview[]>([]);
   const [message, setMessage] = useState("");
 
@@ -54,6 +55,7 @@ export function MultiPhotoPicker({
       setMessage("");
     }
     if (inputRef.current) inputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
   }
 
   function removeFile(index: number) {
@@ -65,7 +67,7 @@ export function MultiPhotoPicker({
     <section className="multi-photo-picker" aria-labelledby={`${inputId}-label`}>
       <div className="multi-photo-heading">
         <div>
-          <strong id={`${inputId}-label`}><ImagePlus size={16} aria-hidden="true" />{label}</strong>
+          <strong id={`${inputId}-label`}><Camera size={16} aria-hidden="true" />{label}</strong>
           <span>{help}</span>
         </div>
         <small>{files.length}/{maxFiles}</small>
@@ -80,10 +82,26 @@ export function MultiPhotoPicker({
         disabled={disabled || files.length >= maxFiles}
         onChange={(event) => addFiles(event.target.files)}
       />
-      <button className="multi-photo-add" type="button" disabled={disabled || files.length >= maxFiles} onClick={() => inputRef.current?.click()}>
-        <ImagePlus size={18} aria-hidden="true" />
-        {files.length ? "Add more photos" : "Take or choose photos"}
-      </button>
+      <input
+        id={`${inputId}-camera`}
+        ref={cameraInputRef}
+        className="visually-hidden-input"
+        type="file"
+        accept="image/*"
+        capture="environment"
+        disabled={disabled || files.length >= maxFiles}
+        onChange={(event) => addFiles(event.target.files)}
+      />
+      <div className="multi-photo-actions">
+        <button className="multi-photo-add camera" type="button" disabled={disabled || files.length >= maxFiles} onClick={() => cameraInputRef.current?.click()}>
+          <Camera size={18} aria-hidden="true" />
+          Open camera
+        </button>
+        <button className="multi-photo-add" type="button" disabled={disabled || files.length >= maxFiles} onClick={() => inputRef.current?.click()}>
+          <Images size={18} aria-hidden="true" />
+          {files.length ? "Add more photos" : "Choose photos"}
+        </button>
+      </div>
       {previews.length ? (
         <div className="multi-photo-preview" aria-label="Selected photo previews">
           {previews.map((preview, index) => (

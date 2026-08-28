@@ -1,8 +1,8 @@
 import {
   Activity, ArrowLeft, Building2, CalendarDays, CheckCircle2, ClipboardList, Clock3, Factory,
-  Hammer, Lightbulb, MapPin, Send, ShieldCheck, UserRound, Wrench, type LucideIcon
+  Hammer, Lightbulb, LockKeyhole, MapPin, Send, ShieldCheck, UserRound, Wrench, type LucideIcon
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { MasterData, PublicRequesterWorkOrder, ShiftGroup, WorkOrderType } from "@sugi-cmms/shared";
 import { workOrderStatusLabels, workOrderTypeLabels } from "@sugi-cmms/shared";
 import { api, mediaUrl } from "../api/client";
@@ -38,6 +38,15 @@ const requestTypes: Array<{ type: WorkOrderType; Icon: LucideIcon; title: string
   { type: "kaizen", Icon: Lightbulb, title: "Kaizen", description: "Small continuous-improvement request" }
 ];
 
+type RequesterStatusFilter = "open" | "in_progress" | "waiting" | "closed";
+
+const statusesByFilter: Record<RequesterStatusFilter, PublicRequesterWorkOrder["status"][]> = {
+  open: ["open", "acknowledged"],
+  in_progress: ["in_progress", "returned"],
+  waiting: ["pending_material", "resolved"],
+  closed: ["closed"]
+};
+
 export function PublicRequesterPage() {
   const [masterData, setMasterData] = useState<MasterData>({ sections: [], machines: [], issueCategories: [] });
   const [workOrders, setWorkOrders] = useState<PublicRequesterWorkOrder[]>([]);
@@ -47,6 +56,8 @@ export function PublicRequesterPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [statusFilter, setStatusFilter] = useState<RequesterStatusFilter | null>(null);
+  const trackingPanelRef = useRef<HTMLElement>(null);
 
   async function loadRequesterData() {
     const [nextMasterData, nextWorkOrders] = await Promise.all([api.masterData(), api.requesterWorkOrders()]);
@@ -79,12 +90,13 @@ export function PublicRequesterPage() {
     () => activeIssueCategories.map((category) => ({ value: category.id, label: category.name })),
     [activeIssueCategories]
   );
-  const requesterStats = useMemo(() => ({
-    new: workOrders.filter((workOrder) => workOrder.status === "open").length,
-    moving: workOrders.filter((workOrder) => ["acknowledged", "in_progress", "returned"].includes(workOrder.status)).length,
-    waiting: workOrders.filter((workOrder) => ["pending_material", "resolved"].includes(workOrder.status)).length,
-    closed: workOrders.filter((workOrder) => workOrder.status === "closed").length
-  }), [workOrders]);
+  const requesterStats = useMemo(() => Object.fromEntries(
+    Object.entries(statusesByFilter).map(([filter, statuses]) => [filter, workOrders.filter((workOrder) => statuses.includes(workOrder.status)).length])
+  ) as Record<RequesterStatusFilter, number>, [workOrders]);
+  const visibleWorkOrders = useMemo(
+    () => statusFilter ? workOrders.filter((workOrder) => statusesByFilter[statusFilter].includes(workOrder.status)) : workOrders,
+    [statusFilter, workOrders]
+  );
   const latestWorkOrder = workOrders[0];
 
   function chooseType(type: WorkOrderType) {
@@ -98,6 +110,11 @@ export function PublicRequesterPage() {
       placeOrEquipment: "",
       issueCategoryId: type === "office" ? "" : current.issueCategoryId
     }));
+  }
+
+  function showStatus(filter: RequesterStatusFilter) {
+    setStatusFilter((current) => current === filter ? null : filter);
+    window.setTimeout(() => trackingPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 20);
   }
 
   async function submit(event: FormEvent) {
@@ -155,6 +172,7 @@ export function PublicRequesterPage() {
 
   return (
     <main className="requester-kiosk">
+      <div className={`requester-page-content ${selectedType ? "" : "requester-content-locked"}`} aria-hidden={!selectedType}>
       <section className="requester-kiosk-header">
         <div className="requester-hero-copy">
           <p className="eyebrow"><span className="requester-live-dot" aria-hidden="true" />Sugi CMMS Requester</p>
@@ -167,28 +185,20 @@ export function PublicRequesterPage() {
         </div>
         <PwaInstallButton />
         <div className="requester-status-strip">
-          <article><Activity size={16} aria-hidden="true" /><span>New</span><strong>{requesterStats.new}</strong></article>
-          <article><Wrench size={16} aria-hidden="true" /><span>Moving</span><strong>{requesterStats.moving}</strong></article>
-          <article><Clock3 size={16} aria-hidden="true" /><span>Waiting</span><strong>{requesterStats.waiting}</strong></article>
-          <article><CheckCircle2 size={16} aria-hidden="true" /><span>Closed</span><strong>{requesterStats.closed}</strong></article>
+          <button type="button" className={statusFilter === "open" ? "active" : ""} aria-pressed={statusFilter === "open"} onClick={() => showStatus("open")}><Activity size={16} aria-hidden="true" /><span>Open</span><strong>{requesterStats.open}</strong></button>
+          <button type="button" className={statusFilter === "in_progress" ? "active" : ""} aria-pressed={statusFilter === "in_progress"} onClick={() => showStatus("in_progress")}><Wrench size={16} aria-hidden="true" /><span>In Progress</span><strong>{requesterStats.in_progress}</strong></button>
+          <button type="button" className={statusFilter === "waiting" ? "active" : ""} aria-pressed={statusFilter === "waiting"} onClick={() => showStatus("waiting")}><Clock3 size={16} aria-hidden="true" /><span>Waiting</span><strong>{requesterStats.waiting}</strong></button>
+          <button type="button" className={statusFilter === "closed" ? "active" : ""} aria-pressed={statusFilter === "closed"} onClick={() => showStatus("closed")}><CheckCircle2 size={16} aria-hidden="true" /><span>Closed</span><strong>{requesterStats.closed}</strong></button>
         </div>
       </section>
 
       <div className="requester-workspace">
         {!selectedType ? (
-          <section className="requester-form-panel requester-type-panel">
+          <section className="requester-form-panel requester-form-locked" aria-hidden="true">
             <div className="requester-panel-heading">
-              <span className="requester-panel-icon"><Send size={18} aria-hidden="true" /></span>
-              <div><h2>What do you need?</h2><span>Choose one request type to begin</span></div>
+              <span className="requester-panel-icon"><LockKeyhole size={18} aria-hidden="true" /></span>
+              <div><h2>Request form locked</h2><span>Choose a category first</span></div>
             </div>
-            <div className="requester-type-grid">
-              {requestTypes.map(({ type, Icon, title, description }) => (
-                <button className={`requester-type-card type-${type}`} type="button" key={type} onClick={() => chooseType(type)}>
-                  <span><Icon size={24} aria-hidden="true" /></span><strong>{title}</strong><small>{description}</small>
-                </button>
-              ))}
-            </div>
-            {success ? <p className="success-line">{success}</p> : null}
           </section>
         ) : (
           <form className="requester-form-panel" onSubmit={submit}>
@@ -230,10 +240,10 @@ export function PublicRequesterPage() {
           </form>
         )}
 
-        <section className="requester-tracking-panel">
-          <div className="section-header"><div><h2>Recent Requests</h2><span>{workOrders.length} work orders</span></div><ClipboardList size={20} aria-hidden="true" /></div>
+        <section className="requester-tracking-panel" ref={trackingPanelRef}>
+          <div className="section-header"><div><h2>{statusFilter ? `${statusFilter === "in_progress" ? "In Progress" : statusFilter[0].toUpperCase() + statusFilter.slice(1)} Requests` : "Recent Requests"}</h2><span>{visibleWorkOrders.length} work orders{statusFilter ? " · tap the active status again to clear" : ""}</span></div><ClipboardList size={20} aria-hidden="true" /></div>
           <div className="requester-tracking-list">
-            {workOrders.length === 0 ? <p className="quiet-panel">No work orders submitted yet.</p> : workOrders.slice(0, 20).map((workOrder) => (
+            {visibleWorkOrders.length === 0 ? <p className="quiet-panel">No work orders match this status.</p> : visibleWorkOrders.slice(0, 20).map((workOrder) => (
               <article className="requester-tracking-card" key={workOrder.id}>
                 <div className="card-topline"><strong>{workOrder.number}</strong><StatusBadge status={workOrder.status} /></div>
                 <p>{workOrder.issueDescription}</p>
@@ -258,6 +268,28 @@ export function PublicRequesterPage() {
           </div>
         </section>
       </div>
+      </div>
+
+      {!selectedType ? (
+        <div className="requester-category-gate" role="dialog" aria-modal="true" aria-labelledby="requester-category-title">
+          <section className="requester-category-card">
+            <div className="requester-category-heading">
+              <span><img src="/brand/sugi_symbol.png" alt="" /></span>
+              <div><p>SUGI CMMS REQUESTER</p><h1 id="requester-category-title">What do you need help with?</h1></div>
+            </div>
+            <p className="requester-category-copy">Choose one category first. The request form will open next.</p>
+            <div className="requester-type-grid">
+              {requestTypes.map(({ type, Icon, title, description }) => (
+                <button className={`requester-type-card type-${type}`} type="button" key={type} onClick={() => chooseType(type)}>
+                  <span><Icon size={24} aria-hidden="true" /></span><strong>{title}</strong><small>{description}</small>
+                </button>
+              ))}
+            </div>
+            {success ? <p className="success-line">{success}</p> : null}
+            <small className="requester-category-note"><ShieldCheck size={14} />No login required</small>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
