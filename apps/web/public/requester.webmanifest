@@ -2,7 +2,7 @@
   "id": "/requester",
   "name": "Sugi CMMS Requester",
   "short_name": "Sugi Request",
-  "description": "Public requester work order form and tracking for Sugi CMMS.",
+  "description": "Guest work order requests and secure production requester tracking for Sugi CMMS.",
   "start_url": "/requester",
   "scope": "/",
   "display": "standalone",

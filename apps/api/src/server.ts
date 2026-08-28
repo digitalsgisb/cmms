@@ -37,7 +37,6 @@ import {
   listMasterData,
   listNotifications,
   listPmTemplates,
-  listRequesterWorkOrders,
   listSpareInventory,
   listSpareMovementsForActor,
   listSparePartMovements,
@@ -172,11 +171,14 @@ declare global {
 }
 
 app.use("/api", (request, response, next) => {
+  const publicRequesterMutation =
+    request.method === "POST" &&
+    (request.path === "/requester/work-orders" || /^\/requester\/work-orders\/[^/]+\/attachments$/.test(request.path));
   const publicRequest =
     request.path === "/health" ||
     request.path === "/auth/login" ||
     request.path === "/events" ||
-    request.path.startsWith("/requester/") ||
+    publicRequesterMutation ||
     (request.method === "GET" && request.path.startsWith("/pm/photos/")) ||
     (request.method === "GET" && ["/master-data", "/tv/work-orders", "/dashboard-summary"].includes(request.path));
   if (publicRequest) { next(); return; }
@@ -195,6 +197,19 @@ app.use("/api", (request, response, next) => {
   if (actorId && String(actorId) !== request.cmmsUser.id) {
     response.status(403).json({ error: "You cannot perform an action as another user." });
     return;
+  }
+  const scopedWorkOrderMatch = request.path.match(/^\/work-orders\/([^/]+)/);
+  if (request.cmmsUser.role === "requester" && scopedWorkOrderMatch) {
+    try {
+      const workOrder = getWorkOrderDetail(decodeURIComponent(scopedWorkOrderMatch[1]));
+      if (workOrder.requesterId !== request.cmmsUser.id) {
+        response.status(403).json({ error: "You can only access work orders issued from your requester account." });
+        return;
+      }
+    } catch {
+      response.status(404).json({ error: "Work order not found." });
+      return;
+    }
   }
   if ((request.path.startsWith("/assets") || request.path.startsWith("/pm") || request.path.startsWith("/work-orders/sync")) && !["admin", "developer"].includes(request.cmmsUser.role)) {
     response.status(403).json({ error: "This feature is locked while development is in progress." });
@@ -588,7 +603,7 @@ app.post("/api/spare-parts/:itemNo/adjust", asyncHandler(async (request, respons
 }));
 
 app.get("/api/requester/work-orders", (_request, response) => {
-  response.json(listRequesterWorkOrders());
+  response.status(403).json({ error: "Guest tracking is disabled. Sign in with a requester account to track work orders." });
 });
 
 app.post("/api/requester/work-orders", (request, response) => {
@@ -613,8 +628,11 @@ app.post("/api/requester/work-orders/:id/attachments", upload.array("attachments
   response.status(201).json(saved);
 });
 
-app.get("/api/work-orders", (_request, response) => {
-  response.json(listWorkOrders());
+app.get("/api/work-orders", (request, response) => {
+  const workOrders = listWorkOrders();
+  response.json(request.cmmsUser?.role === "requester"
+    ? workOrders.filter((workOrder) => workOrder.requesterId === request.cmmsUser?.id)
+    : workOrders);
 });
 
 app.post("/api/work-orders", (request, response) => {
