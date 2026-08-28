@@ -1,4 +1,4 @@
-import { BadgeCheck, Building2, Camera, ClipboardCopy, ExternalLink, Factory, ListChecks, MonitorDown, QrCode, Shield, Tags, UserCog, UsersRound, type LucideIcon } from "lucide-react";
+import { BadgeCheck, Building2, Camera, ClipboardCopy, ExternalLink, Factory, FileDown, ListChecks, MonitorDown, QrCode, Shield, Tags, UserCog, UsersRound, type LucideIcon } from "lucide-react";
 import QRCode from "qrcode";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -85,6 +85,7 @@ export function AdminPage() {
   const [machineImportText, setMachineImportText] = useState("");
   const [machineImportMessage, setMachineImportMessage] = useState("");
   const [qrSvg, setQrSvg] = useState("");
+  const [posterBusy, setPosterBusy] = useState(false);
   const [adminError, setAdminError] = useState("");
   const defaultRequesterUrl = `${window.location.origin}/requester`;
   const [requesterUrl, setRequesterUrl] = useState(defaultRequesterUrl);
@@ -258,6 +259,20 @@ export function AdminPage() {
     link.download = "sugi-requester-qr.svg";
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function downloadPoster() {
+    setPosterBusy(true);
+    setAdminError("");
+    try {
+      const { downloadRequesterPosterPdf } = await import("../utils/requesterPosterPdf");
+      const qrDataUrl = await QRCode.toDataURL(qrTargetUrl, { width: 900, margin: 2, errorCorrectionLevel: "H" });
+      await downloadRequesterPosterPdf(qrTargetUrl, qrDataUrl);
+    } catch (error) {
+      setAdminError(error instanceof Error ? error.message : "Unable to create the PDF poster.");
+    } finally {
+      setPosterBusy(false);
+    }
   }
 
   function updateSectionDraft(id: string, update: Partial<Section>) {
@@ -521,6 +536,10 @@ export function AdminPage() {
               <button type="button" onClick={downloadQr} disabled={!qrSvg}>
                 <MonitorDown size={16} aria-hidden="true" />
                 Download QR
+              </button>
+              <button className="poster-download-button" type="button" onClick={downloadPoster} disabled={posterBusy || !qrTargetUrl}>
+                <FileDown size={16} aria-hidden="true" />
+                {posterBusy ? "Creating PDF..." : "Download PDF Poster"}
               </button>
             </div>
           </div>

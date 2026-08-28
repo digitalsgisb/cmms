@@ -750,8 +750,36 @@ function seedMasterData() {
   db.prepare("UPDATE machines SET active = 0, updatedAt = ? WHERE id IN ('machine-conversion-1', 'machine-conversion-2', 'machine-roll-making-1')")
     .run(timestamp);
 
-  db.prepare("INSERT OR IGNORE INTO issue_categories (id, name, active, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)")
-    .run(otherIssueCategoryId, "Other", 1, timestamp, timestamp);
+  const productionIssueCategories = [
+    "JOINT / FITTING", "HOSE ABB", "COIL", "ON / OFF", "VACUUM", "VALVE", "FILTER", "HEATER",
+    "NOT PRESSING", "PRESS SLOW", "CHILLER", "HOSE FMG", "SENSOR / LIMIT SWITCH", "WINCH CABLE / MOTOR",
+    "BUTTON", "NOT PRESS", "HYDRAULIC PUMP NG", "SCISSOR JACK NG", "BOLSTER ISSUE", "PLC", "CLAMP DAMAGE",
+    "STOPPER", "PUMP ABB", "LEAKING", "ABSORBER ABB", "COOLING TIMER NG", "FILTER NOZZLE", "HEATER DAMAGE",
+    "TRIP", "AUTO SYSTEM NG", "HOSE FORMING", "COBOT", "MOLD DAMAGE", "HOTMELT GLUE", "OIL LEAKING",
+    "EMERGENCY BUTTON", "JETLINE 50 HP"
+  ];
+  const insertIssueCategory = db.prepare("INSERT OR IGNORE INTO issue_categories (id, name, active, createdAt, updatedAt) VALUES (?, ?, 1, ?, ?)");
+  const findIssueCategory = db.prepare("SELECT id FROM issue_categories WHERE lower(name) = lower(?) LIMIT 1");
+  const activateIssueCategory = db.prepare("UPDATE issue_categories SET active = 1, updatedAt = ? WHERE id = ?");
+  productionIssueCategories.forEach((name, index) => {
+    const existing = row<{ id: string } | undefined>(findIssueCategory.get(name));
+    if (existing) {
+      activateIssueCategory.run(timestamp, existing.id);
+    } else {
+      insertIssueCategory.run(`issue-category-production-${String(index + 1).padStart(3, "0")}`, name, timestamp, timestamp);
+    }
+  });
+  insertIssueCategory.run(otherIssueCategoryId, "Other", timestamp, timestamp);
+  db.prepare("UPDATE OR IGNORE issue_categories SET name = 'Other', active = 1, updatedAt = ? WHERE id = ?")
+    .run(timestamp, otherIssueCategoryId);
+  const duplicateCategoryAliases = [
+    "ASORBER ABB", "HYDARULIC PUMP NG", "JOINT/FITTING", "ON OFF", "OTHERS", "SENSOR/LIMIT SWITCH",
+    "VACCUM", "WINCH CABLE/MOTOR"
+  ];
+  const deactivateIssueCategory = db.prepare("UPDATE issue_categories SET active = 0, updatedAt = ? WHERE lower(name) = lower(?)");
+  duplicateCategoryAliases.forEach((alias) => deactivateIssueCategory.run(timestamp, alias));
+  db.prepare("UPDATE issue_categories SET active = 1, updatedAt = ? WHERE lower(name) = lower('Other')")
+    .run(timestamp);
 }
 
 function seedProductionAssets() {

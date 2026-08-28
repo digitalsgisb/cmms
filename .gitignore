@@ -8,6 +8,8 @@ dist/
 apps/api/data/
 apps/api/uploads/
 backups/
+output/
+tmp/
 
 # OS/editor noise
 .DS_Store
