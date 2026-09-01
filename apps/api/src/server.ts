@@ -645,13 +645,13 @@ app.get("/api/work-orders/:id", (request, response) => {
   response.json(getWorkOrderDetail(request.params.id));
 });
 
-app.delete("/api/work-orders/:id", (request, response) => {
+app.delete("/api/work-orders/:id", asyncHandler(async (request, response) => {
   if (!request.body.actorId) {
     throw new Error("actorId is required.");
   }
 
-  response.json(deleteWorkOrder(request.params.id, String(request.body.actorId)));
-});
+  response.json(await deleteWorkOrder(request.params.id, String(request.body.actorId)));
+}));
 
 app.patch("/api/work-orders/:id/status", (request, response) => {
   const input = validateStatusInput(request.body);

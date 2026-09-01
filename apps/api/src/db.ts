@@ -3148,7 +3148,7 @@ async function runWorkOrderSyncQueue(actorId?: string): Promise<WorkOrderSyncRes
     const waitingForIssuePhoto = data.Status === "Open" && !data.PhotoIssue && Date.now() - Date.parse(data.DateSubmitted) < 10000;
     if (item.webhookPending && runtime.webhookUrl && !waitingForIssuePhoto) {
       try {
-        await postJson(runtime.webhookUrl, { Data: data });
+        await postJson(runtime.webhookUrl, { Source: "CMMS", Data: data });
         db.prepare("UPDATE work_order_sync_queue SET webhookPending = 0 WHERE workOrderId = ?").run(item.workOrderId);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown webhook error";
@@ -3470,9 +3470,16 @@ export function publicRequesterIdForUploads() {
   return publicRequesterId;
 }
 
-export function deleteWorkOrder(id: string, actorId: string) {
+export async function deleteWorkOrder(id: string, actorId: string) {
   requireAdmin(actorId);
   const workOrder = getWorkOrder(id);
+  const runtime = workOrderSyncRuntimeSettings();
+
+  if (runtime.webhookUrl) {
+    const deletionData = { ...workOrderSheetRow(id), Status: "Deleted", UpdatedAt: now() };
+    await postJson(runtime.webhookUrl, { Source: "CMMS", Event: "Deleted", Data: deletionData });
+  }
+
   db.prepare("DELETE FROM work_orders WHERE id = ?").run(id);
 
   const workOrderUploadsRoot = path.resolve(uploadsRoot, "work-orders");
