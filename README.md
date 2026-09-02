@@ -45,6 +45,8 @@ APP_PUBLIC_URL=http://cmms-server-ip:3300
 
 `DEVELOPER_PASSWORD` enables developer sign-in. `ADMIN_PASSWORD` replaces the seeded admin password on startup. `USER_PASSWORDS_JSON` applies per-user passwords (minimum 12 characters) using usernames as keys. Do not leave the original local-development passwords active on a production network.
 
+Admins can create and remove sign-in accounts from **Users → People**. Removing an account immediately revokes its sessions and hides it from active-user lists while retaining its historical work orders, PM records, uploads, and stock activity.
+
 ### Google Sheets work-order mirror
 
 PostgreSQL is not used by this repository: the server database in this version is SQLite. It is the authoritative store, and Google Sheets is a secondary mirror. Failed Sheet updates stay in a durable outbox and retry every minute, so work-order submission continues during Google or network outages.

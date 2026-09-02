@@ -15,12 +15,14 @@ import {
   assignWorkOrder,
   authenticateSession,
   claimWorkOrder,
+  createUser,
   createIssueCategory,
   createAuthSession,
   createMachine,
   createSection,
   createWorkOrder,
   dashboardSummary,
+  deactivateUser,
   deleteWorkOrder,
   deletePmResultPhoto,
   getPmDashboard,
@@ -296,6 +298,23 @@ app.get("/api/health", (_request, response) => {
 
 app.get("/api/users", (request, response) => {
   response.json(listUsers(request.query.role ? String(request.query.role) : undefined));
+});
+
+app.post("/api/users", (request, response) => {
+  response.status(201).json(createUser({
+    actorId: String(request.body.actorId || ""),
+    username: String(request.body.username || ""),
+    password: String(request.body.password || ""),
+    name: String(request.body.name || ""),
+    role: String(request.body.role || "requester") as User["role"],
+    department: String(request.body.department || ""),
+    title: String(request.body.title || "")
+  }));
+});
+
+app.delete("/api/users/:id", (request, response) => {
+  deactivateUser(request.params.id, String(request.body.actorId || ""));
+  response.status(204).send();
 });
 
 app.post("/api/auth/login", (request, response) => {

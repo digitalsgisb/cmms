@@ -11,6 +11,7 @@ import type {
   AssetLifecycleBand,
   AssetRecord,
   AuthSession,
+  CreateUserInput,
   CreateWorkOrderInput,
   DashboardSummary,
   IssueCategory,
@@ -54,6 +55,7 @@ import type {
   UpdatePmPlanInput,
   UpdateWorkOrderStatusInput,
   User,
+  UserRole,
   WorkOrder,
   WorkOrderActivity,
   WorkOrderAttachment,
@@ -130,7 +132,8 @@ export function migrate() {
       title TEXT NOT NULL,
       avatarUrl TEXT,
       passwordHash TEXT,
-      passwordSalt TEXT
+      passwordSalt TEXT,
+      active INTEGER NOT NULL DEFAULT 1
     );
 
     CREATE TABLE IF NOT EXISTS auth_sessions (
@@ -487,6 +490,9 @@ export function migrate() {
   }
   if (!userColumns.some((column) => column.name === "passwordSalt")) {
     db.exec("ALTER TABLE users ADD COLUMN passwordSalt TEXT");
+  }
+  if (!userColumns.some((column) => column.name === "active")) {
+    db.exec("ALTER TABLE users ADD COLUMN active INTEGER NOT NULL DEFAULT 1");
   }
 
   const workOrderColumns = rows<{ name: string }>(db.prepare("PRAGMA table_info(work_orders)").all());
@@ -1152,10 +1158,85 @@ function generatePmSchedules(year: number, planId?: string, fromDate?: string) {
 
 export function listUsers(role?: string): User[] {
   if (role) {
-    return rows<User>(db.prepare(`SELECT ${userSelectColumns} FROM users WHERE role = ? ORDER BY name`).all(role));
+    return rows<User>(db.prepare(`SELECT ${userSelectColumns} FROM users WHERE role = ? AND active = 1 ORDER BY name`).all(role));
   }
 
-  return rows<User>(db.prepare(`SELECT ${userSelectColumns} FROM users ORDER BY department, role, name`).all());
+  return rows<User>(db.prepare(`SELECT ${userSelectColumns} FROM users WHERE active = 1 ORDER BY department, role, name`).all());
+}
+
+const userRoles: UserRole[] = ["requester", "technician", "executive", "admin", "developer"];
+
+export function createUser(input: CreateUserInput): User {
+  const actor = requireAdmin(input.actorId);
+  const username = input.username.trim().toLowerCase();
+  const name = input.name.trim();
+  const department = input.department.trim();
+  const title = input.title.trim();
+  const password = input.password;
+
+  if (!username || !name || !department || !title || !password) {
+    throw new Error("Username, password, name, department, and title are required.");
+  }
+  if (!/^[a-z0-9._-]{3,50}$/i.test(username)) {
+    throw new Error("Username must be 3-50 characters and use only letters, numbers, dots, underscores, or hyphens.");
+  }
+  if (password.length < 12) {
+    throw new Error("Password must contain at least 12 characters.");
+  }
+  if (!userRoles.includes(input.role)) {
+    throw new Error("Select a valid user role.");
+  }
+  if (input.role === "developer" && actor.role !== "developer") {
+    throw new Error("Only a developer account can create another developer account.");
+  }
+  if (db.prepare("SELECT 1 FROM users WHERE lower(username) = lower(?)").get(username)) {
+    throw new Error("That username already exists, including among previously removed accounts.");
+  }
+
+  const id = randomUUID();
+  const passwordRecord = createPasswordRecord(password);
+  db.prepare(`
+    INSERT INTO users (id, username, name, role, department, title, avatarUrl, passwordHash, passwordSalt, active)
+    VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, 1)
+  `).run(id, username, name, input.role, department, title, passwordRecord.passwordHash, passwordRecord.passwordSalt);
+  return getUser(id);
+}
+
+export function deactivateUser(id: string, actorId: string): void {
+  const actor = requireAdmin(actorId);
+  const target = row<(User & { active: number }) | undefined>(
+    db.prepare(`SELECT ${userSelectColumns}, active FROM users WHERE id = ?`).get(id)
+  );
+  if (!target || !target.active) {
+    throw new Error("User not found.");
+  }
+  if (id === publicRequesterId) {
+    throw new Error("The requester kiosk account is required by the public request form and cannot be removed.");
+  }
+  if (id === actorId) {
+    throw new Error("You cannot remove the account you are currently using.");
+  }
+  if (target.role === "developer" && actor.role !== "developer") {
+    throw new Error("Only a developer account can remove another developer account.");
+  }
+  if (["admin", "developer"].includes(target.role)) {
+    const elevatedCount = row<{ count: number }>(
+      db.prepare("SELECT COUNT(*) AS count FROM users WHERE active = 1 AND role IN ('admin', 'developer')").get()
+    ).count;
+    if (elevatedCount <= 1) {
+      throw new Error("At least one active admin or developer account must remain.");
+    }
+  }
+
+  db.exec("BEGIN");
+  try {
+    db.prepare("DELETE FROM auth_sessions WHERE userId = ?").run(id);
+    db.prepare("UPDATE users SET active = 0 WHERE id = ?").run(id);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 export function getUser(id: string): User {
@@ -1169,7 +1250,7 @@ export function getUser(id: string): User {
 
 export function loginUser(username: string, password: string): User {
   const authUser = row<(User & { passwordHash: string | null; passwordSalt: string | null }) | undefined>(
-    db.prepare(`SELECT ${userSelectColumns}, passwordHash, passwordSalt FROM users WHERE lower(username) = lower(?)`).get(username.trim())
+    db.prepare(`SELECT ${userSelectColumns}, passwordHash, passwordSalt FROM users WHERE lower(username) = lower(?) AND active = 1`).get(username.trim())
   );
 
   if (!authUser || !authUser.passwordHash || !authUser.passwordSalt || !verifyPassword(password, authUser.passwordSalt, authUser.passwordHash)) {
@@ -1203,7 +1284,7 @@ export function authenticateSession(token: string): User {
   const authenticated = db.prepare(`
     SELECT u.id, u.username, u.name, u.role, u.department, u.title, u.avatarUrl
     FROM auth_sessions session JOIN users u ON u.id = session.userId
-    WHERE session.tokenHash = ? AND session.expiresAt > ?
+    WHERE session.tokenHash = ? AND session.expiresAt > ? AND u.active = 1
   `).get(sessionTokenHash(token), timestamp);
   if (!authenticated) throw new Error("Session expired or invalid.");
   return row<User>(authenticated);
@@ -1217,12 +1298,12 @@ export function updateUserAvatar(id: string, avatarUrl: string): User {
 
 export function listMaintenanceUsers(): User[] {
   return rows<User>(
-    db.prepare(`SELECT ${userSelectColumns} FROM users WHERE role IN ('technician', 'executive') ORDER BY role, name`).all()
+    db.prepare(`SELECT ${userSelectColumns} FROM users WHERE role IN ('technician', 'executive') AND active = 1 ORDER BY role, name`).all()
   );
 }
 
 export function listExecutives(): User[] {
-  return rows<User>(db.prepare(`SELECT ${userSelectColumns} FROM users WHERE role = 'executive' ORDER BY name`).all());
+  return rows<User>(db.prepare(`SELECT ${userSelectColumns} FROM users WHERE role = 'executive' AND active = 1 ORDER BY name`).all());
 }
 
 function normalizeSection(section: Section & { active: number | boolean }): Section {

@@ -70,6 +70,16 @@ export interface User {
   avatarUrl: string | null;
 }
 
+export interface CreateUserInput {
+  actorId: string;
+  username: string;
+  password: string;
+  name: string;
+  role: UserRole;
+  department: string;
+  title: string;
+}
+
 export interface AuthSession {
   user: User;
   token: string;

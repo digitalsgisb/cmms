@@ -1,8 +1,8 @@
-import { BadgeCheck, Building2, Camera, ClipboardCopy, ExternalLink, Factory, FileDown, ListChecks, MonitorDown, QrCode, Shield, Tags, UserCog, UsersRound, type LucideIcon } from "lucide-react";
+import { BadgeCheck, Building2, Camera, ClipboardCopy, ExternalLink, Factory, FileDown, ListChecks, MonitorDown, Plus, QrCode, Shield, Tags, Trash2, UserCog, UsersRound, type LucideIcon } from "lucide-react";
 import QRCode from "qrcode";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { IssueCategory, Machine, MasterData, Section } from "@sugi-cmms/shared";
+import type { IssueCategory, Machine, MasterData, Section, User } from "@sugi-cmms/shared";
 import { api, mediaUrl } from "../api/client";
 import { useCurrentUser } from "../state/UserContext";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
@@ -74,6 +74,16 @@ export function AdminPage() {
   const [searchParams] = useSearchParams();
   const { users, currentUser, refreshUsers } = useCurrentUser();
   const [uploadingUserId, setUploadingUserId] = useState("");
+  const [savingUser, setSavingUser] = useState(false);
+  const [removingUserId, setRemovingUserId] = useState("");
+  const [newUser, setNewUser] = useState({
+    username: "",
+    password: "",
+    name: "",
+    role: "requester" as User["role"],
+    department: "",
+    title: ""
+  });
   const requestedTab = searchParams.get("tab") as AdminTab | null;
   const [activeTab, setActiveTab] = useState<AdminTab>(adminTabs.some((item) => item.tab === requestedTab) ? requestedTab! : "people");
   const [masterData, setMasterData] = useState<MasterData>({ sections: [], machines: [], issueCategories: [] });
@@ -136,6 +146,42 @@ export function AdminPage() {
     } finally {
       setUploadingUserId("");
       event.target.value = "";
+    }
+  }
+
+  async function addUser(event: FormEvent) {
+    event.preventDefault();
+    if (!currentUser) return;
+
+    setSavingUser(true);
+    setAdminError("");
+    try {
+      await api.createUser({ actorId: currentUser.id, ...newUser });
+      setNewUser({ username: "", password: "", name: "", role: "requester", department: "", title: "" });
+      await refreshUsers();
+    } catch (error) {
+      setAdminError(error instanceof Error ? error.message : "Unable to add user.");
+    } finally {
+      setSavingUser(false);
+    }
+  }
+
+  async function removeUser(user: User) {
+    if (!currentUser) return;
+    const confirmed = window.confirm(
+      `Remove ${user.name}'s account? They will no longer be able to sign in, but their historical records will be kept.`
+    );
+    if (!confirmed) return;
+
+    setRemovingUserId(user.id);
+    setAdminError("");
+    try {
+      await api.removeUser(user.id, currentUser.id);
+      await refreshUsers();
+    } catch (error) {
+      setAdminError(error instanceof Error ? error.message : "Unable to remove user.");
+    } finally {
+      setRemovingUserId("");
     }
   }
 
@@ -331,10 +377,37 @@ export function AdminPage() {
             <div className="section-header">
               <div>
                 <h2>Users</h2>
-                <span>{users.length} seeded accounts</span>
+                <span>{users.length} active accounts</span>
               </div>
               <UserCog size={20} aria-hidden="true" />
             </div>
+
+            <form className="admin-user-add-form" onSubmit={addUser}>
+              <div className="admin-user-add-heading">
+                <div>
+                  <strong>Add user</strong>
+                  <span>Create a sign-in account and assign its access role.</span>
+                </div>
+                <Plus size={18} aria-hidden="true" />
+              </div>
+              <div className="admin-user-fields">
+                <label>Full name<input required value={newUser.name} onChange={(event) => setNewUser((current) => ({ ...current, name: event.target.value }))} disabled={!canAdmin || savingUser} /></label>
+                <label>Username<input required minLength={3} autoComplete="off" value={newUser.username} onChange={(event) => setNewUser((current) => ({ ...current, username: event.target.value }))} disabled={!canAdmin || savingUser} /></label>
+                <label>Password<input required minLength={12} type="password" autoComplete="new-password" value={newUser.password} onChange={(event) => setNewUser((current) => ({ ...current, password: event.target.value }))} disabled={!canAdmin || savingUser} /></label>
+                <label>Role<select value={newUser.role} onChange={(event) => setNewUser((current) => ({ ...current, role: event.target.value as User["role"] }))} disabled={!canAdmin || savingUser}>
+                  <option value="requester">Requester</option>
+                  <option value="technician">Technician</option>
+                  <option value="executive">Executive</option>
+                  <option value="admin">Admin</option>
+                  {currentUser?.role === "developer" ? <option value="developer">Developer</option> : null}
+                </select></label>
+                <label>Department<input required value={newUser.department} onChange={(event) => setNewUser((current) => ({ ...current, department: event.target.value }))} disabled={!canAdmin || savingUser} /></label>
+                <label>Job title<input required value={newUser.title} onChange={(event) => setNewUser((current) => ({ ...current, title: event.target.value }))} disabled={!canAdmin || savingUser} /></label>
+              </div>
+              <button className="admin-add-user-button" type="submit" disabled={!canAdmin || savingUser}>
+                <Plus size={16} aria-hidden="true" />{savingUser ? "Adding…" : "Add user"}
+              </button>
+            </form>
 
             <div className="admin-user-list">
               {users.map((user) => (
@@ -351,6 +424,16 @@ export function AdminPage() {
                       {uploadingUserId === user.id ? "Uploading" : "Photo"}
                       <input type="file" accept="image/*" disabled={!canAdmin || Boolean(uploadingUserId)} onChange={(event) => uploadAvatar(user.id, event)} />
                     </label>
+                    <button
+                      className="admin-remove-user-button"
+                      type="button"
+                      disabled={!canAdmin || Boolean(removingUserId) || user.id === currentUser?.id || user.id === "u-requester-public" || (user.role === "developer" && currentUser?.role !== "developer")}
+                      onClick={() => removeUser(user)}
+                      title={user.id === currentUser?.id ? "You cannot remove your current account" : user.id === "u-requester-public" ? "Required by the public requester form" : "Remove user access"}
+                    >
+                      <Trash2 size={14} aria-hidden="true" />
+                      {removingUserId === user.id ? "Removing" : "Remove"}
+                    </button>
                   </div>
                 </article>
               ))}

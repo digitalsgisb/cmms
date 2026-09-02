@@ -99,6 +99,16 @@ export const api = {
   clearSession: () => localStorage.removeItem(authTokenKey),
   users: () => request<User[]>("/api/users"),
   usersByRole: (role: User["role"]) => request<User[]>(`/api/users?role=${role}`),
+  createUser: (input: { actorId: string; username: string; password: string; name: string; role: User["role"]; department: string; title: string }) =>
+    request<User>("/api/users", {
+      method: "POST",
+      body: JSON.stringify(input)
+    }),
+  removeUser: (id: string, actorId: string) =>
+    request<void>(`/api/users/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ actorId })
+    }),
   uploadUserAvatar: (id: string, file: File) => {
     const formData = new FormData();
     formData.append("avatar", file);
