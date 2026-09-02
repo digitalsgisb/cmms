@@ -3885,6 +3885,12 @@ export function listPushSubscriptions(userId: string): StoredPushSubscription[] 
   );
 }
 
+export function listPushSubscriptionUserIds(): string[] {
+  return rows<{ userId: string }>(
+    db.prepare("SELECT DISTINCT userId FROM push_subscriptions ORDER BY userId").all()
+  ).map((subscription) => subscription.userId);
+}
+
 export function deletePushSubscription(endpoint: string, userId: string) {
   db.prepare("DELETE FROM push_subscriptions WHERE endpoint = ? AND userId = ?").run(endpoint, userId);
 }

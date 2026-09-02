@@ -3,6 +3,7 @@ import type { NotificationRecord } from "@sugi-cmms/shared";
 import {
   deletePushSubscription,
   getUser,
+  listPushSubscriptionUserIds,
   listPushSubscriptions,
   type StoredPushSubscription
 } from "./db.js";
@@ -69,6 +70,18 @@ export async function sendPushToUser(
   }));
 
   return { sent, failed };
+}
+
+export async function sendPushToAllUsers(
+  notification: Pick<NotificationRecord, "title" | "body" | "workOrderId">
+) {
+  const results = await Promise.all(
+    listPushSubscriptionUserIds().map((userId) => sendPushToUser(userId, notification))
+  );
+  return results.reduce(
+    (total, result) => ({ sent: total.sent + result.sent, failed: total.failed + result.failed }),
+    { sent: 0, failed: 0 }
+  );
 }
 
 export function initializeWebPush() {

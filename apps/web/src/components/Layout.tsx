@@ -55,6 +55,7 @@ export function Layout() {
   const { currentUser, loadingUsers, logout, refreshWorkOrders } = useCurrentUser();
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const knownNotificationIdsRef = useRef<Set<string> | null>(null);
+  const technicianMainRef = useRef<HTMLElement>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const location = useLocation();
@@ -169,6 +170,7 @@ export function Layout() {
 
   useLayoutEffect(() => {
     if (currentUser?.role === "technician") {
+      technicianMainRef.current?.scrollTo({ top: 0, behavior: "auto" });
       window.scrollTo({ top: 0, behavior: "auto" });
     }
   }, [currentUser?.role, location.pathname]);
@@ -252,7 +254,7 @@ export function Layout() {
           </div>
         </header>
 
-        <main className="technician-app-main">
+        <main className="technician-app-main" ref={technicianMainRef}>
           <div className="technician-route-stage" key={location.pathname}>
             <Outlet />
           </div>

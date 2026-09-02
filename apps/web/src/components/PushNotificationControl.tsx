@@ -7,6 +7,7 @@ import {
   getPushAvailability,
   type PushAvailability
 } from "../pwa/pushNotifications";
+import { useCurrentUser } from "../state/UserContext";
 
 const statusText: Record<PushAvailability, string> = {
   checking: "Checking push support…",
@@ -19,6 +20,7 @@ const statusText: Record<PushAvailability, string> = {
 };
 
 export function PushNotificationControl({ compact = false }: { compact?: boolean }) {
+  const { currentUser } = useCurrentUser();
   const [state, setState] = useState<PushAvailability>("checking");
   const [publicKey, setPublicKey] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -74,7 +76,9 @@ export function PushNotificationControl({ compact = false }: { compact?: boolean
     setMessage("");
     try {
       const result = await api.testPushNotification();
-      setMessage(result.sent > 0 ? "Test alert sent." : "No registered device received the test alert.");
+      setMessage(result.sent > 0
+        ? `Test alert sent to ${result.sent} registered ${result.sent === 1 ? "device" : "devices"}.`
+        : "No registered device received the test alert.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to send a test alert.");
     } finally {
@@ -99,10 +103,12 @@ export function PushNotificationControl({ compact = false }: { compact?: boolean
             </button>
           ) : (
             <>
-              <button type="button" onClick={sendTest} disabled={busy}>
-                <Send size={15} aria-hidden="true" />
-                {busy ? "Sending…" : "Send test"}
-              </button>
+              {currentUser?.role === "admin" ? (
+                <button type="button" onClick={sendTest} disabled={busy}>
+                  <Send size={15} aria-hidden="true" />
+                  {busy ? "Sending…" : "Send test to all"}
+                </button>
+              ) : null}
               <button className="push-control-disable" type="button" onClick={disable} disabled={busy}>
                 Turn off
               </button>

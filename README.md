@@ -63,7 +63,7 @@ VAPID_PUBLIC_KEY=paste-the-generated-public-key
 VAPID_PRIVATE_KEY=paste-the-generated-private-key
 ```
 
-After signing in, open the notification bell (or the requester account screen), choose **Enable push alerts**, and then **Send test**. Browser permission must be requested from this user action. Work-order events that already create in-app notifications will also send Web Push alerts to registered devices.
+After signing in, open the notification bell (or the requester account screen) and choose **Enable push alerts**. An administrator can use **Send test to all** to broadcast a test alert to every registered device; the test action is hidden and API-blocked for every other role. Browser permission must be requested from this user action. Work-order events that already create in-app notifications will also send Web Push alerts to registered devices.
 
 `http://localhost` is allowed for local development. A phone opening the PWA through a LAN IP such as `http://192.168.x.x:3300` is not a secure context, so production and phone testing require HTTPS. On iPhone and iPad, add the PWA to the Home Screen before enabling alerts.
 

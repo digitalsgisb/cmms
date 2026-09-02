@@ -80,7 +80,7 @@ import {
   verifyGuestWorkOrder,
   verifyPmSchedule
 } from "./db.js";
-import { initializeWebPush, sendPushToUser, webPushConfig } from "./web-push.js";
+import { initializeWebPush, sendPushToAllUsers, webPushConfig } from "./web-push.js";
 
 const localEnvFile = path.basename(process.cwd()) === "api"
   ? path.resolve(process.cwd(), "../../.env")
@@ -832,15 +832,20 @@ app.delete("/api/push/subscriptions", (request, response) => {
 });
 
 app.post("/api/push/test", asyncHandler(async (request, response) => {
+  if (request.cmmsUser!.role !== "admin") {
+    response.status(403).json({ error: "Only an administrator can send a test notification." });
+    return;
+  }
+
   const config = webPushConfig();
   if (!config.enabled) {
     response.status(503).json({ error: "Web Push is not configured on the server." });
     return;
   }
 
-  const result = await sendPushToUser(request.cmmsUser!.id, {
-    title: "Sugi CMMS test alert",
-    body: "Push notifications are working on this device.",
+  const result = await sendPushToAllUsers({
+    title: "Sugi CMMS broadcast test",
+    body: "The administrator sent a test notification to all registered devices.",
     workOrderId: ""
   });
   response.json(result);
