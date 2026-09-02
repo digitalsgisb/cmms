@@ -80,6 +80,16 @@ export interface CreateUserInput {
   title: string;
 }
 
+export interface UpdateUserInput {
+  actorId: string;
+  username: string;
+  password?: string;
+  name: string;
+  role: UserRole;
+  department: string;
+  title: string;
+}
+
 export interface AuthSession {
   user: User;
   token: string;

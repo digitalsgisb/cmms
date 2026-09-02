@@ -45,7 +45,7 @@ APP_PUBLIC_URL=http://cmms-server-ip:3300
 
 `DEVELOPER_PASSWORD` enables developer sign-in. `ADMIN_PASSWORD` replaces the seeded admin password on startup. `USER_PASSWORDS_JSON` applies per-user passwords (minimum 12 characters) using usernames as keys. Do not leave the original local-development passwords active on a production network.
 
-Admins can create and remove sign-in accounts from **Users → People**. Removing an account immediately revokes its sessions and hides it from active-user lists while retaining its historical work orders, PM records, uploads, and stock activity.
+Admins can create, edit, reset passwords for, and remove sign-in accounts from **Users → People**. Passwords are stored as one-way hashes and are never displayed; an admin can set a replacement password instead. Changing a password or role revokes that account's existing sessions. Removing an account immediately revokes its sessions and hides it from active-user lists while retaining its historical work orders, PM records, uploads, and stock activity.
 
 ### Google Sheets work-order mirror
 
@@ -63,6 +63,8 @@ WorkOrderID	DateSubmitted	Date	Shift	Type	Section	Area	Machine Name	MachineID	Is
 ```
 
 The same screen accepts the existing Node-RED endpoint (for example `http://node-red:1880/workorderpk`). CMMS posts the compatible `{ "Data": ... }` payload only for work-order lifecycle events, allowing the supplied Telegram flow to keep handling Open/Returned alerts and Resolved/Closed removal.
+
+The Apps Script formats the mirror for people rather than exposing raw payloads: dates use `dd/mm/yyyy`, timestamps use `dd/mm/yyyy hh:mm`, duration fields show elapsed minutes, photo paths become compact links, long descriptions wrap, and technical ID/sync columns are hidden by default. After changing `docs/work-orders-apps-script.js`, create a new Apps Script deployment version so the live `/exec` endpoint uses the update. Reload the Sheet and run **SUGI CMMS → Format existing work orders** once to clean up rows written by an older script. Set `APP_PUBLIC_URL` to the CMMS address reachable by Sheet users if photo links should open from Google Sheets.
 
 These values can also be supplied without the UI:
 

@@ -65,6 +65,7 @@ import {
   updateSpareSyncSettings,
   updateWorkOrderSyncSettings,
   updateSection,
+  updateUser,
   updateUserAvatar,
   updateWorkOrderStatus,
   uploadsRoot,
@@ -305,6 +306,18 @@ app.post("/api/users", (request, response) => {
     actorId: String(request.body.actorId || ""),
     username: String(request.body.username || ""),
     password: String(request.body.password || ""),
+    name: String(request.body.name || ""),
+    role: String(request.body.role || "requester") as User["role"],
+    department: String(request.body.department || ""),
+    title: String(request.body.title || "")
+  }));
+});
+
+app.patch("/api/users/:id", (request, response) => {
+  response.json(updateUser(request.params.id, {
+    actorId: String(request.body.actorId || ""),
+    username: String(request.body.username || ""),
+    password: request.body.password ? String(request.body.password) : undefined,
     name: String(request.body.name || ""),
     role: String(request.body.role || "requester") as User["role"],
     department: String(request.body.department || ""),

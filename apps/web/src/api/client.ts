@@ -104,6 +104,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input)
     }),
+  updateUser: (id: string, input: { actorId: string; username: string; password?: string; name: string; role: User["role"]; department: string; title: string }) =>
+    request<User>(`/api/users/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(input)
+    }),
   removeUser: (id: string, actorId: string) =>
     request<void>(`/api/users/${id}`, {
       method: "DELETE",

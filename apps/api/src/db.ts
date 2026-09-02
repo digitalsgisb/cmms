@@ -53,6 +53,7 @@ import type {
   UpdateSpareSyncSettingsInput,
   UpdateAssetInput,
   UpdatePmPlanInput,
+  UpdateUserInput,
   UpdateWorkOrderStatusInput,
   User,
   UserRole,
@@ -1199,6 +1200,71 @@ export function createUser(input: CreateUserInput): User {
     INSERT INTO users (id, username, name, role, department, title, avatarUrl, passwordHash, passwordSalt, active)
     VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, 1)
   `).run(id, username, name, input.role, department, title, passwordRecord.passwordHash, passwordRecord.passwordSalt);
+  return getUser(id);
+}
+
+export function updateUser(id: string, input: UpdateUserInput): User {
+  const actor = requireAdmin(input.actorId);
+  const target = row<(User & { active: number }) | undefined>(
+    db.prepare(`SELECT ${userSelectColumns}, active FROM users WHERE id = ?`).get(id)
+  );
+  if (!target || !target.active) {
+    throw new Error("User not found.");
+  }
+
+  const username = input.username.trim().toLowerCase();
+  const name = input.name.trim();
+  const department = input.department.trim();
+  const title = input.title.trim();
+  const password = input.password || "";
+  if (!username || !name || !department || !title) {
+    throw new Error("Username, name, department, and title are required.");
+  }
+  if (!/^[a-z0-9._-]{3,50}$/i.test(username)) {
+    throw new Error("Username must be 3-50 characters and use only letters, numbers, dots, underscores, or hyphens.");
+  }
+  if (password && password.length < 12) {
+    throw new Error("A new password must contain at least 12 characters.");
+  }
+  if (!userRoles.includes(input.role)) {
+    throw new Error("Select a valid user role.");
+  }
+  if ((target.role === "developer" || input.role === "developer") && actor.role !== "developer") {
+    throw new Error("Only a developer account can manage developer access.");
+  }
+  if (id === publicRequesterId && input.role !== "requester") {
+    throw new Error("The requester kiosk must retain the requester role.");
+  }
+  if (db.prepare("SELECT 1 FROM users WHERE lower(username) = lower(?) AND id <> ?").get(username, id)) {
+    throw new Error("That username already exists, including among previously removed accounts.");
+  }
+  if (["admin", "developer"].includes(target.role) && !["admin", "developer"].includes(input.role)) {
+    const elevatedCount = row<{ count: number }>(
+      db.prepare("SELECT COUNT(*) AS count FROM users WHERE active = 1 AND role IN ('admin', 'developer')").get()
+    ).count;
+    if (elevatedCount <= 1) {
+      throw new Error("At least one active admin or developer account must remain.");
+    }
+  }
+
+  const revokeSessions = Boolean(password) || target.role !== input.role;
+  const passwordRecord = password ? createPasswordRecord(password) : null;
+  db.exec("BEGIN");
+  try {
+    db.prepare(`
+      UPDATE users
+      SET username = ?, name = ?, role = ?, department = ?, title = ?,
+          passwordHash = COALESCE(?, passwordHash), passwordSalt = COALESCE(?, passwordSalt)
+      WHERE id = ?
+    `).run(username, name, input.role, department, title, passwordRecord?.passwordHash || null, passwordRecord?.passwordSalt || null, id);
+    if (revokeSessions) {
+      db.prepare("DELETE FROM auth_sessions WHERE userId = ?").run(id);
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
   return getUser(id);
 }
 
@@ -3124,9 +3190,19 @@ function publicMediaUrl(url: string | undefined) {
   return base ? `${base}${url.startsWith("/") ? "" : "/"}${url}` : url;
 }
 
+function elapsedMinutes(start: string, end: string) {
+  if (!start || !end) return "";
+  const duration = Math.max(0, Math.round((Date.parse(end) - Date.parse(start)) / 60000));
+  return Number.isFinite(duration) ? duration : "";
+}
+
 function workOrderSheetRow(workOrderId: string) {
   const detail = getWorkOrderDetail(workOrderId);
   const activityAt = (action: ActivityAction) => detail.activities.find((item) => item.action === action)?.createdAt || "";
+  const acknowledgedAt = activityAt("acknowledged");
+  const repairStartedAt = activityAt("started");
+  const resolvedAt = activityAt("resolved");
+  const closedAt = activityAt("closed");
   const issuePhoto = detail.attachments.find((item) => item.kind === "issue");
   const fixPhoto = detail.attachments.find((item) => item.kind === "after");
   const returnPhoto = detail.attachments.find((item) => item.kind === "return_evidence");
@@ -3146,32 +3222,32 @@ function workOrderSheetRow(workOrderId: string) {
     Section: detail.section?.name || detail.location,
     Area: detail.area,
     "Machine Name": detail.machineName,
-    MachineID: detail.machineName,
+    MachineID: detail.machineId || "",
     IssueCategory: detail.issueCategory?.name || "Other",
     ReportedBy: detail.reportedByName,
     Department: detail.reportedByDepartment,
     Priority: detail.priority[0].toUpperCase() + detail.priority.slice(1),
     IssueDescription: detail.issueDescription,
     PhotoIssue: publicMediaUrl(issuePhoto?.url),
-    "Downtime Actual": "",
-    "Total Downtime": "",
+    "Downtime Actual": elapsedMinutes(repairStartedAt, resolvedAt),
+    "Total Downtime": elapsedMinutes(detail.createdAt, resolvedAt),
     Status: workOrderStatusLabels[detail.status],
     MaintenanceBy: detail.assignedTo?.name || "",
     MaintenanceNotes: detail.completionNote || "",
     PhotoFix: publicMediaUrl(fixPhoto?.url),
-    DateAcknowledge: activityAt("acknowledged"),
-    AcknowledgeTime: activityAt("acknowledged"),
-    DateRepair: activityAt("started"),
-    RepairTime: activityAt("started"),
-    FinishTime: activityAt("resolved"),
-    VerifyTime: activityAt("closed"),
+    DateAcknowledge: acknowledgedAt,
+    AcknowledgeTime: elapsedMinutes(detail.createdAt, acknowledgedAt),
+    DateRepair: repairStartedAt,
+    RepairTime: elapsedMinutes(repairStartedAt, resolvedAt),
+    FinishTime: elapsedMinutes(detail.createdAt, resolvedAt),
+    VerifyTime: elapsedMinutes(resolvedAt, closedAt),
     "Change Spare Part": parts.length ? "Yes" : "No",
     "Part Name": parts.map((part) => part.searchName).join(" | "),
     Quantity: parts.map((part) => part.quantity).join(" | "),
     "Part Number": parts.map((part) => part.itemNo).join(" | "),
-    DateResolved: activityAt("resolved"),
-    "Date Finish": activityAt("resolved"),
-    DateClosed: activityAt("closed"),
+    DateResolved: resolvedAt,
+    "Date Finish": resolvedAt ? resolvedAt.slice(0, 10) : "",
+    DateClosed: closedAt,
     Remarks: comments.map((item) => item.message).join(" | "),
     ReturnPhoto: publicMediaUrl(returnPhoto?.url),
     UpdatedAt: detail.updatedAt

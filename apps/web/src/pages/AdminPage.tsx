@@ -1,4 +1,4 @@
-import { BadgeCheck, Building2, Camera, ClipboardCopy, ExternalLink, Factory, FileDown, ListChecks, MonitorDown, Plus, QrCode, Shield, Tags, Trash2, UserCog, UsersRound, type LucideIcon } from "lucide-react";
+import { BadgeCheck, Building2, Camera, ClipboardCopy, ExternalLink, Factory, FileDown, ListChecks, MonitorDown, Pencil, Plus, QrCode, Save, Shield, Tags, Trash2, UserCog, UsersRound, X, type LucideIcon } from "lucide-react";
 import QRCode from "qrcode";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -72,10 +72,20 @@ function parseMachinePaste(text: string) {
 
 export function AdminPage() {
   const [searchParams] = useSearchParams();
-  const { users, currentUser, refreshUsers } = useCurrentUser();
+  const { users, currentUser, logout, refreshUsers } = useCurrentUser();
   const [uploadingUserId, setUploadingUserId] = useState("");
   const [savingUser, setSavingUser] = useState(false);
   const [removingUserId, setRemovingUserId] = useState("");
+  const [editingUserId, setEditingUserId] = useState("");
+  const [updatingUser, setUpdatingUser] = useState(false);
+  const [editUser, setEditUser] = useState({
+    username: "",
+    password: "",
+    name: "",
+    role: "requester" as User["role"],
+    department: "",
+    title: ""
+  });
   const [newUser, setNewUser] = useState({
     username: "",
     password: "",
@@ -163,6 +173,49 @@ export function AdminPage() {
       setAdminError(error instanceof Error ? error.message : "Unable to add user.");
     } finally {
       setSavingUser(false);
+    }
+  }
+
+  function startEditingUser(user: User) {
+    setAdminError("");
+    setEditingUserId(user.id);
+    setEditUser({
+      username: user.username,
+      password: "",
+      name: user.name,
+      role: user.role,
+      department: user.department,
+      title: user.title
+    });
+  }
+
+  async function saveUser(event: FormEvent, originalUser: User) {
+    event.preventDefault();
+    if (!currentUser) return;
+
+    const sessionWillReset = originalUser.id === currentUser.id && (Boolean(editUser.password) || originalUser.role !== editUser.role);
+    setUpdatingUser(true);
+    setAdminError("");
+    try {
+      await api.updateUser(originalUser.id, {
+        actorId: currentUser.id,
+        username: editUser.username,
+        password: editUser.password || undefined,
+        name: editUser.name,
+        role: editUser.role,
+        department: editUser.department,
+        title: editUser.title
+      });
+      setEditingUserId("");
+      if (sessionWillReset) {
+        logout();
+        return;
+      }
+      await refreshUsers();
+    } catch (error) {
+      setAdminError(error instanceof Error ? error.message : "Unable to update user.");
+    } finally {
+      setUpdatingUser(false);
     }
   }
 
@@ -415,7 +468,7 @@ export function AdminPage() {
                   <span className="avatar-mark">{user.avatarUrl ? <img src={mediaUrl(user.avatarUrl)} alt={user.name} /> : user.name.slice(0, 1)}</span>
                   <div>
                     <strong>{user.name}</strong>
-                    <span>{user.department} - {user.title}</span>
+                    <span>@{user.username} · {user.department} - {user.title}</span>
                   </div>
                   <div className="admin-user-actions">
                     <span className={`role-pill role-${user.role}`}>{user.role}</span>
@@ -424,6 +477,14 @@ export function AdminPage() {
                       {uploadingUserId === user.id ? "Uploading" : "Photo"}
                       <input type="file" accept="image/*" disabled={!canAdmin || Boolean(uploadingUserId)} onChange={(event) => uploadAvatar(user.id, event)} />
                     </label>
+                    <button
+                      className="admin-edit-user-button"
+                      type="button"
+                      disabled={!canAdmin || updatingUser || (user.role === "developer" && currentUser?.role !== "developer")}
+                      onClick={() => startEditingUser(user)}
+                    >
+                      <Pencil size={14} aria-hidden="true" />Edit
+                    </button>
                     <button
                       className="admin-remove-user-button"
                       type="button"
@@ -435,6 +496,32 @@ export function AdminPage() {
                       {removingUserId === user.id ? "Removing" : "Remove"}
                     </button>
                   </div>
+                  {editingUserId === user.id ? (
+                    <form className="admin-user-edit-form" onSubmit={(event) => saveUser(event, user)}>
+                      <div className="admin-user-edit-heading">
+                        <div><strong>Edit {user.name}</strong><span>Passwords are securely hashed and cannot be viewed. Enter a new one only to reset it.</span></div>
+                        <button type="button" onClick={() => setEditingUserId("")} aria-label="Cancel editing"><X size={17} /></button>
+                      </div>
+                      <div className="admin-user-fields">
+                        <label>Full name<input required value={editUser.name} onChange={(event) => setEditUser((current) => ({ ...current, name: event.target.value }))} disabled={updatingUser} /></label>
+                        <label>Username<input required minLength={3} autoComplete="off" value={editUser.username} onChange={(event) => setEditUser((current) => ({ ...current, username: event.target.value }))} disabled={updatingUser} /></label>
+                        <label>New password (optional)<input minLength={12} type="password" autoComplete="new-password" value={editUser.password} onChange={(event) => setEditUser((current) => ({ ...current, password: event.target.value }))} placeholder="Leave blank to keep current" disabled={updatingUser} /></label>
+                        <label>Role<select value={editUser.role} onChange={(event) => setEditUser((current) => ({ ...current, role: event.target.value as User["role"] }))} disabled={updatingUser || user.id === "u-requester-public"}>
+                          <option value="requester">Requester</option>
+                          <option value="technician">Technician</option>
+                          <option value="executive">Executive</option>
+                          <option value="admin">Admin</option>
+                          {currentUser?.role === "developer" ? <option value="developer">Developer</option> : null}
+                        </select></label>
+                        <label>Department<input required value={editUser.department} onChange={(event) => setEditUser((current) => ({ ...current, department: event.target.value }))} disabled={updatingUser} /></label>
+                        <label>Job title<input required value={editUser.title} onChange={(event) => setEditUser((current) => ({ ...current, title: event.target.value }))} disabled={updatingUser} /></label>
+                      </div>
+                      <div className="admin-user-edit-actions">
+                        <button type="button" onClick={() => setEditingUserId("")} disabled={updatingUser}>Cancel</button>
+                        <button className="admin-save-user-button" type="submit" disabled={updatingUser}><Save size={15} />{updatingUser ? "Saving…" : "Save changes"}</button>
+                      </div>
+                    </form>
+                  ) : null}
                 </article>
               ))}
             </div>

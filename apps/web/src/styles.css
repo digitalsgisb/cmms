@@ -4488,6 +4488,8 @@ tbody tr:hover {
 }
 
 .admin-add-user-button,
+.admin-edit-user-button,
+.admin-save-user-button,
 .admin-remove-user-button {
   display: inline-flex;
   align-items: center;
@@ -4495,6 +4497,15 @@ tbody tr:hover {
   gap: 6px;
   border-radius: 7px;
   font-weight: 900;
+}
+
+.admin-edit-user-button {
+  min-height: 32px;
+  border: 1px solid rgba(127, 17, 27, 0.16);
+  background: #ffffff;
+  color: var(--maroon);
+  padding: 6px 10px;
+  font-size: 12px;
 }
 
 .admin-add-user-button {
@@ -4515,9 +4526,67 @@ tbody tr:hover {
 }
 
 .admin-add-user-button:disabled,
+.admin-edit-user-button:disabled,
+.admin-save-user-button:disabled,
 .admin-remove-user-button:disabled {
   cursor: not-allowed;
   opacity: 0.52;
+}
+
+.admin-user-edit-form {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 12px;
+  margin-top: 2px;
+  border-top: 1px solid rgba(127, 17, 27, 0.12);
+  padding-top: 14px;
+}
+
+.admin-user-edit-heading,
+.admin-user-edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-user-edit-heading span {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-user-edit-heading > button {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(127, 17, 27, 0.14);
+  border-radius: 7px;
+  background: #ffffff;
+  color: var(--maroon);
+}
+
+.admin-user-edit-actions {
+  justify-content: flex-end;
+}
+
+.admin-user-edit-actions > button {
+  min-height: 35px;
+  border: 1px solid rgba(127, 17, 27, 0.16);
+  border-radius: 7px;
+  background: #ffffff;
+  color: var(--maroon);
+  padding: 7px 11px;
+  font-weight: 900;
+}
+
+.admin-user-edit-actions .admin-save-user-button {
+  border-color: var(--maroon);
+  background: var(--maroon);
+  color: #ffffff;
 }
 
 .admin-user-row {
