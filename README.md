@@ -49,6 +49,24 @@ APP_PUBLIC_URL=http://cmms-server-ip:3300
 
 Admins can create, edit, reset passwords for, and remove sign-in accounts from **Users → People**. Passwords are stored as one-way hashes and are never displayed; an admin can set a replacement password instead. Changing a password or role revokes that account's existing sessions. Removing an account immediately revokes its sessions and hides it from active-user lists while retaining its historical work orders, PM records, uploads, and stock activity.
 
+### PWA push notifications
+
+Generate one VAPID key pair and add it to `.env`. Keep the same keys across deployments; replacing them invalidates existing device subscriptions.
+
+```powershell
+pnpm push:keys
+```
+
+```dotenv
+VAPID_SUBJECT=mailto:cmms@example.com
+VAPID_PUBLIC_KEY=paste-the-generated-public-key
+VAPID_PRIVATE_KEY=paste-the-generated-private-key
+```
+
+After signing in, open the notification bell (or the requester account screen), choose **Enable push alerts**, and then **Send test**. Browser permission must be requested from this user action. Work-order events that already create in-app notifications will also send Web Push alerts to registered devices.
+
+`http://localhost` is allowed for local development. A phone opening the PWA through a LAN IP such as `http://192.168.x.x:3300` is not a secure context, so production and phone testing require HTTPS. On iPhone and iPad, add the PWA to the Home Screen before enabling alerts.
+
 ### Google Sheets work-order mirror
 
 PostgreSQL is not used by this repository: the server database in this version is SQLite. It is the authoritative store, and Google Sheets is a secondary mirror. Failed Sheet updates stay in a durable outbox and retry every minute, so work-order submission continues during Google or network outages.

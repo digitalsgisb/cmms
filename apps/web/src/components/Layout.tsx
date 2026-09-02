@@ -20,6 +20,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import type { NotificationRecord } from "@sugi-cmms/shared";
 import { api, mediaUrl } from "../api/client";
+import { PushNotificationControl } from "./PushNotificationControl";
 import { useCurrentUser } from "../state/UserContext";
 import { formatShortDate } from "../utils/format";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
@@ -244,6 +245,7 @@ export function Layout() {
                       ))
                     )}
                   </div>
+                  <PushNotificationControl compact />
                 </div>
               ) : null}
             </div>
@@ -536,6 +538,7 @@ export function Layout() {
                       ))
                     )}
                   </div>
+                  <PushNotificationControl compact />
                 </div>
               ) : null}
             </div>

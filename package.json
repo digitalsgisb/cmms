@@ -7,6 +7,7 @@
     "dev": "pnpm --filter @sugi-cmms/shared build && concurrently -n API,WEB -c cyan,green \"pnpm --filter @sugi-cmms/api dev\" \"pnpm --filter @sugi-cmms/web dev\"",
     "build": "pnpm --filter @sugi-cmms/shared build && pnpm --filter @sugi-cmms/api build && pnpm --filter @sugi-cmms/web build",
     "typecheck": "pnpm --filter @sugi-cmms/shared typecheck && pnpm --filter @sugi-cmms/api typecheck && pnpm --filter @sugi-cmms/web typecheck",
+    "push:keys": "pnpm --filter @sugi-cmms/api push:keys",
     "start": "pnpm --filter @sugi-cmms/api start"
   },
   "devDependencies": {

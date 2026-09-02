@@ -1567,6 +1567,72 @@ button:disabled {
   overflow: auto;
 }
 
+.push-control {
+  display: grid;
+  width: 100%;
+  gap: 10px;
+  border: 1px solid rgba(127, 17, 27, 0.13);
+  border-radius: 10px;
+  background: #fff8f8;
+  padding: 12px;
+  text-align: left;
+}
+
+.push-control.compact {
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: #fbf7f7;
+}
+
+.push-control-status,
+.push-control-actions,
+.push-control button {
+  display: flex;
+  align-items: center;
+}
+
+.push-control-status {
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.push-control-status svg {
+  flex: 0 0 auto;
+  color: var(--maroon);
+}
+
+.push-control-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.push-control button {
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--maroon);
+  padding: 7px 11px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.push-control button.push-control-disable {
+  border: 1px solid #d8b9bd;
+  background: #fff;
+  color: var(--maroon);
+}
+
+.push-control button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .notification-item {
   display: grid;
   gap: 4px;
@@ -10461,6 +10527,8 @@ tbody tr:hover {
 .requester-account-view dt { color: var(--muted); font-size: 12px; }
 .requester-account-view dd { margin: 0; font-size: 12px; font-weight: 900; }
 .requester-account-view .pwa-install-button { width: 100%; }
+.requester-account-view .push-control { margin-bottom: 4px; }
+.requester-account-view .push-control-actions button { flex: 1; }
 .requester-signout { display: inline-flex; width: 100%; min-height: 47px; align-items: center; justify-content: center; gap: 8px; border: 1px solid #d8b9bd; border-radius: 10px; color: var(--maroon); background: #fff; font-weight: 900; }
 
 .requester-login-backdrop,.requester-detail-backdrop { position: fixed; inset: 0; z-index: 220; display: grid; overflow-y: auto; place-items: center; background: rgba(30,11,16,.62); padding: 18px; backdrop-filter: blur(10px); }

@@ -364,5 +364,20 @@ export const api = {
     request<void>("/api/notifications/read-all", {
       method: "PATCH",
       body: JSON.stringify({ userId })
+    }),
+  pushConfig: () => request<{ enabled: boolean; publicKey: string | null }>("/api/push/config"),
+  savePushSubscription: (subscription: PushSubscriptionJSON) =>
+    request<{ ok: true }>("/api/push/subscriptions", {
+      method: "POST",
+      body: JSON.stringify(subscription)
+    }),
+  removePushSubscription: (endpoint: string) =>
+    request<void>("/api/push/subscriptions", {
+      method: "DELETE",
+      body: JSON.stringify({ endpoint })
+    }),
+  testPushNotification: () =>
+    request<{ sent: number; failed: number }>("/api/push/test", {
+      method: "POST"
     })
 };

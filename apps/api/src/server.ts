@@ -4,6 +4,7 @@ import multer from "multer";
 import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { loadEnvFile } from "node:process";
 import type { MachineImportRow } from "@sugi-cmms/shared";
 import type { User } from "@sugi-cmms/shared";
 import {
@@ -24,6 +25,7 @@ import {
   createWorkOrder,
   dashboardSummary,
   deactivateUser,
+  deletePushSubscription,
   deleteWorkOrder,
   deletePmResultPhoto,
   getPmDashboard,
@@ -58,6 +60,7 @@ import {
   flushWorkOrderSyncQueue,
   savePmResult,
   savePmTemplate,
+  savePushSubscription,
   seed,
   startPmSchedule,
   submitPmSchedule,
@@ -77,6 +80,12 @@ import {
   verifyGuestWorkOrder,
   verifyPmSchedule
 } from "./db.js";
+import { initializeWebPush, sendPushToUser, webPushConfig } from "./web-push.js";
+
+const localEnvFile = path.basename(process.cwd()) === "api"
+  ? path.resolve(process.cwd(), "../../.env")
+  : path.resolve(process.cwd(), ".env");
+if (existsSync(localEnvFile)) loadEnvFile(localEnvFile);
 
 const app = express();
 const port = Number(process.env.PORT || 3300);
@@ -160,6 +169,7 @@ function saveWorkOrderAttachments(
 
 migrate();
 seed();
+initializeWebPush();
 
 app.use(cors());
 app.use(express.json({ limit: "12mb" }));
@@ -791,6 +801,50 @@ app.patch("/api/notifications/:id/read", (request, response) => {
   markNotificationRead(request.params.id);
   response.status(204).send();
 });
+
+app.get("/api/push/config", (_request, response) => {
+  response.json(webPushConfig());
+});
+
+app.post("/api/push/subscriptions", (request, response) => {
+  const endpoint = String(request.body?.endpoint || "");
+  const p256dh = String(request.body?.keys?.p256dh || "");
+  const auth = String(request.body?.keys?.auth || "");
+  if (!endpoint.startsWith("https://") || !p256dh || !auth) {
+    throw new Error("A valid Web Push subscription is required.");
+  }
+
+  savePushSubscription(request.cmmsUser!.id, {
+    endpoint,
+    expirationTime: request.body.expirationTime == null ? null : Number(request.body.expirationTime),
+    keys: { p256dh, auth }
+  });
+  response.status(201).json({ ok: true });
+});
+
+app.delete("/api/push/subscriptions", (request, response) => {
+  const endpoint = String(request.body?.endpoint || "");
+  if (!endpoint) {
+    throw new Error("Push subscription endpoint is required.");
+  }
+  deletePushSubscription(endpoint, request.cmmsUser!.id);
+  response.status(204).send();
+});
+
+app.post("/api/push/test", asyncHandler(async (request, response) => {
+  const config = webPushConfig();
+  if (!config.enabled) {
+    response.status(503).json({ error: "Web Push is not configured on the server." });
+    return;
+  }
+
+  const result = await sendPushToUser(request.cmmsUser!.id, {
+    title: "Sugi CMMS test alert",
+    body: "Push notifications are working on this device.",
+    workOrderId: ""
+  });
+  response.json(result);
+}));
 
 if (webDistRoot) {
   app.use(express.static(webDistRoot));

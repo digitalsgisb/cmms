@@ -71,6 +71,7 @@ import type {
 } from "@sugi-cmms/shared";
 import { workOrderStatusLabels } from "@sugi-cmms/shared";
 import { productionAssets2026 } from "./production-assets-2026.js";
+import { emitNotificationCreated } from "./notification-events.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.resolve(__dirname, "../data");
@@ -264,6 +265,20 @@ export function migrate() {
       FOREIGN KEY (userId) REFERENCES users(id),
       FOREIGN KEY (workOrderId) REFERENCES work_orders(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      endpoint TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      expirationTime INTEGER,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user
+      ON push_subscriptions(userId);
 
     CREATE TABLE IF NOT EXISTS spare_parts (
       itemNo TEXT PRIMARY KEY,
@@ -3827,6 +3842,53 @@ export function markAllNotificationsRead(userId: string) {
   db.prepare("UPDATE notifications SET readAt = ? WHERE userId = ? AND readAt IS NULL").run(now(), userId);
 }
 
+export interface StoredPushSubscription {
+  endpoint: string;
+  userId: string;
+  expirationTime: number | null;
+  p256dh: string;
+  auth: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function savePushSubscription(userId: string, subscription: {
+  endpoint: string;
+  expirationTime?: number | null;
+  keys: { p256dh: string; auth: string };
+}) {
+  getUser(userId);
+  const timestamp = now();
+  db.prepare(`
+    INSERT INTO push_subscriptions (endpoint, userId, expirationTime, p256dh, auth, createdAt, updatedAt)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(endpoint) DO UPDATE SET
+      userId = excluded.userId,
+      expirationTime = excluded.expirationTime,
+      p256dh = excluded.p256dh,
+      auth = excluded.auth,
+      updatedAt = excluded.updatedAt
+  `).run(
+    subscription.endpoint,
+    userId,
+    subscription.expirationTime ?? null,
+    subscription.keys.p256dh,
+    subscription.keys.auth,
+    timestamp,
+    timestamp
+  );
+}
+
+export function listPushSubscriptions(userId: string): StoredPushSubscription[] {
+  return rows<StoredPushSubscription>(
+    db.prepare("SELECT * FROM push_subscriptions WHERE userId = ? ORDER BY createdAt DESC").all(userId)
+  );
+}
+
+export function deletePushSubscription(endpoint: string, userId: string) {
+  db.prepare("DELETE FROM push_subscriptions WHERE endpoint = ? AND userId = ?").run(endpoint, userId);
+}
+
 export function dashboardSummary(): DashboardSummary {
   const today = new Date().toISOString().slice(0, 10);
   const summary = row<DashboardSummary>(
@@ -3879,7 +3941,25 @@ function notifyUsers(userIds: string[], workOrderId: string, title: string, body
   `);
 
   for (const userId of uniqueUserIds) {
-    insert.run(randomUUID(), userId, workOrderId, title, body, null, now());
+    const notification: NotificationRecord = {
+      id: randomUUID(),
+      userId,
+      workOrderId,
+      title,
+      body,
+      readAt: null,
+      createdAt: now()
+    };
+    insert.run(
+      notification.id,
+      notification.userId,
+      notification.workOrderId,
+      notification.title,
+      notification.body,
+      notification.readAt,
+      notification.createdAt
+    );
+    emitNotificationCreated(notification);
   }
 }
 
