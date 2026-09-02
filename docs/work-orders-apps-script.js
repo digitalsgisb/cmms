@@ -110,7 +110,6 @@ function doPost(event) {
     const request = JSON.parse((event.postData && event.postData.contents) || "{}");
     const expectedToken = PropertiesService.getScriptProperties().getProperty("CMMS_SHARED_TOKEN");
     if (!expectedToken || request.token !== expectedToken) return jsonResponse({ ok: false, error: "Unauthorized" });
-    if (request.action !== "upsertWorkOrder" || !request.Data) return jsonResponse({ ok: false, error: "Unsupported action" });
 
     const spreadsheetId = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID");
     const spreadsheet = spreadsheetId ? SpreadsheetApp.openById(spreadsheetId) : SpreadsheetApp.getActiveSpreadsheet();
@@ -118,15 +117,22 @@ function doPost(event) {
     const sheet = spreadsheet.getSheetByName(sheetName) || spreadsheet.insertSheet(sheetName);
     ensureHeaders(sheet);
 
+    if (request.action === "deleteWorkOrder") {
+      const workOrderId = String(request.WorkOrderID || "").trim();
+      if (!workOrderId) return jsonResponse({ ok: false, error: "WorkOrderID is required" });
+      const match = findWorkOrderCell(sheet, workOrderId);
+      if (match) sheet.deleteRow(match.getRow());
+      return jsonResponse({ ok: true, deleted: Boolean(match), workOrderId: workOrderId });
+    }
+    if (request.action !== "upsertWorkOrder" || !request.Data) return jsonResponse({ ok: false, error: "Unsupported action" });
+
     const workOrderId = String(request.Data.WorkOrderID || "").trim();
     if (!workOrderId) return jsonResponse({ ok: false, error: "WorkOrderID is required" });
     const values = WORK_ORDER_HEADERS.map((header) => normalizeCellValue(header, request.Data[header]));
     const lastRow = sheet.getLastRow();
     let targetRow = lastRow + 1;
-    if (lastRow > 1) {
-      const match = sheet.getRange(2, 1, lastRow - 1, 1).createTextFinder(workOrderId).matchEntireCell(true).findNext();
-      if (match) targetRow = match.getRow();
-    }
+    const match = findWorkOrderCell(sheet, workOrderId);
+    if (match) targetRow = match.getRow();
     sheet.getRange(targetRow, 1, 1, WORK_ORDER_HEADERS.length).setValues([values]);
     formatWorkOrderSheet(sheet, targetRow, request.Data);
     return jsonResponse({ ok: true, row: targetRow, workOrderId: workOrderId });
@@ -135,6 +141,12 @@ function doPost(event) {
   } finally {
     try { lock.releaseLock(); } catch (_) {}
   }
+}
+
+function findWorkOrderCell(sheet, workOrderId) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return null;
+  return sheet.getRange(2, 1, lastRow - 1, 1).createTextFinder(workOrderId).matchEntireCell(true).findNext();
 }
 
 function ensureHeaders(sheet) {

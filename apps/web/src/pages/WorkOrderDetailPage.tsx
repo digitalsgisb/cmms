@@ -1,4 +1,4 @@
-import { ArrowLeft, CheckCircle2, Clock3, ImagePlus, MessageSquare, PackageOpen, RotateCcw, ShieldCheck, TimerReset, Wrench } from "lucide-react";
+import { ArrowLeft, Check, CheckCircle2, ClipboardCopy, Clock3, ExternalLink, ImagePlus, MessageSquare, PackageOpen, RotateCcw, ShieldCheck, TimerReset, Wrench } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useParams } from "react-router-dom";
@@ -46,6 +46,8 @@ export function WorkOrderDetailPage() {
   const [busy, setBusy] = useState(false);
   const [busyAction, setBusyAction] = useState("");
   const [timerNow, setTimerNow] = useState(() => new Date().toISOString());
+  const [guestTrackingPath, setGuestTrackingPath] = useState("");
+  const [guestLinkCopied, setGuestLinkCopied] = useState(false);
 
   async function loadDetail() {
     if (!id) {
@@ -60,6 +62,19 @@ export function WorkOrderDetailPage() {
   useEffect(() => {
     loadDetail().catch(console.error);
   }, [id]);
+
+  useEffect(() => {
+    let active = true;
+    if (!id || !currentUser || !["executive", "admin", "developer"].includes(currentUser.role)) {
+      setGuestTrackingPath("");
+      return () => { active = false; };
+    }
+
+    api.guestTrackingLink(id)
+      .then((link) => { if (active) setGuestTrackingPath(link.path); })
+      .catch(() => { if (active) setGuestTrackingPath(""); });
+    return () => { active = false; };
+  }, [id, currentUser?.role]);
 
   useEffect(() => {
     const interval = window.setInterval(() => setTimerNow(new Date().toISOString()), 60000);
@@ -289,6 +304,14 @@ export function WorkOrderDetailPage() {
   const canStartRepair =
     ["acknowledged", "returned", "pending_material"].includes(detail.status) ||
     (detail.status === "open" && (currentUser?.role !== "technician" || isAssignedToCurrentUser));
+  const guestTrackingUrl = guestTrackingPath ? `${window.location.origin}${guestTrackingPath}` : "";
+
+  async function copyGuestTrackingLink() {
+    if (!guestTrackingUrl) return;
+    await navigator.clipboard.writeText(guestTrackingUrl);
+    setGuestLinkCopied(true);
+    window.setTimeout(() => setGuestLinkCopied(false), 1800);
+  }
 
   return (
     <section className="page-stack">
@@ -444,6 +467,19 @@ export function WorkOrderDetailPage() {
         </div>
 
         <aside className="detail-side">
+          {guestTrackingUrl ? (
+            <div className="section-panel guest-admin-link-panel">
+              <span><ShieldCheck size={22} /></span>
+              <p className="eyebrow">Guest requester</p>
+              <h2>Private tracking link</h2>
+              <p>Share this link with the guest so they can follow progress and verify the completed work.</p>
+              <div>
+                <button type="button" onClick={copyGuestTrackingLink}>{guestLinkCopied ? <Check size={16} /> : <ClipboardCopy size={16} />}{guestLinkCopied ? "Copied" : "Copy link"}</button>
+                <a href={guestTrackingUrl} target="_blank" rel="noreferrer"><ExternalLink size={16} />Open tracker</a>
+              </div>
+            </div>
+          ) : null}
+
           {isRequesterOwner ? (
             <div className={`section-panel verification-panel ${detail.status === "resolved" ? "ready" : ""}`}>
               <h2>Requester Verification</h2>

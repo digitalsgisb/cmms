@@ -20,6 +20,7 @@ import {
   createAuthSession,
   createMachine,
   createSection,
+  createGuestTrackingLink,
   createWorkOrder,
   dashboardSummary,
   deactivateUser,
@@ -28,6 +29,8 @@ import {
   getPmDashboard,
   getPmPhoto,
   getAssetDashboard,
+  getGuestTrackingLink,
+  getGuestWorkOrderTracking,
   getPmScheduleDetail,
   getWorkOrderDetail,
   importMachines,
@@ -71,6 +74,7 @@ import {
   uploadsRoot,
   validateCreateWorkOrderInput,
   validateStatusInput,
+  verifyGuestWorkOrder,
   verifyPmSchedule
 } from "./db.js";
 
@@ -177,11 +181,15 @@ app.use("/api", (request, response, next) => {
   const publicRequesterMutation =
     request.method === "POST" &&
     (request.path === "/requester/work-orders" || /^\/requester\/work-orders\/[^/]+\/attachments$/.test(request.path));
+  const publicGuestTracking =
+    (request.method === "GET" && /^\/requester\/work-orders\/[^/]+\/tracking$/.test(request.path)) ||
+    (request.method === "POST" && /^\/requester\/work-orders\/[^/]+\/verification$/.test(request.path));
   const publicRequest =
     request.path === "/health" ||
     request.path === "/auth/login" ||
     request.path === "/events" ||
     publicRequesterMutation ||
+    publicGuestTracking ||
     (request.method === "GET" && request.path.startsWith("/pm/photos/")) ||
     (request.method === "GET" && ["/master-data", "/tv/work-orders", "/dashboard-summary"].includes(request.path));
   if (publicRequest) { next(); return; }
@@ -644,7 +652,7 @@ app.post("/api/requester/work-orders", (request, response) => {
     requesterId: publicRequesterIdForUploads()
   });
   const workOrder = createWorkOrder(input);
-  response.status(201).json(workOrder);
+  response.status(201).json({ workOrder, tracking: createGuestTrackingLink(workOrder.id) });
 });
 
 app.post("/api/requester/work-orders/:id/attachments", upload.array("attachments", 10), (request, response) => {
@@ -660,6 +668,23 @@ app.post("/api/requester/work-orders/:id/attachments", upload.array("attachments
   response.status(201).json(saved);
 });
 
+app.get("/api/requester/work-orders/:id/tracking", (request, response) => {
+  response.json(getGuestWorkOrderTracking(request.params.id, String(request.query.token || "")));
+});
+
+app.post("/api/requester/work-orders/:id/verification", (request, response) => {
+  const status = String(request.body.status || "") as "closed" | "returned";
+  if (!["closed", "returned"].includes(status)) {
+    throw new Error("Guest verification status must be closed or returned.");
+  }
+  response.json(verifyGuestWorkOrder(
+    request.params.id,
+    String(request.body.token || ""),
+    status,
+    String(request.body.note || "")
+  ));
+});
+
 app.get("/api/work-orders", (request, response) => {
   const workOrders = listWorkOrders();
   response.json(request.cmmsUser?.role === "requester"
@@ -671,6 +696,10 @@ app.post("/api/work-orders", (request, response) => {
   const input = validateCreateWorkOrderInput(request.body);
   const workOrder = createWorkOrder(input);
   response.status(201).json(workOrder);
+});
+
+app.get("/api/work-orders/:id/guest-link", (request, response) => {
+  response.json(getGuestTrackingLink(request.params.id, request.cmmsUser!.id));
 });
 
 app.get("/api/work-orders/:id", (request, response) => {

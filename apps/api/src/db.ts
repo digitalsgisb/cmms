@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import type {
   ActivityAction,
   AssetCondition,
@@ -14,6 +14,8 @@ import type {
   CreateUserInput,
   CreateWorkOrderInput,
   DashboardSummary,
+  GuestTrackingLink,
+  GuestWorkOrderTracking,
   IssueCategory,
   Machine,
   MachineImportResult,
@@ -350,6 +352,14 @@ export function migrate() {
       FOREIGN KEY (workOrderId) REFERENCES work_orders(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS work_order_sync_deletions (
+      workOrderNumber TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'pending',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      lastError TEXT,
+      queuedAt TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS work_order_settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
@@ -476,6 +486,7 @@ export function migrate() {
     CREATE INDEX IF NOT EXISTS idx_pm_results_schedule ON pm_results(scheduleId);
     CREATE INDEX IF NOT EXISTS idx_pm_photos_result ON pm_result_photos(scheduleId, itemId, createdAt);
     CREATE INDEX IF NOT EXISTS idx_work_order_sync_status ON work_order_sync_queue(status, queuedAt);
+    CREATE INDEX IF NOT EXISTS idx_work_order_sync_deletions_status ON work_order_sync_deletions(status, queuedAt);
     CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(userId, expiresAt);
   `);
 
@@ -3140,11 +3151,17 @@ function workOrderSyncRuntimeSettings() {
 
 export function getWorkOrderSyncSettings(): WorkOrderSyncSettings {
   const runtime = workOrderSyncRuntimeSettings();
-  const counts = row<{ pendingCount: number; failedCount: number }>(db.prepare(`
+  const updateCounts = row<{ pendingCount: number; failedCount: number }>(db.prepare(`
     SELECT
       SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pendingCount,
       SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failedCount
     FROM work_order_sync_queue
+  `).get());
+  const deletionCounts = row<{ pendingCount: number; failedCount: number }>(db.prepare(`
+    SELECT
+      SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pendingCount,
+      SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failedCount
+    FROM work_order_sync_deletions
   `).get());
   return {
     scriptUrl: runtime.scriptUrl,
@@ -3152,8 +3169,8 @@ export function getWorkOrderSyncSettings(): WorkOrderSyncSettings {
     sheetName: runtime.sheetName,
     webhookUrl: runtime.webhookUrl,
     configured: runtime.configured,
-    pendingCount: counts.pendingCount || 0,
-    failedCount: counts.failedCount || 0,
+    pendingCount: (updateCounts.pendingCount || 0) + (deletionCounts.pendingCount || 0),
+    failedCount: (updateCounts.failedCount || 0) + (deletionCounts.failedCount || 0),
     lastSyncAt: getWorkOrderSetting("lastSyncAt") || null,
     lastError: getWorkOrderSetting("lastError") || null
   };
@@ -3181,6 +3198,15 @@ function enqueueWorkOrderSync(workOrderId: string, notifyWebhook = false) {
       status = 'pending', attempts = 0, lastError = NULL, queuedAt = excluded.queuedAt, syncedAt = NULL,
       webhookPending = MAX(work_order_sync_queue.webhookPending, excluded.webhookPending)
   `).run(workOrderId, now(), boolNumber(notifyWebhook));
+}
+
+function enqueueWorkOrderSheetDeletion(workOrderNumber: string) {
+  db.prepare(`
+    INSERT INTO work_order_sync_deletions (workOrderNumber, status, attempts, lastError, queuedAt)
+    VALUES (?, 'pending', 0, NULL, ?)
+    ON CONFLICT(workOrderNumber) DO UPDATE SET
+      status = 'pending', attempts = 0, lastError = NULL, queuedAt = excluded.queuedAt
+  `).run(workOrderNumber, now());
 }
 
 function publicMediaUrl(url: string | undefined) {
@@ -3281,6 +3307,9 @@ async function runWorkOrderSyncQueue(actorId?: string): Promise<WorkOrderSyncRes
     return { configured: false, ok: false, synced: 0, failed: 0, message: "Google Sheets sync is not configured.", errors: [], settings: getWorkOrderSyncSettings() };
   }
   const queued = rows<{ workOrderId: string; status: string; webhookPending: number }>(db.prepare("SELECT workOrderId, status, webhookPending FROM work_order_sync_queue WHERE status IN ('pending', 'failed') OR webhookPending = 1 ORDER BY queuedAt LIMIT 100").all());
+  const deletions = rows<{ workOrderNumber: string }>(
+    db.prepare("SELECT workOrderNumber FROM work_order_sync_deletions WHERE status IN ('pending', 'failed') ORDER BY queuedAt LIMIT 100").all()
+  );
   let synced = 0;
   let failed = 0;
   const errors: string[] = [];
@@ -3317,13 +3346,36 @@ async function runWorkOrderSyncQueue(actorId?: string): Promise<WorkOrderSyncRes
     }
     if (itemFailed) failed += 1;
   }
+  for (const deletion of deletions) {
+    try {
+      await postJson(runtime.scriptUrl, {
+        token: runtime.token,
+        action: "deleteWorkOrder",
+        sheetName: runtime.sheetName,
+        WorkOrderID: deletion.workOrderNumber
+      });
+      db.prepare("DELETE FROM work_order_sync_deletions WHERE workOrderNumber = ?").run(deletion.workOrderNumber);
+      setWorkOrderSetting("lastSyncAt", now());
+      synced += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown sync error";
+      db.prepare(`
+        UPDATE work_order_sync_deletions
+        SET status = 'failed', attempts = attempts + 1, lastError = ?
+        WHERE workOrderNumber = ?
+      `).run(message, deletion.workOrderNumber);
+      setWorkOrderSetting("lastError", message);
+      errors.push(`${deletion.workOrderNumber} Google Sheet deletion: ${message}`);
+      failed += 1;
+    }
+  }
   if (failed === 0) setWorkOrderSetting("lastError", "");
   return {
     configured: true,
     ok: failed === 0,
     synced,
     failed,
-    message: queued.length ? `${synced} work orders synced, ${failed} failed.` : "All work orders are already synced.",
+    message: queued.length || deletions.length ? `${synced} work-order changes synced, ${failed} failed.` : "All work orders are already synced.",
     errors,
     settings: getWorkOrderSyncSettings()
   };
@@ -3627,6 +3679,110 @@ export function publicRequesterIdForUploads() {
   return publicRequesterId;
 }
 
+function guestTrackingSecret() {
+  let secret = getWorkOrderSetting("guestTrackingSecret");
+  if (!secret) {
+    secret = randomBytes(32).toString("hex");
+    setWorkOrderSetting("guestTrackingSecret", secret);
+  }
+  return secret;
+}
+
+function guestTrackingToken(workOrderId: string) {
+  return createHmac("sha256", guestTrackingSecret()).update(`guest-work-order:${workOrderId}`).digest("base64url");
+}
+
+function requireGuestTrackingAccess(workOrderId: string, token: string) {
+  const workOrder = getWorkOrder(workOrderId);
+  if (workOrder.requesterId !== publicRequesterId || !token) {
+    throw new Error("This guest tracking link is invalid.");
+  }
+  const expected = Buffer.from(guestTrackingToken(workOrderId));
+  const actual = Buffer.from(token);
+  if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
+    throw new Error("This guest tracking link is invalid.");
+  }
+  return workOrder;
+}
+
+export function createGuestTrackingLink(workOrderId: string): GuestTrackingLink {
+  const workOrder = getWorkOrder(workOrderId);
+  if (workOrder.requesterId !== publicRequesterId) {
+    throw new Error("Tracking links are only generated for guest work orders.");
+  }
+  const token = guestTrackingToken(workOrderId);
+  return {
+    workOrderId,
+    workOrderNumber: workOrder.number,
+    path: `/requester/track/${encodeURIComponent(workOrderId)}?token=${encodeURIComponent(token)}`
+  };
+}
+
+export function getGuestTrackingLink(workOrderId: string, actorId: string): GuestTrackingLink {
+  const actor = getUser(actorId);
+  if (!["executive", "admin", "developer"].includes(actor.role)) {
+    throw new Error("Executive, admin, or developer access is required to view guest tracking links.");
+  }
+  return createGuestTrackingLink(workOrderId);
+}
+
+export function getGuestWorkOrderTracking(workOrderId: string, token: string): GuestWorkOrderTracking {
+  requireGuestTrackingAccess(workOrderId, token);
+  const detail = getWorkOrderDetail(workOrderId);
+  return {
+    workOrder: {
+      id: detail.id,
+      number: detail.number,
+      type: detail.type,
+      status: detail.status,
+      workDate: detail.workDate,
+      shiftGroup: detail.shiftGroup,
+      sectionName: detail.section?.name || detail.location,
+      area: detail.area,
+      machineName: detail.machineName,
+      issueCategoryName: detail.issueCategory?.name || "Other",
+      issueDescription: detail.issueDescription,
+      reportedByName: detail.reportedByName,
+      reportedByDepartment: detail.reportedByDepartment,
+      attachments: detail.attachments,
+      createdAt: detail.createdAt,
+      updatedAt: detail.updatedAt,
+      title: detail.title,
+      priority: detail.priority,
+      completionNote: detail.completionNote,
+      assignedToName: detail.assignedTo?.name || "Waiting for assignment"
+    },
+    activities: detail.activities.map((activity) => ({
+      action: activity.action,
+      status: activity.status,
+      message: activity.message,
+      createdAt: activity.createdAt
+    }))
+  };
+}
+
+export function verifyGuestWorkOrder(
+  workOrderId: string,
+  token: string,
+  status: "closed" | "returned",
+  note: string
+): GuestWorkOrderTracking {
+  const workOrder = requireGuestTrackingAccess(workOrderId, token);
+  if (workOrder.status !== "resolved") {
+    throw new Error("This work order is not waiting for guest verification.");
+  }
+  const trimmedNote = note.trim();
+  if (status === "returned" && !trimmedNote) {
+    throw new Error("Add a short reason before returning the work order to maintenance.");
+  }
+  updateWorkOrderStatus(workOrderId, {
+    actorId: publicRequesterId,
+    status,
+    note: trimmedNote || "Guest requester verified and closed the work order."
+  });
+  return getGuestWorkOrderTracking(workOrderId, token);
+}
+
 export async function deleteWorkOrder(id: string, actorId: string) {
   requireAdmin(actorId);
   const workOrder = getWorkOrder(id);
@@ -3637,7 +3793,15 @@ export async function deleteWorkOrder(id: string, actorId: string) {
     await postJson(runtime.webhookUrl, { Source: "CMMS", Event: "Deleted", Data: deletionData });
   }
 
-  db.prepare("DELETE FROM work_orders WHERE id = ?").run(id);
+  db.exec("BEGIN");
+  try {
+    enqueueWorkOrderSheetDeletion(workOrder.number);
+    db.prepare("DELETE FROM work_orders WHERE id = ?").run(id);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
 
   const workOrderUploadsRoot = path.resolve(uploadsRoot, "work-orders");
   const targetDir = path.resolve(workOrderUploadsRoot, id);

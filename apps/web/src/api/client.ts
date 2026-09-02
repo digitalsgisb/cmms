@@ -6,6 +6,9 @@ import type {
   CreateWorkOrderInput,
   DashboardSummary,
   DeleteWorkOrderInput,
+  GuestTrackingLink,
+  GuestWorkOrderSubmission,
+  GuestWorkOrderTracking,
   IssueCategory,
   Machine,
   MachineImportResult,
@@ -279,10 +282,18 @@ export const api = {
     }),
   requesterWorkOrders: () => request<PublicRequesterWorkOrder[]>("/api/requester/work-orders"),
   createRequesterWorkOrder: (input: Omit<CreateWorkOrderInput, "requesterId">) =>
-    request<WorkOrder>("/api/requester/work-orders", {
+    request<GuestWorkOrderSubmission>("/api/requester/work-orders", {
       method: "POST",
       body: JSON.stringify(input)
     }),
+  guestWorkOrderTracking: (id: string, token: string) =>
+    request<GuestWorkOrderTracking>(`/api/requester/work-orders/${encodeURIComponent(id)}/tracking?token=${encodeURIComponent(token)}`),
+  verifyGuestWorkOrder: (id: string, token: string, status: "closed" | "returned", note: string) =>
+    request<GuestWorkOrderTracking>(`/api/requester/work-orders/${encodeURIComponent(id)}/verification`, {
+      method: "POST",
+      body: JSON.stringify({ token, status, note })
+    }),
+  guestTrackingLink: (id: string) => request<GuestTrackingLink>(`/api/work-orders/${encodeURIComponent(id)}/guest-link`),
   workOrder: (id: string) => request<WorkOrderDetail>(`/api/work-orders/${id}`),
   createWorkOrder: (input: CreateWorkOrderInput) =>
     request<WorkOrder>("/api/work-orders", {

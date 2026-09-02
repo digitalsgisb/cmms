@@ -9,6 +9,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { LoginPage } from "./pages/LoginPage";
 import { PreventiveMaintenancePage } from "./pages/PreventiveMaintenancePage";
 import { PublicRequesterPage } from "./pages/PublicRequesterPage";
+import { GuestTrackingPage } from "./pages/GuestTrackingPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SparePartsPage } from "./pages/SparePartsPage";
 import { TechnicianPage } from "./pages/TechnicianPage";
@@ -35,6 +36,7 @@ export function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/requester" element={<PublicRequesterPage />} />
+      <Route path="/requester/track/:id" element={<GuestTrackingPage />} />
       <Route path="/tv" element={<TvDashboardPage />} />
       <Route element={<Layout />}>
         <Route index element={<HomePage />} />

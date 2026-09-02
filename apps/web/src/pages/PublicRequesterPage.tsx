@@ -4,6 +4,7 @@ import {
   UserCircle2, UserRound, Wrench, X, type LucideIcon
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import type { MasterData, ShiftGroup, User, WorkOrder, WorkOrderDetail, WorkOrderStatus, WorkOrderType } from "@sugi-cmms/shared";
 import { workOrderTypeLabels } from "@sugi-cmms/shared";
 import { api, mediaUrl } from "../api/client";
@@ -43,6 +44,7 @@ const filterLabels: Record<RequesterStatusFilter, string> = {
 };
 
 export function PublicRequesterPage() {
+  const navigate = useNavigate();
   const { currentUser, loadingUsers, login, logout } = useCurrentUser();
   const signedRequester = currentUser?.role === "requester";
   const [masterData, setMasterData] = useState<MasterData>({ sections: [], machines: [], issueCategories: [] });
@@ -162,15 +164,19 @@ export function PublicRequesterPage() {
         reportedByDepartment: signedRequester ? currentUser.department : form.reportedByDepartment.trim() || "Not specified",
         issueCategoryId: isOffice ? null : form.issueCategoryId, issueDescription: form.issueDescription
       };
-      const workOrder = signedRequester ? await api.createWorkOrder({ ...payload, requesterId: currentUser.id }) : await api.createRequesterWorkOrder(payload);
-      if (issueFiles.length) {
-        if (signedRequester) await api.uploadAttachments(workOrder.id, currentUser.id, "issue", issueFiles);
-        else await api.uploadRequesterAttachments(workOrder.id, issueFiles);
+      if (!signedRequester) {
+        const submission = await api.createRequesterWorkOrder(payload);
+        if (issueFiles.length) await api.uploadRequesterAttachments(submission.workOrder.id, issueFiles);
+        navigate(`${submission.tracking.path}&created=1`);
+        return;
       }
+
+      const workOrder = await api.createWorkOrder({ ...payload, requesterId: currentUser.id });
+      if (issueFiles.length) await api.uploadAttachments(workOrder.id, currentUser.id, "issue", issueFiles);
       setSuccess(`${workOrder.number} submitted successfully.`); setSelectedType(null);
       setForm({ ...initialRequesterForm, workDate: todayDate(), sectionId: form.sectionId, reportedByName: signedRequester ? currentUser.name : "", reportedByDepartment: signedRequester ? currentUser.department : "" });
       setIssueFiles([]);
-      if (signedRequester) { await loadAccountWorkOrders(); setStatusFilter("open"); setView("tracking"); }
+      await loadAccountWorkOrders(); setStatusFilter("open"); setView("tracking");
     } catch (nextError) { setError(nextError instanceof Error ? nextError.message : "Unable to submit work order."); }
     finally { setSubmitting(false); }
   }

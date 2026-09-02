@@ -31,6 +31,8 @@ Default local URLs:
 
 Production users can use Work Orders and Spare Parts. Dashboard, Preventive Maintenance, Assets, Performance, Reports, Users, Profile, and Settings remain visible but locked. Admin and developer accounts have full access. API sessions are random bearer tokens with a 30-day expiry; the login screen does not publish development credentials.
 
+Guest requesters receive a private signed tracking link after submitting a work order. The link shows live progress, photos, maintenance notes, and the requester verification controls when a repair is resolved. It does not require an account; anyone holding the link can view and verify that specific guest work order. Executives, admins, and developers can retrieve the same link from the work-order detail page.
+
 Create a `.env` file on the production host and use strong, unique passwords:
 
 ```dotenv
@@ -65,6 +67,8 @@ WorkOrderID	DateSubmitted	Date	Shift	Type	Section	Area	Machine Name	MachineID	Is
 The same screen accepts the existing Node-RED endpoint (for example `http://node-red:1880/workorderpk`). CMMS posts the compatible `{ "Data": ... }` payload only for work-order lifecycle events, allowing the supplied Telegram flow to keep handling Open/Returned alerts and Resolved/Closed removal.
 
 The Apps Script formats the mirror for people rather than exposing raw payloads: dates use `dd/mm/yyyy`, timestamps use `dd/mm/yyyy hh:mm`, duration fields show elapsed minutes, photo paths become compact links, long descriptions wrap, and technical ID/sync columns are hidden by default. After changing `docs/work-orders-apps-script.js`, create a new Apps Script deployment version so the live `/exec` endpoint uses the update. Reload the Sheet and run **SUGI CMMS → Format existing work orders** once to clean up rows written by an older script. Set `APP_PUBLIC_URL` to the CMMS address reachable by Sheet users if photo links should open from Google Sheets.
+
+Deleting a work order in CMMS also queues deletion of the matching `WorkOrderID` row in Google Sheets. The deletion queue is durable and is retried through the normal sync worker if Apps Script is temporarily unavailable. The deployed Apps Script must include the `deleteWorkOrder` action from the current `docs/work-orders-apps-script.js`.
 
 These values can also be supplied without the UI:
 

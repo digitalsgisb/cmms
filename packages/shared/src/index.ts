@@ -301,6 +301,34 @@ export interface PublicRequesterWorkOrder {
   updatedAt: string;
 }
 
+export interface GuestTrackingLink {
+  workOrderId: string;
+  workOrderNumber: string;
+  path: string;
+}
+
+export interface GuestWorkOrderSubmission {
+  workOrder: WorkOrder;
+  tracking: GuestTrackingLink;
+}
+
+export interface GuestTrackingActivity {
+  action: ActivityAction;
+  status: WorkOrderStatus | null;
+  message: string;
+  createdAt: string;
+}
+
+export interface GuestWorkOrderTracking {
+  workOrder: PublicRequesterWorkOrder & {
+    title: string;
+    priority: WorkOrderPriority;
+    completionNote: string | null;
+    assignedToName: string;
+  };
+  activities: GuestTrackingActivity[];
+}
+
 export interface UpsertSectionInput {
   actorId: string;
   name: string;
