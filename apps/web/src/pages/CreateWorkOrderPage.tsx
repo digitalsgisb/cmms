@@ -26,6 +26,12 @@ const initialForm = {
   issueDescription: ""
 };
 
+function reporterDepartmentOptions(current: string) {
+  return current && !workOrderDepartments.some((department) => department === current)
+    ? [current, ...workOrderDepartments]
+    : workOrderDepartments;
+}
+
 export function CreateWorkOrderPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -192,8 +198,11 @@ export function CreateWorkOrderPage() {
           </label>
 
           <label>
-            Department
-            <input value={form.reportedByDepartment} onChange={(event) => setForm({ ...form, reportedByDepartment: event.target.value })} required />
+            Reported by department
+            <select value={form.reportedByDepartment} onChange={(event) => setForm({ ...form, reportedByDepartment: event.target.value })} required>
+              <option value="">Choose department</option>
+              {reporterDepartmentOptions(form.reportedByDepartment).map((department) => <option key={department} value={department}>{department}</option>)}
+            </select>
           </label>
         </div>
 

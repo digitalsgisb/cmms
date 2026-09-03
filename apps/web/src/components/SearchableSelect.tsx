@@ -1,5 +1,6 @@
 import { Check, ChevronDown, Search } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 export interface SearchableSelectOption {
   value: string;
@@ -29,6 +30,7 @@ export function SearchableSelect({
   const id = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -51,7 +53,8 @@ export function SearchableSelect({
 
   useEffect(() => {
     function closeOnOutsideClick(event: MouseEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (!rootRef.current?.contains(target) && !menuRef.current?.contains(target)) {
         setOpen(false);
         setQuery("");
       }
@@ -63,7 +66,13 @@ export function SearchableSelect({
 
   useEffect(() => {
     if (open) {
-      window.setTimeout(() => inputRef.current?.focus(), 40);
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      const focusTimer = window.setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 40);
+      return () => {
+        window.clearTimeout(focusTimer);
+        document.body.style.overflow = originalOverflow;
+      };
     }
   }, [open]);
 
@@ -106,7 +115,7 @@ export function SearchableSelect({
         </span>
         <ChevronDown size={18} aria-hidden="true" />
       </button>
-      {open ? (
+      {open ? createPortal(
         <>
           <button
             className="search-select-backdrop"
@@ -117,7 +126,7 @@ export function SearchableSelect({
               setQuery("");
             }}
           />
-          <div className="search-select-menu">
+          <div className="search-select-menu" ref={menuRef} role="dialog" aria-modal="true" aria-labelledby={labelId}>
             <label className="search-select-search" htmlFor={`${id}-search`}>
               <Search size={16} aria-hidden="true" />
               <input
@@ -165,7 +174,8 @@ export function SearchableSelect({
               )}
             </div>
           </div>
-        </>
+        </>,
+        document.body
       ) : null}
     </div>
   );

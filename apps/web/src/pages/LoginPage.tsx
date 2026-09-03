@@ -87,8 +87,16 @@ export function LoginPage() {
 }
 
 function preferredLandingPath(user: User, from: string) {
+  if (user.role === "requester") {
+    return "/requester";
+  }
+
   if (user.role === "technician" && from === "/") {
     return "/technician";
+  }
+
+  if (user.role === "executive" && from === "/") {
+    return "/work-orders";
   }
 
   return from;

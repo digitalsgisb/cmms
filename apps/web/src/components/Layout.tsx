@@ -204,6 +204,10 @@ export function Layout() {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
+  if (currentUser.role === "requester") {
+    return <Navigate to="/requester" replace />;
+  }
+
   if (currentUser.role === "technician") {
     return (
       <div className="technician-app-shell">
