@@ -10777,3 +10777,16 @@ tbody tr:hover {
   .requester-account-card { transition: none; }
   .requester-category-gate.is-exiting { opacity: 0; }
 }
+html,
+body,
+#root {
+  touch-action: pan-x pan-y;
+}
+
+@media (max-width: 700px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
