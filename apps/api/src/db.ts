@@ -3544,7 +3544,9 @@ export function claimWorkOrder(id: string, actorId: string, note?: string): Work
   addActivity(id, actorId, "acknowledged", "acknowledged", note?.trim() || `Accepted by ${actor.name}.`);
 
   const workOrder = getWorkOrder(id);
-  notifyUsers([workOrder.requesterId], id, `${workOrder.number} accepted`, `${actor.name} accepted ${workOrder.title}.`);
+  if (workOrder.requesterId !== publicRequesterId) {
+    notifyUsers([workOrder.requesterId], id, `${workOrder.number} accepted`, `${actor.name} accepted ${workOrder.title}.`);
+  }
   enqueueWorkOrderSync(id, true);
 
   return workOrder;
@@ -3561,7 +3563,12 @@ export function assignWorkOrder(id: string, assignedToId: string, actorId: strin
   addActivity(id, actorId, "assigned", null, note?.trim() || `Assigned to ${assignedUser.name}.`);
 
   const workOrder = getWorkOrder(id);
-  notifyUsers([assignedToId, workOrder.requesterId], id, `${workOrder.number} assigned`, `${assignedUser.name} is assigned.`);
+  notifyUsers(
+    [assignedToId, ...(workOrder.requesterId !== publicRequesterId ? [workOrder.requesterId] : [])],
+    id,
+    `${workOrder.number} assigned`,
+    `${assignedUser.name} is assigned.`
+  );
   enqueueWorkOrderSync(id);
 
   return workOrder;
@@ -3931,13 +3938,27 @@ function notifyUsers(userIds: string[], workOrderId: string, title: string, body
 }
 
 function notifyForStatusChange(workOrder: WorkOrder, status: WorkOrderStatus) {
-  if (["acknowledged", "in_progress", "pending_material", "resolved"].includes(status)) {
-    notifyUsers(
-      [workOrder.requesterId],
-      workOrder.id,
-      `${workOrder.number} ${status.replace("_", " ")}`,
-      `${workOrder.title} is now ${status.replace("_", " ")}.`
-    );
+  if (status === "resolved") {
+    if (workOrder.requesterId !== publicRequesterId) {
+      notifyUsers(
+        [workOrder.requesterId],
+        workOrder.id,
+        `${workOrder.number} ready for verification`,
+        `${workOrder.title} has been resolved. Please review the completed work and verify it.`
+      );
+    }
+    return;
+  }
+
+  if (["acknowledged", "in_progress", "pending_material"].includes(status)) {
+    if (workOrder.requesterId !== publicRequesterId) {
+      notifyUsers(
+        [workOrder.requesterId],
+        workOrder.id,
+        `${workOrder.number} ${status.replace("_", " ")}`,
+        `${workOrder.title} is now ${status.replace("_", " ")}.`
+      );
+    }
     return;
   }
 

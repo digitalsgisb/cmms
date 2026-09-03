@@ -1,11 +1,11 @@
 import {
-  Activity, ArrowLeft, Building2, CalendarDays, CheckCircle2, ClipboardList, Clock3, Eye, Factory,
+  Activity, ArrowLeft, Bell, Building2, CalendarDays, CheckCircle2, ClipboardList, Clock3, Eye, Factory,
   Hammer, History, Home, Lightbulb, LogIn, LogOut, MapPin, RefreshCcw, Search, Send, ShieldCheck,
   UserCircle2, UserRound, Wrench, X, type LucideIcon
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { MasterData, ShiftGroup, User, WorkOrder, WorkOrderDepartment, WorkOrderDetail, WorkOrderStatus, WorkOrderType } from "@sugi-cmms/shared";
+import type { MasterData, NotificationRecord, ShiftGroup, User, WorkOrder, WorkOrderDepartment, WorkOrderDetail, WorkOrderStatus, WorkOrderType } from "@sugi-cmms/shared";
 import { workOrderDepartmentForUser, workOrderDepartments, workOrderTypeLabels } from "@sugi-cmms/shared";
 import { api, mediaUrl } from "../api/client";
 import { MultiPhotoPicker } from "../components/MultiPhotoPicker";
@@ -58,6 +58,8 @@ export function PublicRequesterPage() {
   const signedRequester = currentUser?.role === "requester";
   const [masterData, setMasterData] = useState<MasterData>({ sections: [], machines: [], issueCategories: [] });
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [view, setView] = useState<RequesterView>("new");
   const [selectedDepartment, setSelectedDepartment] = useState<WorkOrderDepartment | null>(null);
   const [choosingOtherDepartment, setChoosingOtherDepartment] = useState(false);
@@ -93,6 +95,11 @@ export function PublicRequesterPage() {
     setWorkOrders(next);
   }
 
+  async function loadRequesterNotifications() {
+    if (!signedRequester || !currentUser) { setNotifications([]); return; }
+    setNotifications(await api.notifications(currentUser.id));
+  }
+
   useEffect(() => { loadMasterData().catch(console.error); }, []);
   useEffect(() => {
     if (signedRequester) {
@@ -101,13 +108,14 @@ export function PublicRequesterPage() {
       setSelectedDepartment(null); setSelectedType(null); setChoosingOtherDepartment(false);
       setForm((current) => ({ ...current, reportedByName: currentUser.name, reportedByDepartment: currentUser.department }));
       loadAccountWorkOrders().catch(console.error);
+      loadRequesterNotifications().catch(console.error);
     } else {
-      setWorkOrders([]); setView("new"); setSelectedDepartment(null); setSelectedType(null);
+      setWorkOrders([]); setNotifications([]); setNotificationsOpen(false); setView("new"); setSelectedDepartment(null); setSelectedType(null);
     }
   }, [currentUser?.id]);
-  useLiveRefresh(["work-orders", "master-data"], async () => {
+  useLiveRefresh(["work-orders", "master-data", "notifications"], async () => {
     await loadMasterData();
-    if (signedRequester) await loadAccountWorkOrders();
+    if (signedRequester) await Promise.all([loadAccountWorkOrders(), loadRequesterNotifications()]);
   }, { fallbackMs: 10000 });
 
   const isOffice = selectedType === "office";
@@ -131,6 +139,7 @@ export function PublicRequesterPage() {
     closed: departmentWorkOrders.filter((item) => statusesByFilter.closed.includes(item.status)).length
   }), [departmentWorkOrders]);
   const pendingVerification = useMemo(() => workOrders.filter((item) => item.status === "resolved" && item.requesterId === currentUser?.id), [currentUser?.id, workOrders]);
+  const unreadNotifications = useMemo(() => notifications.filter((notification) => !notification.readAt).length, [notifications]);
   const visibleWorkOrders = useMemo(() => {
     const scopedWorkOrders = trackingScope === "department" ? departmentWorkOrders : prioritizedWorkOrders;
     const byStatus = statusFilter === "all" ? scopedWorkOrders : scopedWorkOrders.filter((item) => statusesByFilter[statusFilter].includes(item.status));
@@ -158,6 +167,28 @@ export function PublicRequesterPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
   function showStatus(filter: Exclude<RequesterStatusFilter, "all">) { setTrackingScope("department"); setStatusFilter(filter); openView("tracking"); }
+
+  async function openRequesterNotification(notification: NotificationRecord) {
+    if (!currentUser) return;
+    if (!notification.readAt) {
+      await api.markNotificationRead(notification.id);
+      setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, readAt: new Date().toISOString() } : item));
+    }
+    setNotificationsOpen(false);
+    const workOrder = workOrders.find((item) => item.id === notification.workOrderId);
+    if (workOrder?.status === "resolved" && workOrder.requesterId === currentUser.id) {
+      openView("verify");
+      return;
+    }
+    openView("tracking");
+  }
+
+  async function markAllRequesterNotificationsRead() {
+    if (!currentUser) return;
+    await api.markAllNotificationsRead(currentUser.id);
+    const readAt = new Date().toISOString();
+    setNotifications((current) => current.map((notification) => notification.readAt ? notification : { ...notification, readAt }));
+  }
 
   async function submitLogin(event: FormEvent) {
     event.preventDefault();
@@ -238,7 +269,7 @@ export function PublicRequesterPage() {
   return <div className={`requester-app-shell ${signedRequester ? "is-account" : "is-guest"}`}>
     <header className="requester-app-topbar">
       <div className="requester-app-brand"><span><img src="/brand/sugi_symbol.png" alt="Sugihara Grand" /></span><div><small>SUGI CMMS</small><strong>{signedRequester ? `${currentUser.department} Requester` : "Guest Request"}</strong></div></div>
-      <div className="requester-app-account-action">{signedRequester ? <button type="button" onClick={() => openView("account")}><UserCircle2 size={18} /><span>{currentUser.name}</span></button> : currentUser ? <a href="/"><Home size={17} />Return to CMMS</a> : <button type="button" onClick={() => setLoginOpen(true)}><LogIn size={17} />Department sign in</button>}</div>
+      <div className="requester-app-account-action">{signedRequester ? <><div className="notification-wrap requester-notification-wrap"><button className="requester-notification-button" type="button" onClick={() => setNotificationsOpen((open) => !open)} aria-label="Requester notifications" aria-expanded={notificationsOpen}><Bell size={18} />{unreadNotifications ? <b className="notification-count">{unreadNotifications}</b> : null}</button>{notificationsOpen ? <div className="notification-panel requester-notification-panel"><div className="panel-header"><strong>Notifications</strong><button type="button" onClick={markAllRequesterNotificationsRead}>Mark all read</button></div><div className="notification-list">{notifications.length ? notifications.slice(0, 10).map((notification) => <button type="button" key={notification.id} className={`notification-item ${notification.readAt ? "" : "unread"}`} onClick={() => void openRequesterNotification(notification)}><strong>{notification.title}</strong><span>{notification.body}</span><time>{formatDateTime(notification.createdAt)}</time></button>) : <p className="requester-notification-empty">No notifications yet.</p>}</div><PushNotificationControl compact /></div> : null}</div><button type="button" onClick={() => openView("account")}><UserCircle2 size={18} /><span>{currentUser.name}</span></button></> : currentUser ? <a href="/"><Home size={17} />Return to CMMS</a> : <button type="button" onClick={() => setLoginOpen(true)}><LogIn size={17} />Department sign in</button>}</div>
     </header>
 
     <main className="requester-app-main">

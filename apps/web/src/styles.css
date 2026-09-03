@@ -10494,8 +10494,16 @@ tbody tr:hover {
 .requester-app-brand > div { display: grid; min-width: 0; gap: 1px; }
 .requester-app-brand small { color: var(--maroon); font-size: 10px; font-weight: 950; letter-spacing: .08em; }
 .requester-app-brand strong { overflow: hidden; font-size: 17px; text-overflow: ellipsis; white-space: nowrap; }
-.requester-app-account-action button,
-.requester-app-account-action a { display: inline-flex; min-height: 42px; align-items: center; justify-content: center; gap: 8px; border: 1px solid rgba(127,17,27,.2); border-radius: 10px; background: #fff; color: var(--maroon); padding: 9px 13px; font-size: 12px; font-weight: 900; text-decoration: none; }
+.requester-app-account-action { display: flex; align-items: center; gap: 8px; }
+.requester-app-account-action > button,
+.requester-app-account-action > a,
+.requester-app-account-action > .notification-wrap > .requester-notification-button { display: inline-flex; min-height: 42px; align-items: center; justify-content: center; gap: 8px; border: 1px solid rgba(127,17,27,.2); border-radius: 10px; background: #fff; color: var(--maroon); padding: 9px 13px; font-size: 12px; font-weight: 900; text-decoration: none; }
+.requester-app-account-action > .notification-wrap > .requester-notification-button { position: relative; min-width: 42px; padding: 9px; }
+.requester-notification-panel { z-index: 110; text-align: left; }
+.requester-notification-panel .notification-item { width: 100%; border: 0; border-bottom: 1px solid #f1e4e6; border-radius: 0; background: #fff; color: var(--ink); text-align: left; cursor: pointer; }
+.requester-notification-panel .notification-item.unread { background: linear-gradient(90deg, rgba(210,168,91,.2), rgba(255,255,255,0)); }
+.requester-notification-panel .notification-item time { color: #96878c; font-size: 10px; }
+.requester-notification-empty { margin: 0; padding: 18px; color: var(--muted); font-size: 12px; }
 .requester-app-main { display: grid; width: min(1120px,100%); min-width: 0; gap: 16px; margin: 0 auto; padding: clamp(16px,3vw,28px); }
 .requester-app-toast { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 9px; border-radius: 12px; padding: 12px 14px; font-size: 13px; font-weight: 850; animation: requesterToastEnter 320ms cubic-bezier(.22,1,.36,1) both; }
 .requester-app-toast.success { border: 1px solid #b9dccb; color: #176747; background: #eefaf4; }
@@ -10726,8 +10734,8 @@ tbody tr:hover {
 @media (max-width: 700px) {
   .requester-app-topbar { min-height: 64px; padding: 8px 13px; }
   .requester-app-brand > span { width: 40px; height: 40px; }
-  .requester-app-account-action button span { display: none; }
-  .requester-app-account-action button,.requester-app-account-action a { padding: 8px 10px; }
+  .requester-app-account-action > button span { display: none; }
+  .requester-app-account-action > button,.requester-app-account-action > a { padding: 8px 10px; }
   .requester-app-main { padding: 14px; }
   .requester-dashboard-hero { min-height: 205px; align-items: start; flex-direction: column; padding: 21px; }
   .requester-dashboard-hero button { width: 100%; justify-content: center; }
