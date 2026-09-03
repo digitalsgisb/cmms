@@ -1,5 +1,5 @@
 import {
-  AlertTriangle, Check, CheckCircle2, ClipboardCopy, Clock3, ExternalLink, Home, Image, RefreshCcw,
+  AlertTriangle, Check, CheckCircle2, ClipboardCopy, Clock3, Home, Image, RefreshCcw,
   Send, Share2, ShieldCheck, Wrench
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -8,6 +8,7 @@ import type { GuestWorkOrderTracking, WorkOrderStatus } from "@sugi-cmms/shared"
 import { workOrderStatusLabels } from "@sugi-cmms/shared";
 import { api, mediaUrl } from "../api/client";
 import { StatusBadge } from "../components/Badges";
+import { ImageLightbox } from "../components/ImageLightbox";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
 import { formatDateTime } from "../utils/format";
 
@@ -47,6 +48,7 @@ export function GuestTrackingPage() {
   const [note, setNote] = useState("");
   const [action, setAction] = useState<"closed" | "returned" | "">("");
   const [copied, setCopied] = useState(false);
+  const [previewPhoto, setPreviewPhoto] = useState<{ src: string; alt: string; label: string } | null>(null);
 
   async function loadTracking() {
     if (!id || !token) {
@@ -140,7 +142,7 @@ export function GuestTrackingPage() {
 
           {workOrder.completionNote ? <section className="guest-tracker-panel guest-completion-note"><CheckCircle2 size={22} /><div><p>Maintenance completion note</p><strong>{workOrder.completionNote}</strong></div></section> : null}
 
-          {photos.length ? <section className="guest-tracker-panel guest-tracker-photos"><header><div><p>Evidence</p><h2>Work order photos</h2></div><Image size={20} /></header><div>{photos.map((photo) => <a href={mediaUrl(photo.url)} target="_blank" rel="noreferrer" key={photo.id}><img src={mediaUrl(photo.url)} alt={photo.originalName} /><span>{photo.kind === "issue" ? "Issue" : photo.kind === "after" ? "Completed" : "Returned"}<ExternalLink size={11} /></span></a>)}</div></section> : null}
+          {photos.length ? <section className="guest-tracker-panel guest-tracker-photos"><header><div><p>Evidence</p><h2>Work order photos</h2></div><Image size={20} /></header><div>{photos.map((photo) => { const label = photo.kind === "issue" ? "Issue" : photo.kind === "after" ? "Completed" : "Returned"; return <button type="button" key={photo.id} onClick={() => setPreviewPhoto({ src: mediaUrl(photo.url), alt: photo.originalName, label })}><img src={mediaUrl(photo.url)} alt={photo.originalName} /><span>{label}</span></button>; })}</div></section> : null}
 
           <section className="guest-tracker-panel guest-tracker-timeline"><header><div><p>Live history</p><h2>Status updates</h2></div><Clock3 size={20} /></header><div>{activities.map((activity, index) => <article key={`${activity.action}-${activity.createdAt}`}><span className={index === 0 ? "latest" : ""} /><div><strong>{activity.message}</strong><small>{formatDateTime(activity.createdAt)}</small></div></article>)}</div></section>
         </div>
@@ -150,5 +152,6 @@ export function GuestTrackingPage() {
         </aside>
       </div>
     </main>
+    {previewPhoto ? <ImageLightbox {...previewPhoto} onClose={() => setPreviewPhoto(null)} /> : null}
   </div>;
 }

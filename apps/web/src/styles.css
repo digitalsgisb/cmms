@@ -90,9 +90,9 @@
 .guest-completion-note p { margin: 0 0 4px; color: #188061; font-size: 10px; font-weight: 950; text-transform: uppercase; }
 .guest-completion-note strong { font-size: 13px; line-height: 1.5; }
 .guest-tracker-photos > div { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 9px; }
-.guest-tracker-photos a { position: relative; overflow: hidden; border-radius: 10px; background: #eee; }
+.guest-tracker-photos button { position: relative; overflow: hidden; border: 0; border-radius: 10px; background: #eee; padding: 0; cursor: zoom-in; }
 .guest-tracker-photos img { display: block; width: 100%; aspect-ratio: 1.35; object-fit: cover; }
-.guest-tracker-photos a span { position: absolute; right: 6px; bottom: 6px; display: inline-flex; align-items: center; gap: 4px; border-radius: 6px; color: #fff; background: rgba(0,0,0,.66); padding: 4px 6px; font-size: 9px; font-weight: 900; }
+.guest-tracker-photos button span { position: absolute; right: 6px; bottom: 6px; display: inline-flex; align-items: center; gap: 4px; border-radius: 6px; color: #fff; background: rgba(0,0,0,.66); padding: 4px 6px; font-size: 9px; font-weight: 900; }
 .guest-tracker-timeline > div { display: grid; gap: 0; }
 .guest-tracker-timeline article { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 10px; min-height: 50px; }
 .guest-tracker-timeline article > span { position: relative; width: 11px; height: 11px; margin-top: 3px; border: 2px solid #fff; border-radius: 50%; background: #aabcb6; box-shadow: 0 0 0 1px #aabcb6; }
@@ -1671,6 +1671,61 @@ button:disabled {
 .notification-item span {
   color: var(--muted);
   font-size: 14px;
+}
+
+.image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: rgba(8, 8, 10, 0.94);
+  padding: max(64px, calc(env(safe-area-inset-top) + 52px)) 16px max(24px, env(safe-area-inset-bottom));
+  cursor: zoom-out;
+  overscroll-behavior: contain;
+}
+
+.image-lightbox figure {
+  display: grid;
+  max-width: 100%;
+  max-height: 100%;
+  gap: 10px;
+  justify-items: center;
+  margin: 0;
+  cursor: default;
+}
+
+.image-lightbox img {
+  display: block;
+  max-width: min(1100px, 100%);
+  max-height: calc(100dvh - 120px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  border-radius: 10px;
+  object-fit: contain;
+  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.42);
+}
+
+.image-lightbox figcaption {
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: capitalize;
+}
+
+.image-lightbox-close {
+  position: fixed;
+  top: max(14px, calc(env(safe-area-inset-top) + 10px));
+  right: max(14px, calc(env(safe-area-inset-right) + 14px));
+  z-index: 1;
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: #221d20;
+  background: #fff;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
 }
 
 .user-select,
@@ -10730,9 +10785,9 @@ tbody tr:hover {
 .requester-detail-photos { margin-bottom: 22px; }
 .requester-detail-photos h3,.requester-detail-timeline h3 { margin: 0; font-size: 15px; }
 .requester-detail-photos > div { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 7px; }
-.requester-detail-photos a { position: relative; overflow: hidden; border-radius: 9px; }
+.requester-detail-photos button { position: relative; overflow: hidden; border: 0; border-radius: 9px; background: transparent; padding: 0; cursor: zoom-in; }
 .requester-detail-photos img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; }
-.requester-detail-photos a span { position: absolute; right: 4px; bottom: 4px; border-radius: 5px; color: #fff; background: rgba(0,0,0,.58); padding: 3px 5px; font-size: 8px; }
+.requester-detail-photos button span { position: absolute; right: 4px; bottom: 4px; border-radius: 5px; color: #fff; background: rgba(0,0,0,.58); padding: 3px 5px; font-size: 8px; }
 .requester-detail-timeline article { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 10px; padding: 3px 0; }
 .requester-detail-timeline article > span { width: 9px; height: 9px; margin-top: 4px; border-radius: 50%; background: var(--maroon); }
 .requester-detail-timeline article div { display: grid; gap: 2px; }
