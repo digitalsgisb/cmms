@@ -353,7 +353,11 @@ function RequesterVerification({ workOrders, notes, actionId, detailLoading, onN
 }
 
 function RequesterWorkOrderCard({ workOrder, onDetail, busy = false }: { workOrder: WorkOrder; onDetail: (workOrder: WorkOrder) => void; busy?: boolean }) {
-  return <article className={`requester-account-card status-${workOrder.status}`}><div className="card-topline"><strong>{workOrder.number}</strong><StatusBadge status={workOrder.status} /></div><span className="requester-department-chip">{workOrder.responsibleDepartment}</span><h3>{workOrder.machineName || workOrder.location}</h3><p>{workOrder.issueDescription}</p><div className="card-meta"><span>{workOrderTypeLabels[workOrder.type]}</span><span>{workOrder.area}</span>{workOrder.responsibleDepartment === "Production" && workOrder.shiftGroup !== "N/A" ? <span>Shift {workOrder.shiftGroup}</span> : null}</div><footer><time>{formatDateTime(workOrder.updatedAt)}</time><button type="button" disabled={busy} onClick={() => onDetail(workOrder)}><Eye size={15} />Details</button></footer></article>;
+  function openCard() {
+    if (!busy) onDetail(workOrder);
+  }
+
+  return <article className={`requester-account-card status-${workOrder.status}`} role="button" tabIndex={busy ? -1 : 0} aria-disabled={busy} aria-label={`Open details for ${workOrder.number}`} onClick={openCard} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openCard(); } }}><div className="card-topline"><strong>{workOrder.number}</strong><StatusBadge status={workOrder.status} /></div><span className="requester-department-chip">{workOrder.responsibleDepartment}</span><h3>{workOrder.machineName || workOrder.location}</h3><p>{workOrder.issueDescription}</p><div className="card-meta"><span>{workOrderTypeLabels[workOrder.type]}</span><span>{workOrder.area}</span>{workOrder.responsibleDepartment === "Production" && workOrder.shiftGroup !== "N/A" ? <span>Shift {workOrder.shiftGroup}</span> : null}</div><footer><time>{formatDateTime(workOrder.updatedAt)}</time><span className="requester-card-open-hint"><Eye size={15} />Tap to open</span></footer></article>;
 }
 
 function RequesterDetailDialog({ detail, canVerify, onClose, onVerify, actionId, note, onNote }: { detail: WorkOrderDetail; canVerify: boolean; onClose: () => void; onVerify: (workOrder: WorkOrder, status: "closed" | "returned") => void; actionId: string; note: string; onNote: (note: string) => void; }) {
