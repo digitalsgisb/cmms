@@ -14,6 +14,49 @@ export type WorkOrderStatus =
 
 export type WorkOrderPriority = "low" | "medium" | "high" | "critical";
 export type ShiftGroup = "A" | "B";
+export type WorkOrderDepartment =
+  | "Logistic"
+  | "Production"
+  | "SHE"
+  | "DTU"
+  | "R&D"
+  | "Account"
+  | "Management"
+  | "Business Development";
+
+export const workOrderDepartments: WorkOrderDepartment[] = [
+  "Logistic",
+  "Production",
+  "SHE",
+  "DTU",
+  "R&D",
+  "Account",
+  "Management",
+  "Business Development"
+];
+
+export function workOrderDepartmentForUser(department: string): WorkOrderDepartment | null {
+  const value = department.trim().toLowerCase();
+  const aliases: Record<string, WorkOrderDepartment> = {
+    logistic: "Logistic",
+    logistics: "Logistic",
+    production: "Production",
+    she: "SHE",
+    safety: "SHE",
+    "safety, health and environment": "SHE",
+    "safety health and environment": "SHE",
+    dtu: "DTU",
+    "digital transformation unit": "DTU",
+    "r&d": "R&D",
+    "research and development": "R&D",
+    account: "Account",
+    accounts: "Account",
+    finance: "Account",
+    management: "Management",
+    "business development": "Business Development"
+  };
+  return aliases[value] || null;
+}
 
 export interface Section {
   id: string;
@@ -118,6 +161,7 @@ export interface WorkOrder {
   machineName: string;
   reportedByName: string;
   reportedByDepartment: string;
+  responsibleDepartment: WorkOrderDepartment;
   issueCategoryId: string | null;
   issueDescription: string;
   createdAt: string;
@@ -266,6 +310,7 @@ export interface CreateWorkOrderInput {
   machineName?: string;
   reportedByName?: string;
   reportedByDepartment?: string;
+  responsibleDepartment?: WorkOrderDepartment;
   issueCategoryId?: string | null;
   issueDescription?: string;
 }
@@ -296,6 +341,7 @@ export interface PublicRequesterWorkOrder {
   issueDescription: string;
   reportedByName: string;
   reportedByDepartment: string;
+  responsibleDepartment: WorkOrderDepartment;
   attachments: WorkOrderAttachment[];
   createdAt: string;
   updatedAt: string;

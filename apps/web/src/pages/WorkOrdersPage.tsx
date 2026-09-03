@@ -2,7 +2,7 @@ import { AlertTriangle, CheckCircle2, Clock3, Layers3, Plus, Search, Trash2, Wre
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { MasterData, User, WorkOrder, WorkOrderStatus } from "@sugi-cmms/shared";
-import { workOrderStatusLabels, workOrderTypeLabels } from "@sugi-cmms/shared";
+import { workOrderDepartmentForUser, workOrderStatusLabels, workOrderTypeLabels } from "@sugi-cmms/shared";
 import { api } from "../api/client";
 import { PriorityBadge, StatusBadge } from "../components/Badges";
 import { formatDateTime, formatLiveDuration, userName } from "../utils/format";
@@ -27,7 +27,7 @@ export function WorkOrdersPage() {
   const [masterData, setMasterData] = useState<MasterData>({ sections: [], machines: [], issueCategories: [] });
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<WorkOrderStatus | "all">("all");
-  const [scope, setScope] = useState<"all" | "mine">("all");
+  const [scope, setScope] = useState<"all" | "department" | "mine">("all");
   const [month, setMonth] = useState("");
   const [sectionId, setSectionId] = useState("all");
   const [machineId, setMachineId] = useState("all");
@@ -50,10 +50,10 @@ export function WorkOrdersPage() {
   }, []);
 
   useEffect(() => {
-    if (currentUser?.role === "requester") {
-      setScope("mine");
-    }
-  }, [currentUser?.id, currentUser?.role]);
+    setScope(workOrderDepartmentForUser(currentUser?.department || "") ? "department" : "all");
+  }, [currentUser?.department, currentUser?.id]);
+
+  const accountDepartment = workOrderDepartmentForUser(currentUser?.department || "");
 
   const filtered = useMemo(() => {
     return workOrders.filter((workOrder) => {
@@ -63,14 +63,13 @@ export function WorkOrdersPage() {
       const matchesMachine =
         machineId === "all" ||
         (machineId === "__others" ? !workOrder.machineId : workOrder.machineId === machineId);
-      const matchesScope =
-        currentUser?.role === "requester"
-          ? workOrder.requesterId === currentUser.id
-          : scope === "all" || workOrder.requesterId === currentUser?.id || workOrder.assignedToId === currentUser?.id;
-      const searchable = `${workOrder.number} ${workOrder.title} ${workOrder.description} ${workOrder.location} ${workOrder.area} ${workOrder.assetName} ${workOrder.machineName} ${workOrder.reportedByName} ${workOrder.reportedByDepartment} ${workOrder.issueDescription}`.toLowerCase();
+      const matchesScope = scope === "all" ||
+        (scope === "department" && (!accountDepartment || workOrder.responsibleDepartment === accountDepartment)) ||
+        (scope === "mine" && (workOrder.requesterId === currentUser?.id || workOrder.assignedToId === currentUser?.id));
+      const searchable = `${workOrder.number} ${workOrder.title} ${workOrder.description} ${workOrder.location} ${workOrder.area} ${workOrder.assetName} ${workOrder.machineName} ${workOrder.reportedByName} ${workOrder.reportedByDepartment} ${workOrder.responsibleDepartment} ${workOrder.issueDescription}`.toLowerCase();
       return matchesStatus && matchesMonth && matchesSection && matchesMachine && matchesScope && searchable.includes(search.toLowerCase());
     });
-  }, [workOrders, status, month, sectionId, machineId, scope, search, currentUser?.id, currentUser?.role]);
+  }, [accountDepartment, workOrders, status, month, sectionId, machineId, scope, search, currentUser?.id]);
 
   const filteredMachines = useMemo(() => {
     return masterData.machines.filter((machine) => sectionId === "all" || machine.sectionId === sectionId);
@@ -182,18 +181,19 @@ export function WorkOrdersPage() {
           ))}
         </select>
 
-        {currentUser?.role === "requester" ? (
-          <span className="filter-note">My issued work orders</span>
-        ) : (
-          <div className="segmented-control">
+        <div className="segmented-control">
+          {accountDepartment ? (
+            <button type="button" className={scope === "department" ? "active" : ""} onClick={() => setScope("department")}>
+              {accountDepartment}
+            </button>
+          ) : null}
             <button type="button" className={scope === "all" ? "active" : ""} onClick={() => setScope("all")}>
               All
             </button>
             <button type="button" className={scope === "mine" ? "active" : ""} onClick={() => setScope("mine")}>
               Mine
             </button>
-          </div>
-        )}
+        </div>
       </div>
 
       {requesterMode ? (
@@ -288,6 +288,7 @@ function WorkOrderCard({
         <h2>{workOrder.title}</h2>
         <p>{workOrder.issueDescription || workOrder.description}</p>
         <div className="card-meta">
+          <span className="department-chip">{workOrder.responsibleDepartment}</span>
           <span>{workOrderTypeLabels[workOrder.type]}</span>
           <span>{workOrder.location}</span>
           <span>{workOrder.area}</span>

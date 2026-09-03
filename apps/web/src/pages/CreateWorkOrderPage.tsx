@@ -1,8 +1,8 @@
 import { ArrowLeft, CalendarDays, Factory, Send, UserRound } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import type { MasterData, ShiftGroup, WorkOrderType } from "@sugi-cmms/shared";
-import { workOrderTypeLabels } from "@sugi-cmms/shared";
+import type { MasterData, ShiftGroup, WorkOrderDepartment, WorkOrderType } from "@sugi-cmms/shared";
+import { workOrderDepartmentForUser, workOrderDepartments, workOrderTypeLabels } from "@sugi-cmms/shared";
 import { api } from "../api/client";
 import { SearchableSelect } from "../components/SearchableSelect";
 import { MultiPhotoPicker } from "../components/MultiPhotoPicker";
@@ -21,6 +21,7 @@ const initialForm = {
   customMachineName: "",
   reportedByName: "",
   reportedByDepartment: "",
+  responsibleDepartment: "Production" as WorkOrderDepartment,
   issueCategoryId: "",
   issueDescription: ""
 };
@@ -46,7 +47,8 @@ export function CreateWorkOrderPage() {
           issueCategoryId: current.issueCategoryId || nextMasterData.issueCategories.find((category) => category.active)?.id || "",
           customMachineName: current.customMachineName || assetFromQuery,
           reportedByName: current.reportedByName || currentUser?.name || "",
-          reportedByDepartment: current.reportedByDepartment || currentUser?.department || ""
+          reportedByDepartment: current.reportedByDepartment || currentUser?.department || "",
+          responsibleDepartment: workOrderDepartmentForUser(currentUser?.department || "") || current.responsibleDepartment
         }));
       })
       .catch(console.error);
@@ -93,6 +95,7 @@ export function CreateWorkOrderPage() {
         machineName: selectedMachine?.name || customMachineName || "Others",
         reportedByName: form.reportedByName,
         reportedByDepartment: form.reportedByDepartment,
+        responsibleDepartment: form.responsibleDepartment,
         issueCategoryId: form.issueCategoryId || null,
         issueDescription: form.issueDescription
       });
@@ -175,6 +178,13 @@ export function CreateWorkOrderPage() {
         ) : null}
 
         <div className="form-grid two-columns">
+          <label>
+            Responsible department
+            <select value={form.responsibleDepartment} onChange={(event) => setForm({ ...form, responsibleDepartment: event.target.value as WorkOrderDepartment })}>
+              {workOrderDepartments.map((department) => <option key={department} value={department}>{department}</option>)}
+            </select>
+          </label>
+
           <label>
             <UserRound size={15} aria-hidden="true" />
             Reported by

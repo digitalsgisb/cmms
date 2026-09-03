@@ -396,8 +396,12 @@ export function WorkOrderDetailPage() {
                   <dd>{detail.reportedByName}</dd>
                 </div>
                 <div>
-                  <dt>Department</dt>
+                  <dt>Reported by department</dt>
                   <dd>{detail.reportedByDepartment}</dd>
+                </div>
+                <div>
+                  <dt>Responsible department</dt>
+                  <dd>{detail.responsibleDepartment}</dd>
                 </div>
                 <div>
                   <dt>Work date</dt>

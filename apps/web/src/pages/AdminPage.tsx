@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { IssueCategory, Machine, MasterData, Section, User } from "@sugi-cmms/shared";
+import { workOrderDepartments } from "@sugi-cmms/shared";
 import { api, mediaUrl } from "../api/client";
 import { useCurrentUser } from "../state/UserContext";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
@@ -454,7 +455,7 @@ export function AdminPage() {
                   <option value="admin">Admin</option>
                   {currentUser?.role === "developer" ? <option value="developer">Developer</option> : null}
                 </select></label>
-                <label>Department<input required value={newUser.department} onChange={(event) => setNewUser((current) => ({ ...current, department: event.target.value }))} disabled={!canAdmin || savingUser} /></label>
+                <label>Department<input list="company-departments" required value={newUser.department} onChange={(event) => setNewUser((current) => ({ ...current, department: event.target.value }))} disabled={!canAdmin || savingUser} /></label>
                 <label>Job title<input required value={newUser.title} onChange={(event) => setNewUser((current) => ({ ...current, title: event.target.value }))} disabled={!canAdmin || savingUser} /></label>
               </div>
               <button className="admin-add-user-button" type="submit" disabled={!canAdmin || savingUser}>
@@ -513,7 +514,7 @@ export function AdminPage() {
                           <option value="admin">Admin</option>
                           {currentUser?.role === "developer" ? <option value="developer">Developer</option> : null}
                         </select></label>
-                        <label>Department<input required value={editUser.department} onChange={(event) => setEditUser((current) => ({ ...current, department: event.target.value }))} disabled={updatingUser} /></label>
+                        <label>Department<input list="company-departments" required value={editUser.department} onChange={(event) => setEditUser((current) => ({ ...current, department: event.target.value }))} disabled={updatingUser} /></label>
                         <label>Job title<input required value={editUser.title} onChange={(event) => setEditUser((current) => ({ ...current, title: event.target.value }))} disabled={updatingUser} /></label>
                       </div>
                       <div className="admin-user-edit-actions">
@@ -525,6 +526,7 @@ export function AdminPage() {
                 </article>
               ))}
             </div>
+            <datalist id="company-departments">{workOrderDepartments.map((department) => <option key={department} value={department} />)}</datalist>
           </section>
 
           <section className="section-panel">

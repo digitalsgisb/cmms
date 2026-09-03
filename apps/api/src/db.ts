@@ -63,6 +63,7 @@ import type {
   WorkOrderActivity,
   WorkOrderAttachment,
   WorkOrderDetail,
+  WorkOrderDepartment,
   WorkOrderStatus,
   WorkOrderSyncResult,
   WorkOrderSyncSettings,
@@ -170,6 +171,7 @@ export function migrate() {
       machineName TEXT NOT NULL,
       reportedByName TEXT NOT NULL,
       reportedByDepartment TEXT NOT NULL,
+      responsibleDepartment TEXT NOT NULL DEFAULT 'Production',
       issueCategoryId TEXT,
       issueDescription TEXT NOT NULL,
       createdAt TEXT NOT NULL,
@@ -531,6 +533,7 @@ export function migrate() {
   addWorkOrderColumnIfMissing(workOrderColumns, "machineName", "TEXT");
   addWorkOrderColumnIfMissing(workOrderColumns, "reportedByName", "TEXT");
   addWorkOrderColumnIfMissing(workOrderColumns, "reportedByDepartment", "TEXT");
+  addWorkOrderColumnIfMissing(workOrderColumns, "responsibleDepartment", "TEXT NOT NULL DEFAULT 'Production'");
   addWorkOrderColumnIfMissing(workOrderColumns, "issueCategoryId", "TEXT");
   addWorkOrderColumnIfMissing(workOrderColumns, "issueDescription", "TEXT");
 
@@ -539,6 +542,21 @@ export function migrate() {
   db.prepare("UPDATE work_orders SET machineName = COALESCE(machineName, assetName, 'Others') WHERE machineName IS NULL").run();
   db.prepare("UPDATE work_orders SET reportedByName = COALESCE(reportedByName, 'Requester') WHERE reportedByName IS NULL").run();
   db.prepare("UPDATE work_orders SET reportedByDepartment = COALESCE(reportedByDepartment, 'Production') WHERE reportedByDepartment IS NULL").run();
+  db.prepare(`
+    UPDATE work_orders SET responsibleDepartment = CASE
+      WHEN lower(trim(reportedByDepartment)) IN ('logistic', 'logistics') THEN 'Logistic'
+      WHEN lower(trim(reportedByDepartment)) = 'production' THEN 'Production'
+      WHEN lower(trim(reportedByDepartment)) IN ('she', 'safety', 'safety, health and environment', 'safety health and environment') THEN 'SHE'
+      WHEN lower(trim(reportedByDepartment)) IN ('dtu', 'digital transformation unit') THEN 'DTU'
+      WHEN lower(trim(reportedByDepartment)) IN ('r&d', 'research and development') THEN 'R&D'
+      WHEN lower(trim(reportedByDepartment)) IN ('account', 'accounts', 'finance') THEN 'Account'
+      WHEN lower(trim(reportedByDepartment)) = 'management' THEN 'Management'
+      WHEN lower(trim(reportedByDepartment)) = 'business development' THEN 'Business Development'
+      ELSE COALESCE(NULLIF(responsibleDepartment, ''), 'Production')
+    END
+    WHERE responsibleDepartment IS NULL OR responsibleDepartment = ''
+  `).run();
+  db.prepare("UPDATE work_orders SET responsibleDepartment = 'Logistic' WHERE responsibleDepartment = 'Logistics'").run();
   db.prepare("UPDATE work_orders SET issueDescription = COALESCE(issueDescription, description, title) WHERE issueDescription IS NULL").run();
   db.prepare("UPDATE work_orders SET area = COALESCE(NULLIF(area, ''), location, '') WHERE area IS NULL OR area = ''").run();
   db.prepare("UPDATE work_orders SET type = 'maintenance' WHERE type = 'standard_maintenance'").run();
@@ -652,80 +670,6 @@ export function seed() {
   seedMasterData();
   seedProductionAssets();
   seedPmData();
-
-  const workOrderCount = row<{ count: number }>(db.prepare("SELECT COUNT(*) as count FROM work_orders").get()).count;
-  if (workOrderCount === 0) {
-    const first = createWorkOrder({
-      type: "maintenance",
-      title: "Hydraulic press oil leakage",
-      description: "Oil leaking near the left side hydraulic hose. Production can still run slowly but area is slippery.",
-      assetName: "Hydraulic Press HP-02",
-      location: "Production Line A",
-      priority: "high",
-      requesterId: "u-requester-1",
-      workDate: now().slice(0, 10),
-      shiftGroup: "A",
-      sectionId: defaultSectionIds.conversion,
-      machineName: "Hydraulic Press HP-02",
-      reportedByName: "Nurul Aina",
-      reportedByDepartment: "Production",
-      issueCategoryId: otherIssueCategoryId,
-      issueDescription: "Oil leaking near the left side hydraulic hose. Production can still run slowly but area is slippery.",
-      dueDate: null
-    });
-
-    updateWorkOrderStatus(first.id, {
-      status: "acknowledged",
-      actorId: "u-tech-1",
-      assignedToId: "u-tech-1",
-      note: "Acknowledged. I will inspect the hose after current job."
-    });
-
-    const second = createWorkOrder({
-      type: "kaizen",
-      title: "Fabricate tool shadow board",
-      description: "Need a shadow board near packing area to reduce time looking for cutter, tape, and caliper.",
-      assetName: "Packing workstation",
-      location: "Packing Area",
-      priority: "medium",
-      requesterId: "u-requester-2",
-      workDate: now().slice(0, 10),
-      shiftGroup: "B",
-      sectionId: defaultSectionIds.rollMaking,
-      machineName: "Packing workstation",
-      reportedByName: "Raj Kumar",
-      reportedByDepartment: "Quality",
-      issueCategoryId: otherIssueCategoryId,
-      issueDescription: "Need a shadow board near packing area to reduce time looking for cutter, tape, and caliper.",
-      dueDate: null
-    });
-
-    updateWorkOrderStatus(second.id, {
-      status: "in_progress",
-      actorId: "u-tech-2",
-      assignedToId: "u-tech-2",
-      note: "Started measuring the wall space and tool layout."
-    });
-
-    createWorkOrder({
-      type: "maintenance",
-      title: "Air leak at compressor drop point",
-      description: "Hissing sound from air line near QA bench. Please check fitting.",
-      assetName: "Compressed air line",
-      location: "QA Bench 2",
-      priority: "low",
-      requesterId: "u-requester-2",
-      workDate: now().slice(0, 10),
-      shiftGroup: "A",
-      sectionId: defaultSectionIds.conversion,
-      machineName: "Compressed air line",
-      reportedByName: "Raj Kumar",
-      reportedByDepartment: "Quality",
-      issueCategoryId: otherIssueCategoryId,
-      issueDescription: "Hissing sound from air line near QA bench. Please check fitting.",
-      dueDate: null
-    });
-  }
 
   db.prepare(`
     INSERT OR IGNORE INTO work_order_sync_queue (workOrderId, status, attempts, lastError, queuedAt, syncedAt)
@@ -3267,6 +3211,7 @@ function workOrderSheetRow(workOrderId: string) {
     IssueCategory: detail.issueCategory?.name || "Other",
     ReportedBy: detail.reportedByName,
     Department: detail.reportedByDepartment,
+    ResponsibleDepartment: detail.responsibleDepartment,
     Priority: detail.priority[0].toUpperCase() + detail.priority.slice(1),
     IssueDescription: detail.issueDescription,
     PhotoIssue: publicMediaUrl(issuePhoto?.url),
@@ -3451,14 +3396,15 @@ export function createWorkOrder(input: CreateWorkOrderInput): WorkOrder {
   const shiftGroup = input.shiftGroup || "A";
   const reportedByName = input.reportedByName?.trim() || requester.name;
   const reportedByDepartment = input.reportedByDepartment?.trim() || requester.department;
+  const responsibleDepartment = normalizeWorkOrderDepartment(input.responsibleDepartment || reportedByDepartment);
 
   db.prepare(`
     INSERT INTO work_orders (
       id, number, type, title, description, assetName, location, priority, status,
       requesterId, assignedToId, dueDate, completionNote, workDate, shiftGroup, sectionId,
-      machineId, area, machineName, reportedByName, reportedByDepartment, issueCategoryId,
-      issueDescription, createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      machineId, area, machineName, reportedByName, reportedByDepartment, responsibleDepartment,
+      issueCategoryId, issueDescription, createdAt, updatedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     number,
@@ -3481,6 +3427,7 @@ export function createWorkOrder(input: CreateWorkOrderInput): WorkOrder {
     machineName,
     reportedByName,
     reportedByDepartment,
+    responsibleDepartment,
     issueCategory?.id || null,
     issueDescription,
     createdAt,
@@ -3669,6 +3616,7 @@ export function listRequesterWorkOrders(): PublicRequesterWorkOrder[] {
         wo.issueDescription,
         wo.reportedByName,
         wo.reportedByDepartment,
+        wo.responsibleDepartment,
         wo.createdAt,
         wo.updatedAt
       FROM work_orders wo
@@ -3759,6 +3707,7 @@ export function getGuestWorkOrderTracking(workOrderId: string, token: string): G
       issueDescription: detail.issueDescription,
       reportedByName: detail.reportedByName,
       reportedByDepartment: detail.reportedByDepartment,
+      responsibleDepartment: detail.responsibleDepartment,
       attachments: detail.attachments,
       createdAt: detail.createdAt,
       updatedAt: detail.updatedAt,
@@ -3811,6 +3760,7 @@ export async function deleteWorkOrder(id: string, actorId: string) {
   db.exec("BEGIN");
   try {
     enqueueWorkOrderSheetDeletion(workOrder.number);
+    db.prepare("UPDATE stock_movements SET workOrderId = NULL WHERE workOrderId = ?").run(id);
     db.prepare("DELETE FROM work_orders WHERE id = ?").run(id);
     db.exec("COMMIT");
   } catch (error) {
@@ -4021,6 +3971,33 @@ function normalizeWorkOrderType(value: unknown): WorkOrderType {
   throw new Error("Work order type must be Office, Maintenance, Project, or Kaizen.");
 }
 
+function normalizeWorkOrderDepartment(value: unknown): WorkOrderDepartment {
+  const department = String(value || "").trim().toLowerCase();
+  const matches: Record<string, WorkOrderDepartment> = {
+    logistic: "Logistic",
+    logistics: "Logistic",
+    production: "Production",
+    she: "SHE",
+    safety: "SHE",
+    "safety, health and environment": "SHE",
+    "safety health and environment": "SHE",
+    dtu: "DTU",
+    "digital transformation unit": "DTU",
+    "r&d": "R&D",
+    "research and development": "R&D",
+    account: "Account",
+    accounts: "Account",
+    finance: "Account",
+    management: "Management",
+    "business development": "Business Development"
+  };
+  const normalized = matches[department];
+  if (!normalized) {
+    throw new Error("Responsible department must be Logistic, Production, SHE, DTU, R&D, Account, Management, or Business Development.");
+  }
+  return normalized;
+}
+
 export function validateCreateWorkOrderInput(body: Partial<CreateWorkOrderInput>): CreateWorkOrderInput {
   const requiredFields: Array<keyof CreateWorkOrderInput> = [
     "type",
@@ -4067,6 +4044,7 @@ export function validateCreateWorkOrderInput(body: Partial<CreateWorkOrderInput>
     machineName: body.machineName ? String(body.machineName) : undefined,
     reportedByName: body.reportedByName ? String(body.reportedByName) : undefined,
     reportedByDepartment: body.reportedByDepartment ? String(body.reportedByDepartment) : undefined,
+    responsibleDepartment: normalizeWorkOrderDepartment(body.responsibleDepartment || body.reportedByDepartment || getUser(String(body.requesterId)).department),
     issueCategoryId: body.issueCategoryId ? String(body.issueCategoryId) : null,
     issueDescription: String(issueDescription)
   };

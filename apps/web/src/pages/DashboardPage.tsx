@@ -1,4 +1,5 @@
 import type { AssetDashboardResponse, DashboardSummary, PmDashboardResponse, SpareInventoryResponse, WorkOrder } from "@sugi-cmms/shared";
+import { workOrderDepartmentForUser } from "@sugi-cmms/shared";
 import {
   AlertTriangle,
   ArrowRight,
@@ -47,6 +48,7 @@ export function DashboardPage() {
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const canUseInProgressModules = Boolean(currentUser && ["admin", "developer"].includes(currentUser.role));
+  const accountDepartment = workOrderDepartmentForUser(currentUser?.department || "");
 
   async function loadDashboard(showLoading = false) {
     if (!currentUser) return;
@@ -83,8 +85,10 @@ export function DashboardPage() {
   const activeWorkOrders = useMemo(
     () => workOrders
       .filter((workOrder) => !["closed", "cancelled"].includes(workOrder.status))
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
-    [workOrders]
+      .sort((a, b) =>
+        Number(b.responsibleDepartment === accountDepartment) - Number(a.responsibleDepartment === accountDepartment) ||
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
+    [accountDepartment, workOrders]
   );
   const visibleWorkOrders = activeWorkOrders.slice(0, 6);
   const criticalOpen = activeWorkOrders.filter((item) => item.priority === "critical").length;

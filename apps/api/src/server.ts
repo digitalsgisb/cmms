@@ -220,7 +220,7 @@ app.use("/api", (request, response, next) => {
     return;
   }
   const scopedWorkOrderMatch = request.path.match(/^\/work-orders\/([^/]+)/);
-  if (request.cmmsUser.role === "requester" && scopedWorkOrderMatch) {
+  if (request.cmmsUser.role === "requester" && scopedWorkOrderMatch && request.method !== "GET") {
     try {
       const workOrder = getWorkOrderDetail(decodeURIComponent(scopedWorkOrderMatch[1]));
       if (workOrder.requesterId !== request.cmmsUser.id) {
@@ -697,9 +697,7 @@ app.post("/api/requester/work-orders/:id/verification", (request, response) => {
 
 app.get("/api/work-orders", (request, response) => {
   const workOrders = listWorkOrders();
-  response.json(request.cmmsUser?.role === "requester"
-    ? workOrders.filter((workOrder) => workOrder.requesterId === request.cmmsUser?.id)
-    : workOrders);
+  response.json(workOrders);
 });
 
 app.post("/api/work-orders", (request, response) => {
