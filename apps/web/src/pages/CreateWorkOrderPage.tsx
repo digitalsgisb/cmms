@@ -1,6 +1,6 @@
 import { ArrowLeft, CalendarDays, Factory, Send, UserRound } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import type { MasterData, ShiftGroup, WorkOrderDepartment, WorkOrderType } from "@sugi-cmms/shared";
 import { workOrderDepartmentForUser, workOrderDepartments, workOrderTypeLabels } from "@sugi-cmms/shared";
 import { api } from "../api/client";
@@ -94,7 +94,7 @@ export function CreateWorkOrderPage() {
         type: form.type,
         requesterId: currentUser.id,
         workDate: form.workDate || todayDate(),
-        shiftGroup: form.shiftGroup,
+        shiftGroup: form.responsibleDepartment === "Production" ? form.shiftGroup : "N/A",
         sectionId: form.sectionId || null,
         machineId: selectedMachine?.id || null,
         area: selectedMachine?.area || "General",
@@ -114,6 +114,10 @@ export function CreateWorkOrderPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  if (currentUser?.role === "technician") {
+    return <Navigate to="/technician" replace />;
   }
 
   return (
@@ -149,14 +153,16 @@ export function CreateWorkOrderPage() {
           </label>
         </div>
 
-        <div className="form-grid three-columns">
-          <label>
-            Shift group
-            <select value={form.shiftGroup} onChange={(event) => setForm({ ...form, shiftGroup: event.target.value as ShiftGroup })}>
-              <option value="A">A</option>
-              <option value="B">B</option>
-            </select>
-          </label>
+        <div className={`form-grid ${form.responsibleDepartment === "Production" ? "three-columns" : "two-columns"}`}>
+          {form.responsibleDepartment === "Production" ? (
+            <label>
+              Shift group
+              <select value={form.shiftGroup} onChange={(event) => setForm({ ...form, shiftGroup: event.target.value as ShiftGroup })}>
+                <option value="A">A</option>
+                <option value="B">B</option>
+              </select>
+            </label>
+          ) : null}
 
           <SearchableSelect
             label="Section"

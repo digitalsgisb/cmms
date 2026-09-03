@@ -109,10 +109,12 @@ export function WorkOrdersPage() {
           <p className="eyebrow">Flow control</p>
           <h1>Work Orders</h1>
         </div>
-        <Link className="primary-action" to="/work-orders/new">
-          <Plus size={17} aria-hidden="true" />
-          New Work Order
-        </Link>
+        {currentUser?.role !== "technician" ? (
+          <Link className="primary-action" to="/work-orders/new">
+            <Plus size={17} aria-hidden="true" />
+            New Work Order
+          </Link>
+        ) : null}
       </div>
 
       <div className="queue-ribbon">
@@ -293,7 +295,7 @@ function WorkOrderCard({
           <span>{workOrder.location}</span>
           <span>{workOrder.area}</span>
           <span>{workOrder.machineName || workOrder.assetName}</span>
-          <span>Shift {workOrder.shiftGroup}</span>
+          {workOrder.responsibleDepartment === "Production" && workOrder.shiftGroup !== "N/A" ? <span>Shift {workOrder.shiftGroup}</span> : null}
         </div>
         <div className="card-footer">
           <PriorityBadge priority={workOrder.priority} />

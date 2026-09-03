@@ -557,6 +557,7 @@ export function migrate() {
     WHERE responsibleDepartment IS NULL OR responsibleDepartment = ''
   `).run();
   db.prepare("UPDATE work_orders SET responsibleDepartment = 'Logistic' WHERE responsibleDepartment = 'Logistics'").run();
+  db.prepare("UPDATE work_orders SET shiftGroup = 'N/A' WHERE responsibleDepartment <> 'Production'").run();
   db.prepare("UPDATE work_orders SET issueDescription = COALESCE(issueDescription, description, title) WHERE issueDescription IS NULL").run();
   db.prepare("UPDATE work_orders SET area = COALESCE(NULLIF(area, ''), location, '') WHERE area IS NULL OR area = ''").run();
   db.prepare("UPDATE work_orders SET type = 'maintenance' WHERE type = 'standard_maintenance'").run();
@@ -3384,7 +3385,6 @@ export function createWorkOrder(input: CreateWorkOrderInput): WorkOrder {
   const requester = getUser(input.requesterId);
   const section = input.sectionId ? getSection(input.sectionId) : null;
   const machine = input.machineId ? getMachine(input.machineId) : null;
-  const number = nextWorkOrderNumber(input.type, section?.name || input.location || "General");
   const issueCategory = input.issueCategoryId ? getIssueCategory(input.issueCategoryId) : null;
   const machineName = input.machineName?.trim() || machine?.name || input.assetName?.trim() || "Others";
   const area = input.area?.trim() || machine?.area || "General";
@@ -3393,10 +3393,11 @@ export function createWorkOrder(input: CreateWorkOrderInput): WorkOrder {
   const title = input.title?.trim() || `${machineName} - ${issueCategory?.name || "Issue"}`;
   const description = input.description?.trim() || issueDescription;
   const workDate = input.workDate || createdAt.slice(0, 10);
-  const shiftGroup = input.shiftGroup || "A";
   const reportedByName = input.reportedByName?.trim() || requester.name;
   const reportedByDepartment = input.reportedByDepartment?.trim() || requester.department;
   const responsibleDepartment = normalizeWorkOrderDepartment(input.responsibleDepartment || reportedByDepartment);
+  const shiftGroup = responsibleDepartment === "Production" ? (input.shiftGroup === "B" ? "B" : "A") : "N/A";
+  const number = nextWorkOrderNumber(input.type, section?.name || input.location || "General", responsibleDepartment);
 
   db.prepare(`
     INSERT INTO work_orders (
@@ -3446,18 +3447,28 @@ export function createWorkOrder(input: CreateWorkOrderInput): WorkOrder {
   return getWorkOrder(id);
 }
 
-function nextWorkOrderNumber(type: WorkOrderType, sectionName: string) {
+function nextWorkOrderNumber(type: WorkOrderType, sectionName: string, responsibleDepartment: WorkOrderDepartment) {
   const date = new Date();
   const yearMonth = `${String(date.getFullYear()).slice(-2)}${String(date.getMonth() + 1).padStart(2, "0")}`;
   const sectionCode = sectionName.toLowerCase().includes("roll") ? "RM" : sectionName.toLowerCase().includes("conversion") ? "CV" : "GEN";
   const typeCode: Record<WorkOrderType, string> = { office: "OFF", maintenance: "MNT", project: "PRJ", kaizen: "KZN" };
-  const counterKey = `${yearMonth}-${sectionCode}-${typeCode[type]}`;
+  const departmentCode: Record<WorkOrderDepartment, string> = {
+    Logistic: "LOG",
+    Production: "PROD",
+    SHE: "SHE",
+    DTU: "DTU",
+    "R&D": "RND",
+    Account: "ACC",
+    Management: "MGT",
+    "Business Development": "BD"
+  };
+  const counterKey = `${yearMonth}-${departmentCode[responsibleDepartment]}-${sectionCode}-${typeCode[type]}`;
   const counter = row<{ value: number }>(db.prepare(`
     INSERT INTO work_order_counters (counterKey, value) VALUES (?, 1)
     ON CONFLICT(counterKey) DO UPDATE SET value = value + 1
     RETURNING value
   `).get(counterKey));
-  return `WO-${sectionCode}-${typeCode[type]}-${yearMonth}-${String(counter.value).padStart(3, "0")}`;
+  return `WO-${departmentCode[responsibleDepartment]}-${sectionCode}-${typeCode[type]}-${yearMonth}-${String(counter.value).padStart(3, "0")}`;
 }
 
 export function updateWorkOrderStatus(id: string, input: UpdateWorkOrderStatusInput): WorkOrder {
@@ -4027,6 +4038,10 @@ export function validateCreateWorkOrderInput(body: Partial<CreateWorkOrderInput>
     throw new Error("Issue description is required.");
   }
 
+  const responsibleDepartment = normalizeWorkOrderDepartment(
+    body.responsibleDepartment || body.reportedByDepartment || getUser(String(body.requesterId)).department
+  );
+
   return {
     type,
     title: body.title ? String(body.title) : undefined,
@@ -4037,14 +4052,14 @@ export function validateCreateWorkOrderInput(body: Partial<CreateWorkOrderInput>
     requesterId: String(body.requesterId),
     dueDate: body.dueDate || null,
     workDate: body.workDate || now().slice(0, 10),
-    shiftGroup: body.shiftGroup || "A",
+    shiftGroup: responsibleDepartment === "Production" ? (body.shiftGroup === "B" ? "B" : "A") : "N/A",
     sectionId: body.sectionId ? String(body.sectionId) : null,
     machineId: body.machineId ? String(body.machineId) : null,
     area: body.area ? String(body.area) : undefined,
     machineName: body.machineName ? String(body.machineName) : undefined,
     reportedByName: body.reportedByName ? String(body.reportedByName) : undefined,
     reportedByDepartment: body.reportedByDepartment ? String(body.reportedByDepartment) : undefined,
-    responsibleDepartment: normalizeWorkOrderDepartment(body.responsibleDepartment || body.reportedByDepartment || getUser(String(body.requesterId)).department),
+    responsibleDepartment,
     issueCategoryId: body.issueCategoryId ? String(body.issueCategoryId) : null,
     issueDescription: String(issueDescription)
   };

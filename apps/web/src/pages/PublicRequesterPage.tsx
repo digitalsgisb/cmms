@@ -42,6 +42,7 @@ function reporterDepartmentOptions(current: string) {
 
 type RequesterView = "dashboard" | "new" | "tracking" | "verify" | "account";
 type RequesterStatusFilter = "all" | "open" | "in_progress" | "waiting" | "closed";
+type RequesterTrackingScope = "department" | "all";
 
 const statusesByFilter: Record<Exclude<RequesterStatusFilter, "all">, WorkOrderStatus[]> = {
   open: ["open", "acknowledged"], in_progress: ["in_progress", "returned"],
@@ -68,6 +69,7 @@ export function PublicRequesterPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [statusFilter, setStatusFilter] = useState<RequesterStatusFilter>("all");
+  const [trackingScope, setTrackingScope] = useState<RequesterTrackingScope>("department");
   const [search, setSearch] = useState("");
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginUsername, setLoginUsername] = useState("");
@@ -95,6 +97,7 @@ export function PublicRequesterPage() {
   useEffect(() => {
     if (signedRequester) {
       setView("dashboard");
+      setTrackingScope("department");
       setSelectedDepartment(null); setSelectedType(null); setChoosingOtherDepartment(false);
       setForm((current) => ({ ...current, reportedByName: currentUser.name, reportedByDepartment: currentUser.department }));
       loadAccountWorkOrders().catch(console.error);
@@ -120,7 +123,7 @@ export function PublicRequesterPage() {
     : workOrders, [accountDepartment, workOrders]);
   const departmentWorkOrders = useMemo(() => accountDepartment
     ? workOrders.filter((item) => item.responsibleDepartment === accountDepartment)
-    : workOrders, [accountDepartment, workOrders]);
+    : workOrders.filter((item) => item.requesterId === currentUser?.id), [accountDepartment, currentUser?.id, workOrders]);
   const stats = useMemo(() => ({
     open: departmentWorkOrders.filter((item) => statusesByFilter.open.includes(item.status)).length,
     in_progress: departmentWorkOrders.filter((item) => statusesByFilter.in_progress.includes(item.status)).length,
@@ -129,10 +132,11 @@ export function PublicRequesterPage() {
   }), [departmentWorkOrders]);
   const pendingVerification = useMemo(() => workOrders.filter((item) => item.status === "resolved" && item.requesterId === currentUser?.id), [currentUser?.id, workOrders]);
   const visibleWorkOrders = useMemo(() => {
-    const byStatus = statusFilter === "all" ? prioritizedWorkOrders : prioritizedWorkOrders.filter((item) => statusesByFilter[statusFilter].includes(item.status));
+    const scopedWorkOrders = trackingScope === "department" ? departmentWorkOrders : prioritizedWorkOrders;
+    const byStatus = statusFilter === "all" ? scopedWorkOrders : scopedWorkOrders.filter((item) => statusesByFilter[statusFilter].includes(item.status));
     const query = search.trim().toLowerCase();
     return query ? byStatus.filter((item) => `${item.number} ${item.issueDescription} ${item.machineName} ${item.area}`.toLowerCase().includes(query)) : byStatus;
-  }, [prioritizedWorkOrders, search, statusFilter]);
+  }, [departmentWorkOrders, prioritizedWorkOrders, search, statusFilter, trackingScope]);
 
   function chooseDepartment(department: WorkOrderDepartment) {
     setSelectedDepartment(department);
@@ -149,10 +153,11 @@ export function PublicRequesterPage() {
 
   function openView(next: RequesterView) {
     setView(next); setError("");
+    if (next === "tracking") setTrackingScope("department");
     if (next !== "new") { setSelectedDepartment(null); setSelectedType(null); }
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
-  function showStatus(filter: Exclude<RequesterStatusFilter, "all">) { setStatusFilter(filter); openView("tracking"); }
+  function showStatus(filter: Exclude<RequesterStatusFilter, "all">) { setTrackingScope("department"); setStatusFilter(filter); openView("tracking"); }
 
   async function submitLogin(event: FormEvent) {
     event.preventDefault();
@@ -180,7 +185,7 @@ export function PublicRequesterPage() {
     setSubmitting(true); setError(""); setSuccess("");
     try {
       const payload = {
-        type: selectedType, workDate: form.workDate || todayDate(), shiftGroup: form.shiftGroup,
+        type: selectedType, workDate: form.workDate || todayDate(), shiftGroup: selectedDepartment === "Production" ? form.shiftGroup : "N/A",
         sectionId: isOffice ? null : form.sectionId || null, machineId: isOffice ? null : selectedMachine?.id || null,
         location: isOffice ? place : selectedMachine?.area || place || "General",
         area: isOffice ? "Office" : selectedMachine?.area || "Other",
@@ -239,12 +244,12 @@ export function PublicRequesterPage() {
     <main className="requester-app-main">
       {success ? <div className="requester-app-toast success"><CheckCircle2 size={18} />{success}<button type="button" onClick={() => setSuccess("")} aria-label="Dismiss"><X size={15} /></button></div> : null}
       {error ? <div className="requester-app-toast error"><RefreshCcw size={18} />{error}<button type="button" onClick={() => setError("")} aria-label="Dismiss"><X size={15} /></button></div> : null}
-      {signedRequester && view === "dashboard" ? <RequesterDashboard user={currentUser} workOrders={prioritizedWorkOrders} stats={stats} pendingVerification={pendingVerification} onStatus={showStatus} onView={openView} onDetail={openDetail} /> : null}
+      {signedRequester && view === "dashboard" ? <RequesterDashboard user={currentUser} workOrders={departmentWorkOrders} stats={stats} pendingVerification={pendingVerification} onStatus={showStatus} onView={openView} onDetail={openDetail} /> : null}
       {view === "new" ? <section className={`requester-new-view ${selectedType ? "" : "requester-new-view-locked"}`} aria-hidden={!selectedType}>
         <div className="requester-new-heading"><div><p>{signedRequester ? "Account request" : "Guest request"}</p><h1>New Work Order</h1><span>{signedRequester ? "This request will be saved under your account." : "No account needed. Submit an issue in a few simple steps."}</span></div>{!signedRequester ? <button type="button" onClick={() => setLoginOpen(true)}><ShieldCheck size={16} />Sign in to track</button> : null}</div>
         {selectedType && selectedDepartment ? <RequesterForm selectedType={selectedType} selectedDepartment={selectedDepartment} form={form} setForm={setForm} isOffice={isOffice} sectionOptions={sectionOptions} machineOptions={machineOptions} issueCategoryOptions={issueOptions} issueFiles={issueFiles} setIssueFiles={setIssueFiles} submitting={submitting} signedRequester={signedRequester} onChangeType={() => setSelectedType(null)} onSubmit={submit} /> : <section className="requester-form-panel requester-form-locked"><div className="requester-panel-heading"><span className="requester-panel-icon"><ShieldCheck size={18} /></span><div><h2>Choose a department and category</h2><span>The request form opens after your selections.</span></div></div></section>}
       </section> : null}
-      {signedRequester && view === "tracking" ? <RequesterTracking workOrders={visibleWorkOrders} statusFilter={statusFilter} search={search} detailLoading={detailLoading} onFilter={setStatusFilter} onSearch={setSearch} onDetail={openDetail} onNew={() => openView("new")} /> : null}
+      {signedRequester && view === "tracking" ? <RequesterTracking workOrders={visibleWorkOrders} departmentLabel={accountDepartment || "My requests"} scope={trackingScope} statusFilter={statusFilter} search={search} detailLoading={detailLoading} onScope={setTrackingScope} onFilter={setStatusFilter} onSearch={setSearch} onDetail={openDetail} onNew={() => openView("new")} /> : null}
       {signedRequester && view === "verify" ? <RequesterVerification workOrders={pendingVerification} notes={verificationNotes} actionId={actionId} detailLoading={detailLoading} onNote={(id, note) => setVerificationNotes((current) => ({ ...current, [id]: note }))} onVerify={verifyWorkOrder} onDetail={openDetail} /> : null}
       {signedRequester && view === "account" ? <section className="requester-account-view"><div className="requester-account-avatar">{initialsFor(currentUser.name)}</div><p>Department requester</p><h1>{currentUser.name}</h1><span>{currentUser.title}</span><dl><div><dt>Department</dt><dd>{currentUser.department}</dd></div><div><dt>Username</dt><dd>{currentUser.username}</dd></div><div><dt>Tracked requests</dt><dd>{departmentWorkOrders.length}</dd></div></dl><PwaInstallButton /><PushNotificationControl /><button className="requester-signout" type="button" onClick={() => { logout(); setSuccess("Signed out. You can continue as a guest."); }}><LogOut size={17} />Sign out and continue as guest</button></section> : null}
     </main>
@@ -272,13 +277,11 @@ function RequesterForm({ selectedType, selectedDepartment, form, setForm, isOffi
       </div>
 
       <div className="requester-step-label"><span>1</span>Request details</div>
-      <div className="form-grid two-columns">
+      <div className={`form-grid ${selectedDepartment === "Production" ? "two-columns" : ""}`}>
         <label><CalendarDays size={15} />Date<input type="date" value={form.workDate} onChange={(event) => setForm({ ...form, workDate: event.target.value })} required /></label>
-        {isOffice ? (
-          <label>Department<select value={form.reportedByDepartment} onChange={(event) => setForm({ ...form, reportedByDepartment: event.target.value })} disabled={signedRequester} required><option value="">Choose department</option>{reporterDepartmentOptions(form.reportedByDepartment).map((department) => <option key={department} value={department}>{department}</option>)}</select></label>
-        ) : (
+        {selectedDepartment === "Production" ? (
           <label>Shift group<select value={form.shiftGroup} onChange={(event) => setForm({ ...form, shiftGroup: event.target.value as ShiftGroup })}><option value="A">A</option><option value="B">B</option></select></label>
-        )}
+        ) : null}
       </div>
 
       {isOffice ? (
@@ -307,11 +310,11 @@ function RequesterForm({ selectedType, selectedDepartment, form, setForm, isOffi
 }
 
 function RequesterDashboard({ user, workOrders, stats, pendingVerification, onStatus, onView, onDetail }: { user: User; workOrders: WorkOrder[]; stats: Record<Exclude<RequesterStatusFilter, "all">, number>; pendingVerification: WorkOrder[]; onStatus: (filter: Exclude<RequesterStatusFilter, "all">) => void; onView: (view: RequesterView) => void; onDetail: (workOrder: WorkOrder) => void; }) {
-  return <section className="requester-dashboard-view"><header className="requester-dashboard-hero"><div><p>Welcome back, {user.name.split(" ")[0]}</p><h1>Your Requester Dashboard</h1><span>Track maintenance progress and verify completed work.</span></div><button type="button" onClick={() => onView("new")}><Send size={18} />New Work Order</button></header><div className="requester-account-stats"><button type="button" onClick={() => onStatus("open")}><Activity size={18} /><span>Open</span><strong>{stats.open}</strong></button><button type="button" onClick={() => onStatus("in_progress")}><Wrench size={18} /><span>In Progress</span><strong>{stats.in_progress}</strong></button><button type="button" onClick={() => onStatus("waiting")}><Clock3 size={18} /><span>Waiting</span><strong>{stats.waiting}</strong></button><button type="button" onClick={() => onStatus("closed")}><CheckCircle2 size={18} /><span>Closed</span><strong>{stats.closed}</strong></button></div>{pendingVerification.length ? <button className="requester-verification-banner" type="button" onClick={() => onView("verify")}><span><ShieldCheck size={23} /></span><div><strong>{pendingVerification.length} work order{pendingVerification.length === 1 ? "" : "s"} ready for verification</strong><small>Review the repair and close it, or return it to maintenance.</small></div><Eye size={20} /></button> : <div className="requester-clear-banner"><CheckCircle2 size={19} /><span><strong>No verification waiting</strong><small>Completed repairs needing your decision will appear here.</small></span></div>}<section className="requester-dashboard-list"><div className="requester-view-heading"><div><p>Latest updates</p><h2>Recent Work Orders</h2></div><button type="button" onClick={() => onView("tracking")}>View all</button></div>{workOrders.length ? workOrders.slice(0, 5).map((workOrder) => <RequesterWorkOrderCard key={workOrder.id} workOrder={workOrder} onDetail={onDetail} />) : <RequesterEmpty title="No requests yet" copy="Create your first work order and it will appear here." />}</section></section>;
+  return <section className="requester-dashboard-view"><header className="requester-dashboard-hero"><div><p>Welcome back, {user.name.split(" ")[0]}</p><h1>Your Requester Dashboard</h1><span>Track your department's work orders and verify completed work.</span></div><button type="button" onClick={() => onView("new")}><Send size={18} />New Work Order</button></header><div className="requester-account-stats"><button type="button" onClick={() => onStatus("open")}><Activity size={18} /><span>Open</span><strong>{stats.open}</strong></button><button type="button" onClick={() => onStatus("in_progress")}><Wrench size={18} /><span>In Progress</span><strong>{stats.in_progress}</strong></button><button type="button" onClick={() => onStatus("waiting")}><Clock3 size={18} /><span>Waiting</span><strong>{stats.waiting}</strong></button><button type="button" onClick={() => onStatus("closed")}><CheckCircle2 size={18} /><span>Closed</span><strong>{stats.closed}</strong></button></div>{pendingVerification.length ? <button className="requester-verification-banner" type="button" onClick={() => onView("verify")}><span><ShieldCheck size={23} /></span><div><strong>{pendingVerification.length} work order{pendingVerification.length === 1 ? "" : "s"} ready for verification</strong><small>Review the repair and close it, or return it to maintenance.</small></div><Eye size={20} /></button> : <div className="requester-clear-banner"><CheckCircle2 size={19} /><span><strong>No verification waiting</strong><small>Completed repairs needing your decision will appear here.</small></span></div>}<section className="requester-dashboard-list"><div className="requester-view-heading"><div><p>Department updates</p><h2>Recent Work Orders</h2></div><button type="button" onClick={() => onView("tracking")}>View all</button></div>{workOrders.length ? workOrders.slice(0, 5).map((workOrder) => <RequesterWorkOrderCard key={workOrder.id} workOrder={workOrder} onDetail={onDetail} />) : <RequesterEmpty title="No department requests yet" copy="New work orders for your department will appear here." />}</section></section>;
 }
 
-function RequesterTracking({ workOrders, statusFilter, search, detailLoading, onFilter, onSearch, onDetail, onNew }: { workOrders: WorkOrder[]; statusFilter: RequesterStatusFilter; search: string; detailLoading: boolean; onFilter: (filter: RequesterStatusFilter) => void; onSearch: (value: string) => void; onDetail: (workOrder: WorkOrder) => void; onNew: () => void; }) {
-  return <section className="requester-tracking-view"><div className="requester-view-heading"><div><p>Department tracking</p><h1>Track Work Orders</h1><span>Your department's work orders are prioritized first; other departments remain visible.</span></div><button type="button" onClick={onNew}><Send size={16} />New Request</button></div><label className="requester-tracking-search"><Search size={17} /><input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Search WO number, machine, or issue" /></label><div className="requester-filter-tabs">{(Object.keys(filterLabels) as RequesterStatusFilter[]).map((filter) => <button type="button" className={statusFilter === filter ? "active" : ""} key={filter} onClick={() => onFilter(filter)}>{filterLabels[filter]}</button>)}</div><div className="requester-account-list">{workOrders.length ? workOrders.map((workOrder) => <RequesterWorkOrderCard key={workOrder.id} workOrder={workOrder} onDetail={onDetail} busy={detailLoading} />) : <RequesterEmpty title="No matching work orders" copy="Try another status or search phrase." />}</div></section>;
+function RequesterTracking({ workOrders, departmentLabel, scope, statusFilter, search, detailLoading, onScope, onFilter, onSearch, onDetail, onNew }: { workOrders: WorkOrder[]; departmentLabel: string; scope: RequesterTrackingScope; statusFilter: RequesterStatusFilter; search: string; detailLoading: boolean; onScope: (scope: RequesterTrackingScope) => void; onFilter: (filter: RequesterStatusFilter) => void; onSearch: (value: string) => void; onDetail: (workOrder: WorkOrder) => void; onNew: () => void; }) {
+  return <section className="requester-tracking-view"><div className="requester-view-heading"><div><p>Department tracking</p><h1>Track Work Orders</h1><span>Your department is shown by default. Switch to All departments whenever needed.</span></div><button type="button" onClick={onNew}><Send size={16} />New Request</button></div><label className="requester-tracking-search"><Search size={17} /><input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Search WO number, machine, or issue" /></label><div className="requester-filter-tabs"><button type="button" className={scope === "department" ? "active" : ""} onClick={() => onScope("department")}>{departmentLabel}</button><button type="button" className={scope === "all" ? "active" : ""} onClick={() => onScope("all")}>All departments</button></div><div className="requester-filter-tabs">{(Object.keys(filterLabels) as RequesterStatusFilter[]).map((filter) => <button type="button" className={statusFilter === filter ? "active" : ""} key={filter} onClick={() => onFilter(filter)}>{filterLabels[filter]}</button>)}</div><div className="requester-account-list">{workOrders.length ? workOrders.map((workOrder) => <RequesterWorkOrderCard key={workOrder.id} workOrder={workOrder} onDetail={onDetail} busy={detailLoading} />) : <RequesterEmpty title="No matching work orders" copy="Try another status, scope, or search phrase." />}</div></section>;
 }
 
 function RequesterVerification({ workOrders, notes, actionId, detailLoading, onNote, onVerify, onDetail }: { workOrders: WorkOrder[]; notes: Record<string, string>; actionId: string; detailLoading: boolean; onNote: (id: string, note: string) => void; onVerify: (workOrder: WorkOrder, status: "closed" | "returned") => void; onDetail: (workOrder: WorkOrder) => void; }) {
@@ -319,7 +322,7 @@ function RequesterVerification({ workOrders, notes, actionId, detailLoading, onN
 }
 
 function RequesterWorkOrderCard({ workOrder, onDetail, busy = false }: { workOrder: WorkOrder; onDetail: (workOrder: WorkOrder) => void; busy?: boolean }) {
-  return <article className={`requester-account-card status-${workOrder.status}`}><div className="card-topline"><strong>{workOrder.number}</strong><StatusBadge status={workOrder.status} /></div><span className="requester-department-chip">{workOrder.responsibleDepartment}</span><h3>{workOrder.machineName || workOrder.location}</h3><p>{workOrder.issueDescription}</p><div className="card-meta"><span>{workOrderTypeLabels[workOrder.type]}</span><span>{workOrder.area}</span>{workOrder.type !== "office" ? <span>Shift {workOrder.shiftGroup}</span> : null}</div><footer><time>{formatDateTime(workOrder.updatedAt)}</time><button type="button" disabled={busy} onClick={() => onDetail(workOrder)}><Eye size={15} />Details</button></footer></article>;
+  return <article className={`requester-account-card status-${workOrder.status}`}><div className="card-topline"><strong>{workOrder.number}</strong><StatusBadge status={workOrder.status} /></div><span className="requester-department-chip">{workOrder.responsibleDepartment}</span><h3>{workOrder.machineName || workOrder.location}</h3><p>{workOrder.issueDescription}</p><div className="card-meta"><span>{workOrderTypeLabels[workOrder.type]}</span><span>{workOrder.area}</span>{workOrder.responsibleDepartment === "Production" && workOrder.shiftGroup !== "N/A" ? <span>Shift {workOrder.shiftGroup}</span> : null}</div><footer><time>{formatDateTime(workOrder.updatedAt)}</time><button type="button" disabled={busy} onClick={() => onDetail(workOrder)}><Eye size={15} />Details</button></footer></article>;
 }
 
 function RequesterDetailDialog({ detail, canVerify, onClose, onVerify, actionId, note, onNote }: { detail: WorkOrderDetail; canVerify: boolean; onClose: () => void; onVerify: (workOrder: WorkOrder, status: "closed" | "returned") => void; actionId: string; note: string; onNote: (note: string) => void; }) {

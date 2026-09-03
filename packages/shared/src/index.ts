@@ -13,7 +13,7 @@ export type WorkOrderStatus =
   | "cancelled";
 
 export type WorkOrderPriority = "low" | "medium" | "high" | "critical";
-export type ShiftGroup = "A" | "B";
+export type ShiftGroup = "A" | "B" | "N/A";
 export type WorkOrderDepartment =
   | "Logistic"
   | "Production"

@@ -407,10 +407,12 @@ export function WorkOrderDetailPage() {
                   <dt>Work date</dt>
                   <dd>{formatDate(detail.workDate)}</dd>
                 </div>
-                <div>
-                  <dt>Shift</dt>
-                  <dd>{detail.shiftGroup}</dd>
-                </div>
+                {detail.responsibleDepartment === "Production" && detail.shiftGroup !== "N/A" ? (
+                  <div>
+                    <dt>Shift</dt>
+                    <dd>{detail.shiftGroup}</dd>
+                  </div>
+                ) : null}
                 <div>
                   <dt>Issue category</dt>
                   <dd>{detail.issueCategory?.name || "Other"}</dd>

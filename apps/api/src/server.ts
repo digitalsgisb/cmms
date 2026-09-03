@@ -701,6 +701,10 @@ app.get("/api/work-orders", (request, response) => {
 });
 
 app.post("/api/work-orders", (request, response) => {
+  if (request.cmmsUser?.role === "technician") {
+    response.status(403).json({ error: "Technicians cannot create work orders. Use the assigned jobs queue instead." });
+    return;
+  }
   const input = validateCreateWorkOrderInput(request.body);
   const workOrder = createWorkOrder(input);
   response.status(201).json(workOrder);

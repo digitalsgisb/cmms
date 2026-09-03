@@ -47,6 +47,7 @@ export function DashboardPage() {
   const [assets, setAssets] = useState<AssetDashboardResponse | null>(null);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const technicianMode = currentUser?.role === "technician";
   const canUseInProgressModules = Boolean(currentUser && ["admin", "developer"].includes(currentUser.role));
   const accountDepartment = workOrderDepartmentForUser(currentUser?.department || "");
 
@@ -82,29 +83,47 @@ export function DashboardPage() {
 
   useLiveRefresh(["dashboard"], () => loadDashboard(false), { enabled: Boolean(currentUser) });
 
+  const dashboardWorkOrders = useMemo(
+    () => technicianMode && currentUser
+      ? workOrders.filter((workOrder) => workOrder.assignedToId === currentUser.id)
+      : workOrders,
+    [currentUser, technicianMode, workOrders]
+  );
   const activeWorkOrders = useMemo(
-    () => workOrders
+    () => dashboardWorkOrders
       .filter((workOrder) => !["closed", "cancelled"].includes(workOrder.status))
       .sort((a, b) =>
         Number(b.responsibleDepartment === accountDepartment) - Number(a.responsibleDepartment === accountDepartment) ||
         new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
-    [accountDepartment, workOrders]
+    [accountDepartment, dashboardWorkOrders]
   );
   const visibleWorkOrders = activeWorkOrders.slice(0, 6);
   const criticalOpen = activeWorkOrders.filter((item) => item.priority === "critical").length;
-  const standardOrders = workOrders.filter((item) => item.type === "maintenance" && item.status !== "cancelled");
-  const kaizenOrders = workOrders.filter((item) => item.type === "kaizen" && item.status !== "cancelled");
+  const standardOrders = dashboardWorkOrders.filter((item) => item.type === "maintenance" && item.status !== "cancelled");
+  const kaizenOrders = dashboardWorkOrders.filter((item) => item.type === "kaizen" && item.status !== "cancelled");
   const standardClosure = percent(standardOrders.filter((item) => item.status === "closed").length, standardOrders.length);
   const kaizenClosure = percent(kaizenOrders.filter((item) => item.status === "closed").length, kaizenOrders.length);
   const partsRisk = (inventory?.summary.lowStock ?? 0) + (inventory?.summary.outOfStock ?? 0);
   const pmCompliance = pm?.summary.compliancePercent ?? 0;
+  const effectiveSummary = useMemo(() => {
+    if (!technicianMode) return summary;
+    const today = new Date().toISOString().slice(0, 10);
+    return {
+      totalOpen: dashboardWorkOrders.filter((item) => !["closed", "cancelled"].includes(item.status)).length,
+      newWorkOrders: dashboardWorkOrders.filter((item) => item.status === "open").length,
+      inProgress: dashboardWorkOrders.filter((item) => ["acknowledged", "in_progress", "returned"].includes(item.status)).length,
+      pendingMaterial: dashboardWorkOrders.filter((item) => item.status === "pending_material").length,
+      resolvedWaitingVerification: dashboardWorkOrders.filter((item) => item.status === "resolved").length,
+      closedToday: dashboardWorkOrders.filter((item) => item.status === "closed" && item.updatedAt.startsWith(today)).length
+    };
+  }, [dashboardWorkOrders, summary, technicianMode]);
 
   const workflow = [
-    { label: "New", value: workOrders.filter((item) => item.status === "open").length, tone: "new" },
-    { label: "Acknowledged", value: workOrders.filter((item) => item.status === "acknowledged").length, tone: "acknowledged" },
-    { label: "In progress", value: workOrders.filter((item) => item.status === "in_progress").length, tone: "progress" },
-    { label: "Waiting parts", value: workOrders.filter((item) => item.status === "pending_material").length, tone: "waiting" },
-    { label: "For verification", value: workOrders.filter((item) => item.status === "resolved").length, tone: "verify" }
+    { label: "New", value: dashboardWorkOrders.filter((item) => item.status === "open").length, tone: "new" },
+    { label: "Acknowledged", value: dashboardWorkOrders.filter((item) => item.status === "acknowledged").length, tone: "acknowledged" },
+    { label: "In progress", value: dashboardWorkOrders.filter((item) => item.status === "in_progress").length, tone: "progress" },
+    { label: "Waiting parts", value: dashboardWorkOrders.filter((item) => item.status === "pending_material").length, tone: "waiting" },
+    { label: "For verification", value: dashboardWorkOrders.filter((item) => item.status === "resolved").length, tone: "verify" }
   ];
 
   const stockRisks = useMemo(
@@ -137,9 +156,9 @@ export function DashboardPage() {
         <div className="dashboard-hero-main">
           <p className="hero-eyebrow"><span aria-hidden="true" /> Live maintenance command · {formatLongDisplayDate()}</p>
           <h1>Good day, {currentUser?.name.split(" ")[0] ?? "team"}.</h1>
-          <p>Everything that needs attention across work orders and spare parts—kept in one readable view.</p>
+          <p>{technicianMode ? "Everything assigned to you, kept in one clear working view." : "Everything that needs attention across work orders and spare parts—kept in one readable view."}</p>
           <div className="hero-actions">
-            <Link className="primary-action" to="/work-orders/new"><Plus size={17} /> New Work Order</Link>
+            {technicianMode ? <Link className="primary-action" to="/technician"><ClipboardList size={17} /> Open My Jobs</Link> : <Link className="primary-action" to="/work-orders/new"><Plus size={17} /> New Work Order</Link>}
             {canUseInProgressModules ? <Link className="secondary-action" to="/performance"><BarChart3 size={17} /> Open Performance</Link> : <Link className="secondary-action" to="/spare-parts"><Package size={17} /> Open Spare Parts</Link>}
           </div>
         </div>
@@ -151,10 +170,10 @@ export function DashboardPage() {
       </div>
 
       <div className="dashboard-kpi-grid metric-grid" aria-busy={loading}>
-        <MetricTile icon={ClipboardList} label="Total active" value={summary?.totalOpen ?? 0} />
-        <MetricTile icon={AlertTriangle} label="New requests" value={summary?.newWorkOrders ?? 0} tone="danger" />
-        <MetricTile icon={Wrench} label="In progress" value={summary?.inProgress ?? 0} />
-        <MetricTile icon={CheckCircle2} label="Closed today" value={summary?.closedToday ?? 0} tone="success" />
+        <MetricTile icon={ClipboardList} label={technicianMode ? "My active jobs" : "Total active"} value={effectiveSummary?.totalOpen ?? 0} />
+        <MetricTile icon={AlertTriangle} label={technicianMode ? "My new jobs" : "New requests"} value={effectiveSummary?.newWorkOrders ?? 0} tone="danger" />
+        <MetricTile icon={Wrench} label="In progress" value={effectiveSummary?.inProgress ?? 0} />
+        <MetricTile icon={CheckCircle2} label="Closed today" value={effectiveSummary?.closedToday ?? 0} tone="success" />
         <MetricTile icon={ShieldCheck} label="PM compliance" value={canUseInProgressModules ? `${pmCompliance}%` : "Locked"} tone={canUseInProgressModules && pmCompliance >= 95 ? "success" : undefined} />
         <MetricTile icon={PackageCheck} label="Parts available" value={`${inventory ? percent(inventory.summary.totalParts - inventory.summary.outOfStock, inventory.summary.totalParts) : 0}%`} tone="success" />
       </div>
@@ -163,7 +182,7 @@ export function DashboardPage() {
         <section className="dashboard-command-card dashboard-flow-card">
           <div className="dashboard-card-heading">
             <div><span>Work order control</span><h2>Maintenance flow</h2><p>Live queue position from request to verification.</p></div>
-            <Link to="/work-orders">View all <ArrowRight size={14} /></Link>
+            <Link to={technicianMode ? "/technician" : "/work-orders"}>View all <ArrowRight size={14} /></Link>
           </div>
           <div className="dashboard-flow-grid">
             {workflow.map((item) => <article key={item.label} className={`tone-${item.tone}`}><span>{item.label}</span><strong>{item.value}</strong><i /></article>)}
@@ -232,8 +251,8 @@ export function DashboardPage() {
 
       <section className="section-panel dashboard-work-orders dashboard-current-work">
         <div className="section-header">
-          <div><span className="dashboard-section-kicker">Current execution</span><h2>Active Work Orders</h2><span>{loading ? "Loading live data..." : `${activeWorkOrders.length} active · ${visibleWorkOrders.length} shown`}</span></div>
-          <Link className="section-link" to="/work-orders">View all</Link>
+          <div><span className="dashboard-section-kicker">Current execution</span><h2>{technicianMode ? "My Active Work Orders" : "Active Work Orders"}</h2><span>{loading ? "Loading live data..." : `${activeWorkOrders.length} active · ${visibleWorkOrders.length} shown`}</span></div>
+          <Link className="section-link" to={technicianMode ? "/technician" : "/work-orders"}>View all</Link>
         </div>
         <div className="table-wrap">
           <table>
@@ -249,7 +268,7 @@ export function DashboardPage() {
             </tbody>
           </table>
         </div>
-        {visibleWorkOrders.length === 0 && !loading ? <p className="quiet-line">No active work orders right now.</p> : null}
+        {visibleWorkOrders.length === 0 && !loading ? <p className="quiet-line">{technicianMode ? "No work orders are currently assigned to you." : "No active work orders right now."}</p> : null}
       </section>
     </section>
   );
