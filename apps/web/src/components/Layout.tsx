@@ -37,7 +37,7 @@ const technicianTabs = [
   { to: "/technician", label: "Jobs", icon: ClipboardCheck },
   { to: "/spare-parts/scanner", label: "Parts", icon: Package },
   { to: "/preventive-maintenance", label: "PM", icon: ShieldCheck, locked: true },
-  { to: "/profile", label: "Profile", icon: Settings, locked: true }
+  { to: "/profile", label: "Profile", icon: Settings }
 ];
 
 function isTechnicianTabActive(tabPath: string, pathname: string) {
