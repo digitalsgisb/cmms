@@ -14,9 +14,13 @@ const columns: Array<{ title: string; statuses: WorkOrderStatus[]; tone: string 
   { title: "Verify", statuses: ["resolved"], tone: "success" }
 ];
 
+const workOrdersPerPage = 8;
+const rotationIntervalMs = 10_000;
+
 export function TvDashboardPage() {
   const [workOrders, setWorkOrders] = useState<TvWorkOrder[]>([]);
   const [now, setNow] = useState(new Date());
+  const [rotationStep, setRotationStep] = useState(0);
 
   async function loadWorkOrders() {
     setWorkOrders(await api.tvWorkOrders());
@@ -25,8 +29,10 @@ export function TvDashboardPage() {
   useEffect(() => {
     loadWorkOrders().catch(console.error);
     const clock = window.setInterval(() => setNow(new Date()), 1000);
+    const rotation = window.setInterval(() => setRotationStep((step) => step + 1), rotationIntervalMs);
     return () => {
       window.clearInterval(clock);
+      window.clearInterval(rotation);
     };
   }, []);
 
@@ -62,14 +68,23 @@ export function TvDashboardPage() {
       <section className="tv-columns">
         {columns.map((column) => {
           const columnWorkOrders = workOrders.filter((workOrder) => column.statuses.includes(workOrder.status));
+          const pageCount = Math.max(1, Math.ceil(columnWorkOrders.length / workOrdersPerPage));
+          const currentPage = rotationStep % pageCount;
+          const pageStart = currentPage * workOrdersPerPage;
+          const visibleWorkOrders = columnWorkOrders.slice(pageStart, pageStart + workOrdersPerPage);
+          const pageEnd = Math.min(pageStart + workOrdersPerPage, columnWorkOrders.length);
+
           return (
             <div key={column.title} className={`tv-column tv-${column.tone}`}>
               <div className="tv-column-header">
                 <h2>{column.title}</h2>
                 <strong>{columnWorkOrders.length}</strong>
               </div>
-              <div className="tv-card-list">
-                {columnWorkOrders.slice(0, 8).map((workOrder) => (
+              <div
+                className={`tv-card-list${pageCount > 1 ? " is-rotating" : ""}`}
+                key={`${column.title}-${currentPage}`}
+              >
+                {visibleWorkOrders.map((workOrder) => (
                   <article className="tv-card" key={workOrder.id}>
                     <div>
                       <strong>{workOrder.number}</strong>
@@ -84,6 +99,18 @@ export function TvDashboardPage() {
                   </article>
                 ))}
               </div>
+              {pageCount > 1 && (
+                <div
+                  className="tv-rotation-status"
+                  aria-label={`Showing work orders ${pageStart + 1} to ${pageEnd} of ${columnWorkOrders.length}. Page ${currentPage + 1} of ${pageCount}.`}
+                >
+                  <span>{pageStart + 1}&ndash;{pageEnd} of {columnWorkOrders.length}</span>
+                  <span className="tv-rotation-progress" aria-hidden="true">
+                    <i key={rotationStep} />
+                  </span>
+                  <span>Page {currentPage + 1}/{pageCount}</span>
+                </div>
+              )}
             </div>
           );
         })}
