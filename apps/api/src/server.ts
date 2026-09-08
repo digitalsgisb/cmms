@@ -1,3 +1,6 @@
+import { plantContext, userPlants } from "./plant-context.js";
+import { db } from "./db.js";
+import type { PlantId } from "@sugi-cmms/shared";
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import multer from "multer";
@@ -17,6 +20,8 @@ import {
   authenticateSession,
   claimWorkOrder,
   createUser,
+  createPmPlan,
+  ensurePlantPmSchedules,
   createIssueCategory,
   createAuthSession,
   createMachine,
@@ -85,7 +90,7 @@ import { initializeWebPush, sendPushToAllUsers, webPushConfig } from "./web-push
 const localEnvFile = path.basename(process.cwd()) === "api"
   ? path.resolve(process.cwd(), "../../.env")
   : path.resolve(process.cwd(), ".env");
-if (existsSync(localEnvFile)) loadEnvFile(localEnvFile);
+if (process.env.NODE_ENV !== "test" && existsSync(localEnvFile)) loadEnvFile(localEnvFile);
 
 const app = express();
 const port = Number(process.env.PORT || 3300);
@@ -168,12 +173,13 @@ function saveWorkOrderAttachments(
 }
 
 migrate();
-seed();
+plantContext.run({ plant: "port-klang" }, () => seed());
+plantContext.run({ plant: "sendayan" }, () => ensurePlantPmSchedules());
 initializeWebPush();
 
 app.use(cors());
 app.use(express.json({ limit: "12mb" }));
-app.use("/uploads", express.static(uploadsRoot));
+
 app.use("/api", (_request, response, next) => {
   response.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   response.set("Pragma", "no-cache");
@@ -197,15 +203,24 @@ app.use("/api", (request, response, next) => {
   const publicRequest =
     request.path === "/health" ||
     request.path === "/auth/login" ||
-    request.path === "/events" ||
+
     publicRequesterMutation ||
     publicGuestTracking ||
-    (request.method === "GET" && request.path.startsWith("/pm/photos/")) ||
-    (request.method === "GET" && ["/master-data", "/tv/work-orders", "/dashboard-summary"].includes(request.path));
-  if (publicRequest) { next(); return; }
+    (request.method === "GET" && request.path === "/master-data");
+  if (publicGuestTracking || publicRequesterMutation || (publicRequest && !request.header("authorization") && !sessionCookie(request))) {
+    let plant = String(request.header("x-cmms-plant") || request.query.plant || "port-klang");
+    const guestId = request.path.match(/^\/requester\/work-orders\/([^/]+)/)?.[1];
+    if (guestId) {
+      const record = db.prepare("SELECT plantId FROM work_orders WHERE id = ?").get(decodeURIComponent(guestId)) as { plantId: string } | undefined;
+      if (record) plant = record.plantId;
+    }
+    if (!["port-klang", "sendayan"].includes(plant)) { response.status(400).json({ error: "Select a valid plant." }); return; }
+    plantContext.run({ plant: plant as PlantId }, next); return;
+  }
+  if (request.path === "/health" || request.path === "/auth/login") { next(); return; }
 
   const authorization = request.header("authorization") || "";
-  const token = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+  const token = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : sessionCookie(request);
   if (!token) { response.status(401).json({ error: "Authentication is required." }); return; }
   try {
     request.cmmsUser = authenticateSession(token);
@@ -214,16 +229,33 @@ app.use("/api", (request, response, next) => {
     return;
   }
 
+  let requestedPlant = String(request.header("x-cmms-plant") || request.query.plant || userPlants(request.cmmsUser)[0]);
+  if (request.path.startsWith("/auth/")) requestedPlant = userPlants(request.cmmsUser)[0];
+  const photoId = request.path.match(/^\/pm\/photos\/([^/]+)$/)?.[1];
+  if (photoId && request.method === "GET") {
+    const photo = db.prepare("SELECT plantId FROM pm_result_photos WHERE id = ?").get(photoId) as { plantId: string } | undefined;
+    if (photo) requestedPlant = photo.plantId;
+  }
+  if (requestedPlant === "all" ? request.cmmsUser.plantAccess !== "both" : !userPlants(request.cmmsUser).includes(requestedPlant as PlantId)) {
+    response.status(403).json({ error: "You do not have access to this plant." }); return;
+  }
+  if (requestedPlant === "all" && !["GET", "HEAD"].includes(request.method) && !["/auth/", "/users", "/notifications", "/push/"].some((prefix) => request.path.startsWith(prefix))) {
+    response.status(400).json({ error: "Select one plant before making changes." }); return;
+  }
+  plantContext.run({ plant: requestedPlant as PlantId | "all" }, () => authorizeRequest(request, response, next));
+});
+
+function authorizeRequest(request: Request, response: Response, next: NextFunction) {
   const actorId = request.body?.actorId || request.body?.uploadedBy || request.body?.requesterId || request.query.actorId || request.query.userId;
-  if (actorId && String(actorId) !== request.cmmsUser.id) {
+  if (actorId && String(actorId) !== request.cmmsUser!.id) {
     response.status(403).json({ error: "You cannot perform an action as another user." });
     return;
   }
   const scopedWorkOrderMatch = request.path.match(/^\/work-orders\/([^/]+)/);
-  if (request.cmmsUser.role === "requester" && scopedWorkOrderMatch && request.method !== "GET") {
+  if (request.cmmsUser!.role === "requester" && scopedWorkOrderMatch && request.method !== "GET") {
     try {
       const workOrder = getWorkOrderDetail(decodeURIComponent(scopedWorkOrderMatch[1]));
-      if (workOrder.requesterId !== request.cmmsUser.id) {
+      if (workOrder.requesterId !== request.cmmsUser!.id) {
         response.status(403).json({ error: "You can only access work orders issued from your requester account." });
         return;
       }
@@ -232,12 +264,14 @@ app.use("/api", (request, response, next) => {
       return;
     }
   }
-  if ((request.path.startsWith("/assets") || request.path.startsWith("/pm") || request.path.startsWith("/work-orders/sync")) && !["admin", "developer"].includes(request.cmmsUser.role)) {
+  if ((request.path.startsWith("/work-orders/sync")) && !["admin", "developer"].includes(request.cmmsUser!.role)) {
     response.status(403).json({ error: "This feature is locked while development is in progress." });
     return;
   }
+  if (request.path.startsWith("/pm") && request.cmmsUser!.role === "requester") { response.status(403).json({ error: "Maintenance access is required." }); return; }
+  if (request.path.startsWith("/assets") && !["executive", "admin", "developer"].includes(request.cmmsUser!.role)) { response.status(403).json({ error: "Management access is required." }); return; }
   next();
-});
+}
 
 type LiveTopic = "work-orders" | "notifications" | "dashboard" | "spare-parts" | "pm" | "assets" | "master-data" | "users";
 
@@ -255,7 +289,7 @@ function topicsForMutation(pathname: string): LiveTopic[] {
 }
 
 function publishLiveChange(topic: LiveTopic, request: Request) {
-  const message = JSON.stringify({ topic, path: request.path, method: request.method, at: new Date().toISOString() });
+  const message = JSON.stringify({ topic, at: new Date().toISOString() });
   for (const client of liveClients) {
     client.write(`data: ${message}\n\n`);
   }
@@ -289,7 +323,7 @@ app.use((request, response, next) => {
     if (response.statusCode < 400) {
       const topics = topicsForMutation(request.path);
       topics.forEach((topic) => publishLiveChange(topic, request));
-      if (topics.includes("work-orders")) void flushWorkOrderSyncQueue().catch(console.error);
+      if (topics.includes("work-orders")) void flushAllPlants().catch(console.error);
     }
   });
   next();
@@ -303,7 +337,7 @@ const liveHeartbeat = setInterval(() => {
 liveHeartbeat.unref();
 
 const workOrderSyncRetry = setInterval(() => {
-  void flushWorkOrderSyncQueue().catch(console.error);
+  void flushAllPlants().catch(console.error);
 }, 60000);
 workOrderSyncRetry.unref();
 
@@ -316,7 +350,8 @@ app.get("/api/health", (_request, response) => {
 });
 
 app.get("/api/users", (request, response) => {
-  response.json(listUsers(request.query.role ? String(request.query.role) : undefined));
+  const list = () => listUsers(request.query.role ? String(request.query.role) : undefined);
+  response.json(request.query.manage && request.cmmsUser?.plantAccess === "both" && ["admin", "developer"].includes(request.cmmsUser.role) ? plantContext.run({ plant: "all" }, list) : list());
 });
 
 app.post("/api/users", (request, response) => {
@@ -327,7 +362,8 @@ app.post("/api/users", (request, response) => {
     name: String(request.body.name || ""),
     role: String(request.body.role || "requester") as User["role"],
     department: String(request.body.department || ""),
-    title: String(request.body.title || "")
+    title: String(request.body.title || ""),
+    plantAccess: request.body.plantAccess
   }));
 });
 
@@ -339,7 +375,8 @@ app.patch("/api/users/:id", (request, response) => {
     name: String(request.body.name || ""),
     role: String(request.body.role || "requester") as User["role"],
     department: String(request.body.department || ""),
-    title: String(request.body.title || "")
+    title: String(request.body.title || ""),
+    plantAccess: request.body.plantAccess
   }));
 });
 
@@ -353,8 +390,42 @@ app.post("/api/auth/login", (request, response) => {
     throw new Error("Username and password are required.");
   }
 
-  response.json(createAuthSession(String(request.body.username), String(request.body.password)));
+  const session = createAuthSession(String(request.body.username), String(request.body.password));
+  response.cookie("cmms-session", session.token, { httpOnly: true, sameSite: "strict", secure: request.secure, maxAge: 30 * 86400000, path: "/" });
+  response.json(session);
 });
+
+app.post("/api/auth/logout", (_request, response) => {
+  response.clearCookie("cmms-session", { path: "/" });
+  response.status(204).send();
+});
+app.use("/uploads", (request, response, next) => {
+  try {
+    const mediaPath = decodeURIComponent(request.path);
+    if (mediaPath.split("/").some((part) => part === "." || part === ".." || part.includes("\\"))) throw new Error("Invalid media path.");
+    const workOrderId = mediaPath.match(/^\/work-orders\/([^/]+)\/[^/]+$/)?.[1];
+    const avatarUserId = mediaPath.match(/^\/users\/([^/]+)\/[^/]+$/)?.[1];
+    if (!workOrderId && !avatarUserId) throw new Error("Invalid media path.");
+    const token = request.header("authorization")?.replace(/^Bearer /, "") || sessionCookie(request);
+    if (token && !request.query.token) {
+      const user = authenticateSession(token);
+      const record = workOrderId ? db.prepare("SELECT plantId FROM work_orders WHERE id = ?").get(workOrderId) as { plantId: PlantId } | undefined : null;
+      if (workOrderId && (!record || !userPlants(user).includes(record.plantId))) throw new Error("Media access denied.");
+      if (avatarUserId) {
+        const owner = db.prepare("SELECT plantAccess FROM users WHERE id = ?").get(avatarUserId) as User | undefined;
+        if (!owner || !userPlants(owner).some((plant) => userPlants(user).includes(plant))) throw new Error("Media access denied.");
+      }
+      next(); return;
+    }
+    if (workOrderId && request.query.token) {
+      const record = db.prepare("SELECT plantId FROM work_orders WHERE id = ?").get(workOrderId) as { plantId: PlantId } | undefined;
+      if (!record) throw new Error("Media access denied.");
+      plantContext.run({ plant: record.plantId }, () => getGuestWorkOrderTracking(workOrderId, String(request.query.token)));
+      next(); return;
+    }
+    throw new Error("Authentication required.");
+  } catch { response.status(403).json({ error: "Media access denied." }); }
+}, express.static(uploadsRoot));
 
 app.get("/api/auth/me", (request, response) => {
   response.json(request.cmmsUser);
@@ -399,6 +470,10 @@ app.get("/api/tv/work-orders", (_request, response) => {
 
 app.get("/api/assets", (_request, response) => {
   response.json(getAssetDashboard());
+});
+
+app.post("/api/pm/plans", (request, response) => {
+  response.status(201).json(createPmPlan({ ...request.body, actorId: request.cmmsUser!.id }));
 });
 
 app.patch("/api/assets/:id", (request, response) => {
@@ -667,6 +742,8 @@ app.post("/api/requester/work-orders", (request, response) => {
 
 app.post("/api/requester/work-orders/:id/attachments", upload.array("attachments", 10), (request, response) => {
   const files = request.files as Express.Multer.File[];
+  try { getGuestWorkOrderTracking(request.params.id, String(request.body.token || "")); }
+  catch { files.forEach((file) => rmSync(file.path, { force: true })); response.status(403).json({ error: "A valid guest tracking token is required." }); return; }
   const workOrder = getWorkOrderDetail(request.params.id);
   const uploadWindowOpen = Date.now() - Date.parse(workOrder.createdAt) <= 5 * 60 * 1000;
   if (workOrder.requesterId !== publicRequesterIdForUploads() || workOrder.status !== "open" || !uploadWindowOpen) {
@@ -800,7 +877,7 @@ app.patch("/api/notifications/read-all", (request, response) => {
 });
 
 app.patch("/api/notifications/:id/read", (request, response) => {
-  markNotificationRead(request.params.id);
+  markNotificationRead(request.params.id, request.cmmsUser!.id);
   response.status(204).send();
 });
 
@@ -875,3 +952,10 @@ app.use((error: Error, _request: Request, response: Response, _next: NextFunctio
 app.listen(port, () => {
   console.log(`Sugi CMMS API running on http://localhost:${port}`);
 });
+
+function sessionCookie(request: Request): string {
+  return (request.headers.cookie || "").split(";").map((part) => part.trim()).find((part) => part.startsWith("cmms-session="))?.slice(13) || "";
+}
+async function flushAllPlants() {
+  for (const plant of ["port-klang", "sendayan"] as const) await plantContext.run({ plant }, () => flushWorkOrderSyncQueue());
+}

@@ -1,3 +1,6 @@
+export type PlantId = "port-klang" | "sendayan";
+export type PlantAccess = PlantId | "both";
+export const plantLabels: Record<PlantId, string> = { "port-klang": "Port Klang", sendayan: "Sendayan" };
 export type UserRole = "requester" | "technician" | "executive" | "admin" | "developer";
 
 export type WorkOrderType = "office" | "maintenance" | "project" | "kaizen";
@@ -104,6 +107,7 @@ export type ActivityAction =
   | "attachment_added";
 
 export interface User {
+  plantAccess: PlantAccess;
   id: string;
   username: string;
   name: string;
@@ -114,6 +118,7 @@ export interface User {
 }
 
 export interface CreateUserInput {
+  plantAccess?: PlantAccess;
   actorId: string;
   username: string;
   password: string;
@@ -124,6 +129,7 @@ export interface CreateUserInput {
 }
 
 export interface UpdateUserInput {
+  plantAccess?: PlantAccess;
   actorId: string;
   username: string;
   password?: string;
@@ -140,6 +146,7 @@ export interface AuthSession {
 }
 
 export interface WorkOrder {
+  plantId: PlantId;
   id: string;
   number: string;
   type: WorkOrderType;
@@ -411,6 +418,7 @@ export type StockMovementType = "issue" | "restock" | "correction" | "return" | 
 export type StockSyncStatus = "pending" | "synced" | "failed" | "disabled";
 
 export interface SparePart {
+  plantId?: PlantId;
   itemNo: string;
   no: string | null;
   category: string;
@@ -637,6 +645,7 @@ export interface PmChecklistTemplate {
 }
 
 export interface PmPlan {
+  plantId?: PlantId;
   id: string;
   mainMachine: string;
   machineName: string;
@@ -653,6 +662,7 @@ export interface PmPlan {
 }
 
 export interface PmScheduleItem {
+  plantId?: PlantId;
   id: string;
   planId: string;
   scheduledDate: string;

@@ -1,5 +1,6 @@
+import { PlantSelector } from "./components/PlantSelector";
 import { lazy, Suspense, useEffect } from "react";
-import { Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { LockKeyhole } from "lucide-react";
 import { Layout } from "./components/Layout";
 import { AdminPage } from "./pages/AdminPage";
@@ -33,11 +34,13 @@ export function App() {
   }, [location.pathname]);
 
   return (
+    <>
+    <PlantSelector />
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/requester" element={<PublicRequesterPage />} />
       <Route path="/requester/track/:id" element={<GuestTrackingPage />} />
-      <Route path="/tv" element={<TvDashboardPage />} />
+      <Route path="/tv" element={<AuthenticatedTv />} />
       <Route element={<Layout />}>
         <Route index element={<HomePage />} />
         <Route path="/work-orders" element={<WorkOrdersPage />} />
@@ -59,6 +62,7 @@ export function App() {
         <Route path="/settings" element={<RestrictedFeature name="Settings"><SettingsPage /></RestrictedFeature>} />
       </Route>
     </Routes>
+    </>
   );
 }
 
@@ -68,15 +72,21 @@ function HomePage() {
 
 function RestrictedFeature({ name, children }: { name: string; children: React.ReactNode }) {
   const { currentUser } = useCurrentUser();
-  if (currentUser && ["admin", "developer"].includes(currentUser.role)) return children;
+  if (currentUser && (["admin", "developer"].includes(currentUser.role) || (currentUser.role === "executive" && ["Assets", "Preventive Maintenance", "Performance", "Reports"].includes(name)) || (currentUser.role === "technician" && name === "Preventive Maintenance"))) return children;
 
   return (
     <section className="locked-feature-page">
       <span><LockKeyhole size={28} aria-hidden="true" /></span>
-      <p className="eyebrow">Feature locked</p>
-      <h1>{name} is coming later</h1>
-      <p>Production access is currently limited to Work Orders and Spare Parts while this module is being completed.</p>
+      <p className="eyebrow">Role permissions</p>
+      <h1>{name} access is restricted</h1>
+      <p>Your role does not have access to this page. Contact an administrator if your responsibilities require it.</p>
       <a href="/work-orders">Go to Work Orders</a>
     </section>
   );
+}
+
+function AuthenticatedTv() {
+  const { currentUser, loadingUsers } = useCurrentUser();
+  if (loadingUsers) return <div className="auth-loading">Loading...</div>;
+  return currentUser ? <TvDashboardPage /> : <Navigate to="/login" replace />;
 }

@@ -1,3 +1,5 @@
+import { migratePlants } from "./plant-storage.js";
+import { canAccessPlant, plantContext, plantSettingKey, userPlants, writePlant } from "./plant-context.js";
 import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
@@ -75,8 +77,8 @@ import { productionAssets2026 } from "./production-assets-2026.js";
 import { emitNotificationCreated } from "./notification-events.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dataDir = path.resolve(__dirname, "../data");
-export const uploadsRoot = path.resolve(__dirname, "../uploads");
+const dataDir = process.env.CMMS_DATA_DIR || path.resolve(__dirname, "../data");
+export const uploadsRoot = process.env.CMMS_UPLOADS_DIR || path.resolve(__dirname, "../uploads");
 
 if (!existsSync(dataDir)) {
   mkdirSync(dataDir, { recursive: true });
@@ -87,6 +89,10 @@ if (!existsSync(uploadsRoot)) {
 }
 
 export const db = new DatabaseSync(path.join(dataDir, "cmms.sqlite"));
+// Existing databases already contain triggers referencing these functions.
+// Register them before any legacy migrations prepare UPDATE statements.
+db.function("cmms_can_access", (plant: unknown) => Number(canAccessPlant(plant)));
+db.function("cmms_write_plant", () => writePlant());
 
 function now() {
   return new Date().toISOString();
@@ -104,7 +110,7 @@ function boolNumber(value: boolean) {
   return value ? 1 : 0;
 }
 
-const userSelectColumns = "id, username, name, role, department, title, avatarUrl";
+const userSelectColumns = "id, username, name, role, department, title, avatarUrl, plantAccess";
 const publicRequesterId = "u-requester-public";
 const defaultSectionIds = {
   conversion: "section-conversion",
@@ -576,6 +582,7 @@ export function migrate() {
     CREATE INDEX IF NOT EXISTS idx_work_orders_section ON work_orders(sectionId);
     CREATE INDEX IF NOT EXISTS idx_work_orders_machine ON work_orders(machineId, machineName);
   `);
+  migratePlants(db);
 }
 
 function addWorkOrderColumnIfMissing(columns: Array<{ name: string }>, name: string, definition: string) {
@@ -596,7 +603,7 @@ export function seed() {
       throw new Error("Every USER_PASSWORDS_JSON password must contain at least 12 characters.");
     }
   }
-  const users: Array<User & { password: string }> = [
+  const users: Array<Omit<User, "plantAccess"> & { password: string }> = [
     { id: "u-requester-1", username: "nurul", name: "Nurul Aina", role: "requester", department: "Production", title: "Production Executive", avatarUrl: null, password: "requester123" },
     { id: "u-requester-2", username: "raj", name: "Raj Kumar", role: "requester", department: "Quality", title: "QA Engineer", avatarUrl: null, password: "requester123" },
     { id: publicRequesterId, username: "public-requester", name: "Requester Kiosk", role: "requester", department: "Shop Floor", title: "Public Requester", avatarUrl: null, password: "requester123" },
@@ -629,11 +636,11 @@ export function seed() {
   });
   const userCount = row<{ count: number }>(db.prepare("SELECT COUNT(*) as count FROM users").get()).count;
   if (userCount === 0) {
-    const insertUser = db.prepare("INSERT INTO users (id, username, name, role, department, title, avatarUrl, passwordHash, passwordSalt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    const insertUser = db.prepare("INSERT INTO users (id, username, name, role, department, title, avatarUrl, passwordHash, passwordSalt, plantAccess) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
     for (const user of users) {
       const passwordRecord = createPasswordRecord(user.password);
-      insertUser.run(user.id, user.username, user.name, user.role, user.department, user.title, user.avatarUrl, passwordRecord.passwordHash, passwordRecord.passwordSalt);
+      insertUser.run(user.id, user.username, user.name, user.role, user.department, user.title, user.avatarUrl, passwordRecord.passwordHash, passwordRecord.passwordSalt, ["admin", "developer"].includes(user.role) ? "both" : "port-klang");
     }
   } else {
     for (const user of users) {
@@ -642,8 +649,8 @@ export function seed() {
       );
       if (!existing) {
         const passwordRecord = createPasswordRecord(user.password);
-        db.prepare("INSERT INTO users (id, username, name, role, department, title, avatarUrl, passwordHash, passwordSalt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-          .run(user.id, user.username, user.name, user.role, user.department, user.title, user.avatarUrl, passwordRecord.passwordHash, passwordRecord.passwordSalt);
+        db.prepare("INSERT INTO users (id, username, name, role, department, title, avatarUrl, passwordHash, passwordSalt, plantAccess) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .run(user.id, user.username, user.name, user.role, user.department, user.title, user.avatarUrl, passwordRecord.passwordHash, passwordRecord.passwordSalt, ["admin", "developer"].includes(user.role) ? "both" : "port-klang");
         continue;
       }
 
@@ -673,14 +680,14 @@ export function seed() {
   seedPmData();
 
   db.prepare(`
-    INSERT OR IGNORE INTO work_order_sync_queue (workOrderId, status, attempts, lastError, queuedAt, syncedAt)
-    SELECT id, 'pending', 0, NULL, updatedAt, NULL FROM work_orders
+    INSERT OR IGNORE INTO work_order_sync_queue (plantId, workOrderId, status, attempts, lastError, queuedAt, syncedAt)
+    SELECT plantId, id, 'pending', 0, NULL, updatedAt, NULL FROM scoped_work_orders
   `).run();
 }
 
 function seedMasterData() {
   const timestamp = now();
-  const insertSection = db.prepare("INSERT OR IGNORE INTO sections (id, name, active, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)");
+  const insertSection = db.prepare("INSERT OR IGNORE INTO sections (plantId, id, name, active, createdAt, updatedAt) VALUES (cmms_write_plant(), ?, ?, ?, ?, ?)");
   insertSection.run(defaultSectionIds.conversion, "Conversion", 1, timestamp, timestamp);
   insertSection.run(defaultSectionIds.rollMaking, "Roll Making", 1, timestamp, timestamp);
 
@@ -711,8 +718,8 @@ function seedMasterData() {
     ["Roll Making", "General", "MINI PRESS CUT"], ["Roll Making", "General", "PE MIXER"],
     ["Roll Making", "General", "HOT PRESS"], ["Conversion", "LM", "PRESS CUT"]
   ];
-  const insertMachine = db.prepare("INSERT OR IGNORE INTO machines (id, sectionId, area, name, active, createdAt, updatedAt) VALUES (?, ?, ?, ?, 1, ?, ?)");
-  const findMachine = db.prepare("SELECT id FROM machines WHERE sectionId = ? AND lower(name) = lower(?) ORDER BY createdAt, id");
+  const insertMachine = db.prepare("INSERT OR IGNORE INTO machines (plantId, id, sectionId, area, name, active, createdAt, updatedAt) VALUES (cmms_write_plant(), ?, ?, ?, ?, 1, ?, ?)");
+  const findMachine = db.prepare("SELECT id FROM scoped_machines WHERE sectionId = ? AND lower(name) = lower(?) ORDER BY createdAt, id");
   const activateMachine = db.prepare("UPDATE machines SET area = ?, active = 1, updatedAt = ? WHERE id = ?");
   const deactivateMachine = db.prepare("UPDATE machines SET active = 0, updatedAt = ? WHERE id = ?");
   productionMachines.forEach(([sectionName, area, machineName], index) => {
@@ -736,8 +743,8 @@ function seedMasterData() {
     "TRIP", "AUTO SYSTEM NG", "HOSE FORMING", "COBOT", "MOLD DAMAGE", "HOTMELT GLUE", "OIL LEAKING",
     "EMERGENCY BUTTON", "JETLINE 50 HP"
   ];
-  const insertIssueCategory = db.prepare("INSERT OR IGNORE INTO issue_categories (id, name, active, createdAt, updatedAt) VALUES (?, ?, 1, ?, ?)");
-  const findIssueCategory = db.prepare("SELECT id FROM issue_categories WHERE lower(name) = lower(?) LIMIT 1");
+  const insertIssueCategory = db.prepare("INSERT OR IGNORE INTO issue_categories (plantId, id, name, active, createdAt, updatedAt) VALUES (cmms_write_plant(), ?, ?, 1, ?, ?)");
+  const findIssueCategory = db.prepare("SELECT id FROM scoped_issue_categories WHERE lower(name) = lower(?) LIMIT 1");
   const activateIssueCategory = db.prepare("UPDATE issue_categories SET active = 1, updatedAt = ? WHERE id = ?");
   productionIssueCategories.forEach((name, index) => {
     const existing = row<{ id: string } | undefined>(findIssueCategory.get(name));
@@ -763,11 +770,11 @@ function seedMasterData() {
 function seedProductionAssets() {
   const timestamp = now();
   const insert = db.prepare(`
-    INSERT OR IGNORE INTO assets (
+    INSERT OR IGNORE INTO assets (plantId,
       id, assetNo, name, serialNo, yearText, installDateText, warranty, manufacturer,
       supplier, contactPerson, telephone, fax, condition, criticality, location, notes,
       source, createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (cmms_write_plant(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   for (const asset of productionAssets2026) {
@@ -831,9 +838,9 @@ function seedPmChecklistTemplate(input: {
   items: SeedPmChecklistItem[];
 }, timestamp: string) {
   const inserted = db.prepare(`
-    INSERT OR IGNORE INTO pm_checklist_templates (
+    INSERT OR IGNORE INTO pm_checklist_templates (plantId,
       id, machineName, title, documentNumber, revisionNumber, effectiveDate, version, active, createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (cmms_write_plant(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     input.id,
     input.machineName,
@@ -851,10 +858,10 @@ function seedPmChecklistTemplate(input: {
   if (inserted.changes === 0) return;
 
   const insertItem = db.prepare(`
-    INSERT INTO pm_checklist_items (
+    INSERT INTO pm_checklist_items (plantId,
       id, templateId, sortOrder, groupName, description, specification, inspectionMethod,
       frequency, dataType, maintenanceType, required
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    ) VALUES (cmms_write_plant(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `);
   input.items.forEach((item, index) => {
     insertItem.run(`${input.itemIdPrefix}-${index + 1}`, input.id, index + 1, ...item);
@@ -1043,10 +1050,10 @@ function seedPmData() {
     ["Auto Hotmelt Glue", "Auto Hotmelt Glue (Cobolt)(2)", "Every 3 months", 3, 1, "Ammar", 1, 4]
   ];
   const insertPlan = db.prepare(`
-    INSERT OR IGNORE INTO pm_plans (
+    INSERT OR IGNORE INTO pm_plans (plantId,
       id, mainMachine, machineName, frequencyLabel, frequencyMonths, occurrencesPerMonth,
       technicianId, technicianName, templateId, startMonth, weekOfMonth, secondaryWeek, active, createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+    ) VALUES (cmms_write_plant(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
   `);
   plans.forEach((plan, index) => {
     const [mainMachine, machineName, frequencyLabel, frequencyMonths, occurrencesPerMonth, technicianName, startMonth, weekOfMonth, secondaryWeek] = plan;
@@ -1106,13 +1113,13 @@ function generatePmSchedules(year: number, planId?: string, fromDate?: string) {
     secondaryWeek: number | null;
   }>(db.prepare(`
     SELECT id, frequencyMonths, occurrencesPerMonth, startMonth, weekOfMonth, secondaryWeek
-    FROM pm_plans
+    FROM scoped_pm_plans
     WHERE active = 1${planId ? " AND id = ?" : ""}
   `).all(...(planId ? [planId] : [])));
   const insert = db.prepare(`
-    INSERT OR IGNORE INTO pm_schedules (
+    INSERT OR IGNORE INTO pm_schedules (plantId,
       id, planId, scheduledDate, year, month, weekOfMonth, status, remarks, createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, 'scheduled', '', ?, ?)
+    ) VALUES (cmms_write_plant(), ?, ?, ?, ?, ?, ?, 'scheduled', '', ?, ?)
   `);
 
   for (const plan of plans) {
@@ -1128,12 +1135,18 @@ function generatePmSchedules(year: number, planId?: string, fromDate?: string) {
   }
 }
 
+export function ensurePlantPmSchedules() {
+  const year = new Date().getFullYear();
+  generatePmSchedules(year);
+  generatePmSchedules(year + 1);
+}
+
 export function listUsers(role?: string): User[] {
   if (role) {
-    return rows<User>(db.prepare(`SELECT ${userSelectColumns} FROM users WHERE role = ? AND active = 1 ORDER BY name`).all(role));
+    return rows<User>(db.prepare(`SELECT ${userSelectColumns} FROM users WHERE role = ? AND active = 1 AND (plantAccess = 'both' OR cmms_can_access(plantAccess)) ORDER BY name`).all(role));
   }
 
-  return rows<User>(db.prepare(`SELECT ${userSelectColumns} FROM users WHERE active = 1 ORDER BY department, role, name`).all());
+  return rows<User>(db.prepare(`SELECT ${userSelectColumns} FROM users WHERE active = 1 AND (plantAccess = 'both' OR cmms_can_access(plantAccess)) ORDER BY department, role, name`).all());
 }
 
 const userRoles: UserRole[] = ["requester", "technician", "executive", "admin", "developer"];
@@ -1165,12 +1178,13 @@ export function createUser(input: CreateUserInput): User {
     throw new Error("That username already exists, including among previously removed accounts.");
   }
 
+  const plantAccess = validatePlantAccess(input.plantAccess ?? (["admin", "developer"].includes(input.role) ? "both" : writePlant()), actor);
   const id = randomUUID();
   const passwordRecord = createPasswordRecord(password);
   db.prepare(`
-    INSERT INTO users (id, username, name, role, department, title, avatarUrl, passwordHash, passwordSalt, active)
-    VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, 1)
-  `).run(id, username, name, input.role, department, title, passwordRecord.passwordHash, passwordRecord.passwordSalt);
+    INSERT INTO users (id, username, name, role, department, title, avatarUrl, passwordHash, passwordSalt, active, plantAccess)
+    VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, 1, ?)
+  `).run(id, username, name, input.role, department, title, passwordRecord.passwordHash, passwordRecord.passwordSalt, plantAccess);
   return getUser(id);
 }
 
@@ -1179,6 +1193,7 @@ export function updateUser(id: string, input: UpdateUserInput): User {
   const target = row<(User & { active: number }) | undefined>(
     db.prepare(`SELECT ${userSelectColumns}, active FROM users WHERE id = ?`).get(id)
   );
+  if (target && actor.plantAccess !== "both" && target.plantAccess !== actor.plantAccess) throw new Error("You cannot manage users from another plant.");
   if (!target || !target.active) {
     throw new Error("User not found.");
   }
@@ -1218,16 +1233,17 @@ export function updateUser(id: string, input: UpdateUserInput): User {
     }
   }
 
-  const revokeSessions = Boolean(password) || target.role !== input.role;
+  const plantAccess = validatePlantAccess(input.plantAccess ?? target.plantAccess, actor);
+  const revokeSessions = Boolean(password) || target.role !== input.role || target.plantAccess !== plantAccess;
   const passwordRecord = password ? createPasswordRecord(password) : null;
   db.exec("BEGIN");
   try {
     db.prepare(`
       UPDATE users
-      SET username = ?, name = ?, role = ?, department = ?, title = ?,
+      SET username = ?, name = ?, role = ?, department = ?, title = ?, plantAccess = ?,
           passwordHash = COALESCE(?, passwordHash), passwordSalt = COALESCE(?, passwordSalt)
       WHERE id = ?
-    `).run(username, name, input.role, department, title, passwordRecord?.passwordHash || null, passwordRecord?.passwordSalt || null, id);
+    `).run(username, name, input.role, department, title, plantAccess, passwordRecord?.passwordHash || null, passwordRecord?.passwordSalt || null, id);
     if (revokeSessions) {
       db.prepare("DELETE FROM auth_sessions WHERE userId = ?").run(id);
     }
@@ -1244,6 +1260,7 @@ export function deactivateUser(id: string, actorId: string): void {
   const target = row<(User & { active: number }) | undefined>(
     db.prepare(`SELECT ${userSelectColumns}, active FROM users WHERE id = ?`).get(id)
   );
+  if (target && actor.plantAccess !== "both" && target.plantAccess !== actor.plantAccess) throw new Error("You cannot manage users from another plant.");
   if (!target || !target.active) {
     throw new Error("User not found.");
   }
@@ -1319,7 +1336,7 @@ export function createAuthSession(username: string, password: string): AuthSessi
 export function authenticateSession(token: string): User {
   const timestamp = now();
   const authenticated = db.prepare(`
-    SELECT u.id, u.username, u.name, u.role, u.department, u.title, u.avatarUrl
+    SELECT u.id, u.username, u.name, u.role, u.department, u.title, u.avatarUrl, u.plantAccess
     FROM auth_sessions session JOIN users u ON u.id = session.userId
     WHERE session.tokenHash = ? AND session.expiresAt > ? AND u.active = 1
   `).get(sessionTokenHash(token), timestamp);
@@ -1360,9 +1377,9 @@ function normalizeIssueCategory(issueCategory: IssueCategory & { active: number 
 
 export function listMasterData(): MasterData {
   return {
-    sections: rows<Section & { active: number }>(db.prepare("SELECT * FROM sections ORDER BY active DESC, name").all()).map(normalizeSection),
-    machines: rows<Machine & { active: number }>(db.prepare("SELECT * FROM machines ORDER BY active DESC, name").all()).map(normalizeMachine),
-    issueCategories: rows<IssueCategory & { active: number }>(db.prepare("SELECT * FROM issue_categories ORDER BY active DESC, name").all()).map(normalizeIssueCategory)
+    sections: rows<Section & { active: number }>(db.prepare("SELECT * FROM scoped_sections ORDER BY active DESC, name").all()).map(normalizeSection),
+    machines: rows<Machine & { active: number }>(db.prepare("SELECT * FROM scoped_machines ORDER BY active DESC, name").all()).map(normalizeMachine),
+    issueCategories: rows<IssueCategory & { active: number }>(db.prepare("SELECT * FROM scoped_issue_categories ORDER BY active DESC, name").all()).map(normalizeIssueCategory)
   };
 }
 
@@ -1442,13 +1459,13 @@ function normalizeAsset(asset: StoredAsset): AssetRecord {
 }
 
 function getAsset(id: string): AssetRecord {
-  const asset = db.prepare("SELECT * FROM assets WHERE id = ?").get(id);
+  const asset = db.prepare("SELECT * FROM scoped_assets WHERE id = ?").get(id);
   if (!asset) throw new Error("Asset not found.");
   return normalizeAsset(row<StoredAsset>(asset));
 }
 
 export function getAssetDashboard(): AssetDashboardResponse {
-  const assets = rows<StoredAsset>(db.prepare("SELECT * FROM assets ORDER BY assetNo").all()).map(normalizeAsset);
+  const assets = rows<StoredAsset>(db.prepare("SELECT * FROM scoped_assets ORDER BY assetNo").all()).map(normalizeAsset);
   const totalKnownAge = assets.filter((asset) => asset.ageYears !== null);
   const manufacturers = [...assets.reduce((counts, asset) => {
     const name = asset.manufacturer.trim() || "Not recorded";
@@ -1509,7 +1526,7 @@ export function updateAsset(id: string, input: UpdateAssetInput): AssetRecord {
 }
 
 function getSection(id: string): Section {
-  const section = db.prepare("SELECT * FROM sections WHERE id = ?").get(id);
+  const section = db.prepare("SELECT * FROM scoped_sections WHERE id = ?").get(id);
   if (!section) {
     throw new Error("Section not found");
   }
@@ -1518,7 +1535,7 @@ function getSection(id: string): Section {
 }
 
 function getMachine(id: string): Machine {
-  const machine = db.prepare("SELECT * FROM machines WHERE id = ?").get(id);
+  const machine = db.prepare("SELECT * FROM scoped_machines WHERE id = ?").get(id);
   if (!machine) {
     throw new Error("Machine not found");
   }
@@ -1527,7 +1544,7 @@ function getMachine(id: string): Machine {
 }
 
 function getIssueCategory(id: string): IssueCategory {
-  const issueCategory = db.prepare("SELECT * FROM issue_categories WHERE id = ?").get(id);
+  const issueCategory = db.prepare("SELECT * FROM scoped_issue_categories WHERE id = ?").get(id);
   if (!issueCategory) {
     throw new Error("Issue category not found");
   }
@@ -1540,7 +1557,7 @@ function getOptionalSection(id: string | null): Section | null {
     return null;
   }
 
-  const section = db.prepare("SELECT * FROM sections WHERE id = ?").get(id);
+  const section = db.prepare("SELECT * FROM scoped_sections WHERE id = ?").get(id);
   return section ? normalizeSection(row<Section & { active: number }>(section)) : null;
 }
 
@@ -1549,7 +1566,7 @@ function getOptionalMachine(id: string | null): Machine | null {
     return null;
   }
 
-  const machine = db.prepare("SELECT * FROM machines WHERE id = ?").get(id);
+  const machine = db.prepare("SELECT * FROM scoped_machines WHERE id = ?").get(id);
   return machine ? normalizeMachine(row<Machine & { active: number }>(machine)) : null;
 }
 
@@ -1558,7 +1575,7 @@ function getOptionalIssueCategory(id: string | null): IssueCategory | null {
     return null;
   }
 
-  const issueCategory = db.prepare("SELECT * FROM issue_categories WHERE id = ?").get(id);
+  const issueCategory = db.prepare("SELECT * FROM scoped_issue_categories WHERE id = ?").get(id);
   return issueCategory ? normalizeIssueCategory(row<IssueCategory & { active: number }>(issueCategory)) : null;
 }
 
@@ -1613,8 +1630,8 @@ type RawPmSchedule = Omit<PmScheduleItem, "overdue">;
 function getPmTemplate(templateId: string): PmChecklistTemplate {
   const template = row<RawPmTemplate | undefined>(db.prepare(`
     SELECT t.*, COUNT(i.id) AS itemCount
-    FROM pm_checklist_templates t
-    LEFT JOIN pm_checklist_items i ON i.templateId = t.id
+    FROM scoped_pm_checklist_templates t
+    LEFT JOIN scoped_pm_checklist_items i ON i.templateId = t.id
     WHERE t.id = ?
     GROUP BY t.id
   `).get(templateId));
@@ -1622,7 +1639,7 @@ function getPmTemplate(templateId: string): PmChecklistTemplate {
     throw new Error("PM checklist template not found.");
   }
   const items = rows<RawPmItem>(
-    db.prepare("SELECT * FROM pm_checklist_items WHERE templateId = ? ORDER BY sortOrder").all(templateId)
+    db.prepare("SELECT * FROM scoped_pm_checklist_items WHERE templateId = ? ORDER BY sortOrder").all(templateId)
   ).map((item) => ({ ...item, required: Boolean(item.required) }));
   return { ...template, active: Boolean(template.active), items };
 }
@@ -1630,8 +1647,8 @@ function getPmTemplate(templateId: string): PmChecklistTemplate {
 export function listPmTemplates(): PmChecklistTemplate[] {
   const templates = rows<RawPmTemplate>(db.prepare(`
     SELECT t.*, COUNT(i.id) AS itemCount
-    FROM pm_checklist_templates t
-    LEFT JOIN pm_checklist_items i ON i.templateId = t.id
+    FROM scoped_pm_checklist_templates t
+    LEFT JOIN scoped_pm_checklist_items i ON i.templateId = t.id
     GROUP BY t.id
     ORDER BY t.active DESC, t.machineName
   `).all());
@@ -1639,16 +1656,16 @@ export function listPmTemplates(): PmChecklistTemplate[] {
     ...template,
     active: Boolean(template.active),
     items: rows<RawPmItem>(
-      db.prepare("SELECT * FROM pm_checklist_items WHERE templateId = ? ORDER BY sortOrder").all(template.id)
+      db.prepare("SELECT * FROM scoped_pm_checklist_items WHERE templateId = ? ORDER BY sortOrder").all(template.id)
     ).map((item) => ({ ...item, required: Boolean(item.required) }))
   }));
 }
 
 export function listPmPlans(): PmPlan[] {
   return rows<RawPmPlan>(db.prepare(`
-    SELECT id, mainMachine, machineName, frequencyLabel, frequencyMonths, occurrencesPerMonth,
+    SELECT plantId, id, mainMachine, machineName, frequencyLabel, frequencyMonths, occurrencesPerMonth,
            technicianId, technicianName, templateId, startMonth, weekOfMonth, secondaryWeek, active
-    FROM pm_plans
+    FROM scoped_pm_plans
     ORDER BY mainMachine, machineName
   `).all()).map((plan) => ({ ...plan, active: Boolean(plan.active) }));
 }
@@ -1656,7 +1673,7 @@ export function listPmPlans(): PmPlan[] {
 function pmScheduleSelect() {
   return `
     SELECT
-      s.id, s.planId, s.scheduledDate, s.year, s.month, s.weekOfMonth, s.status,
+      s.plantId, s.id, s.planId, s.scheduledDate, s.year, s.month, s.weekOfMonth, s.status,
       s.startedAt, s.submittedAt, s.verifiedAt, s.remarks,
       p.machineName, p.mainMachine, p.frequencyLabel, p.technicianId, p.technicianName,
       p.templateId, t.title AS templateTitle,
@@ -1665,17 +1682,17 @@ function pmScheduleSelect() {
         WHEN r.resultCode IS NOT NULL
           AND (i.dataType <> 'value' OR trim(COALESCE(r.readingValue, '')) <> '')
           AND EXISTS (
-            SELECT 1 FROM pm_result_photos photo
+            SELECT 1 FROM scoped_pm_result_photos photo
             WHERE photo.scheduleId = s.id AND photo.itemId = i.id
           )
         THEN r.itemId
       END) AS completedItemCount,
       COUNT(DISTINCT CASE WHEN r.resultCode = 'fail' THEN r.itemId END) AS failedItemCount
-    FROM pm_schedules s
-    JOIN pm_plans p ON p.id = s.planId
-    LEFT JOIN pm_checklist_templates t ON t.id = p.templateId
-    LEFT JOIN pm_checklist_items i ON i.templateId = p.templateId
-    LEFT JOIN pm_results r ON r.scheduleId = s.id AND r.itemId = i.id
+    FROM scoped_pm_schedules s
+    JOIN scoped_pm_plans p ON p.id = s.planId
+    LEFT JOIN scoped_pm_checklist_templates t ON t.id = p.templateId
+    LEFT JOIN scoped_pm_checklist_items i ON i.templateId = p.templateId
+    LEFT JOIN scoped_pm_results r ON r.scheduleId = s.id AND r.itemId = i.id
   `;
 }
 
@@ -1762,20 +1779,20 @@ export function getPmScheduleDetail(scheduleId: string, actorId: string): PmSche
   const { schedule } = requireScheduleAccess(scheduleId, actorId);
   const verification = row<{ verifiedByName: string | null }>(db.prepare(`
     SELECT u.name AS verifiedByName
-    FROM pm_schedules s
+    FROM scoped_pm_schedules s
     LEFT JOIN users u ON u.id = s.verifiedById
     WHERE s.id = ?
   `).get(scheduleId));
   const template = schedule.templateId ? getPmTemplate(schedule.templateId) : null;
   const storedResults = rows<PmChecklistResult>(db.prepare(`
     SELECT itemId, resultCode, readingValue, note, completedAt
-    FROM pm_results WHERE scheduleId = ?
+    FROM scoped_pm_results WHERE scheduleId = ?
   `).all(scheduleId));
   const photos = rows<PmChecklistPhoto>(db.prepare(`
     SELECT photo.id, photo.scheduleId, photo.itemId, photo.uploadedBy, u.name AS uploadedByName,
            photo.originalName, photo.mimeType, photo.size,
            '/api/pm/photos/' || photo.id AS url, photo.createdAt
-    FROM pm_result_photos photo
+    FROM scoped_pm_result_photos photo
     JOIN users u ON u.id = photo.uploadedBy
     WHERE photo.scheduleId = ?
     ORDER BY photo.createdAt
@@ -1813,22 +1830,22 @@ export function addPmResultPhoto(input: {
   if (!schedule.templateId) {
     throw new Error("This machine does not have a checklist yet.");
   }
-  const item = db.prepare("SELECT id FROM pm_checklist_items WHERE id = ? AND templateId = ?")
+  const item = db.prepare("SELECT id FROM scoped_pm_checklist_items WHERE id = ? AND templateId = ?")
     .get(input.itemId, schedule.templateId);
   if (!item) {
     throw new Error("Checklist item not found.");
   }
   const photoCount = row<{ count: number }>(db.prepare(`
-    SELECT COUNT(*) AS count FROM pm_result_photos WHERE scheduleId = ? AND itemId = ?
+    SELECT COUNT(*) AS count FROM scoped_pm_result_photos WHERE scheduleId = ? AND itemId = ?
   `).get(input.scheduleId, input.itemId)).count;
   if (photoCount >= 5) {
     throw new Error("A checklist item can keep up to 5 proof photos.");
   }
   const timestamp = now();
   db.prepare(`
-    INSERT INTO pm_result_photos (
+    INSERT INTO pm_result_photos (plantId,
       id, scheduleId, itemId, uploadedBy, originalName, mimeType, size, data, createdAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (cmms_write_plant(), ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     randomUUID(),
     input.scheduleId,
@@ -1851,7 +1868,7 @@ export function addPmResultPhoto(input: {
 
 export function getPmPhoto(photoId: string) {
   const photo = row<{ mimeType: string; originalName: string; data: Uint8Array } | undefined>(db.prepare(`
-    SELECT mimeType, originalName, data FROM pm_result_photos WHERE id = ?
+    SELECT mimeType, originalName, data FROM scoped_pm_result_photos WHERE id = ?
   `).get(photoId));
   if (!photo) {
     throw new Error("PM proof photo not found.");
@@ -1862,7 +1879,7 @@ export function getPmPhoto(photoId: string) {
 export function deletePmResultPhoto(photoId: string, actorId: string): PmScheduleDetail {
   requireAdmin(actorId);
   const photo = row<{ scheduleId: string } | undefined>(db.prepare(`
-    SELECT scheduleId FROM pm_result_photos WHERE id = ?
+    SELECT scheduleId FROM scoped_pm_result_photos WHERE id = ?
   `).get(photoId));
   if (!photo) {
     throw new Error("PM proof photo not found.");
@@ -1893,7 +1910,7 @@ export function savePmResult(scheduleId: string, input: SavePmResultInput): PmSc
     throw new Error("This machine does not have a checklist yet.");
   }
   const item = row<{ id: string; dataType: string } | undefined>(
-    db.prepare("SELECT id, dataType FROM pm_checklist_items WHERE id = ? AND templateId = ?").get(input.itemId, schedule.templateId)
+    db.prepare("SELECT id, dataType FROM scoped_pm_checklist_items WHERE id = ? AND templateId = ?").get(input.itemId, schedule.templateId)
   );
   if (!item) {
     throw new Error("Checklist item not found.");
@@ -1904,9 +1921,9 @@ export function savePmResult(scheduleId: string, input: SavePmResultInput): PmSc
   }
   const timestamp = now();
   db.prepare(`
-    INSERT INTO pm_results (
+    INSERT INTO pm_results (plantId,
       id, scheduleId, itemId, resultCode, readingValue, note, completedAt, updatedById, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (cmms_write_plant(), ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(scheduleId, itemId) DO UPDATE SET
       resultCode = excluded.resultCode,
       readingValue = excluded.readingValue,
@@ -1941,14 +1958,14 @@ export function submitPmSchedule(scheduleId: string, input: SubmitPmScheduleInpu
   }
   const incomplete = row<{ count: number }>(db.prepare(`
     SELECT COUNT(*) AS count
-    FROM pm_checklist_items i
-    LEFT JOIN pm_results r ON r.itemId = i.id AND r.scheduleId = ?
+    FROM scoped_pm_checklist_items i
+    LEFT JOIN scoped_pm_results r ON r.itemId = i.id AND r.scheduleId = ?
     WHERE i.templateId = ? AND i.required = 1
       AND (
         r.resultCode IS NULL
         OR (i.dataType = 'value' AND trim(COALESCE(r.readingValue, '')) = '')
         OR NOT EXISTS (
-          SELECT 1 FROM pm_result_photos photo
+          SELECT 1 FROM scoped_pm_result_photos photo
           WHERE photo.scheduleId = ? AND photo.itemId = i.id
         )
       )
@@ -2012,9 +2029,9 @@ export function savePmTemplate(templateId: string | null, input: SavePmTemplateI
     db.prepare("DELETE FROM pm_checklist_items WHERE templateId = ?").run(id);
   } else {
     db.prepare(`
-      INSERT INTO pm_checklist_templates (
+      INSERT INTO pm_checklist_templates (plantId,
         id, machineName, title, documentNumber, revisionNumber, effectiveDate, version, active, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+      ) VALUES (cmms_write_plant(), ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
     `).run(
       id,
       machineName,
@@ -2028,10 +2045,10 @@ export function savePmTemplate(templateId: string | null, input: SavePmTemplateI
     );
   }
   const insertItem = db.prepare(`
-    INSERT INTO pm_checklist_items (
+    INSERT INTO pm_checklist_items (plantId,
       id, templateId, sortOrder, groupName, description, specification, inspectionMethod,
       frequency, dataType, maintenanceType, required
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (cmms_write_plant(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   input.items.forEach((item, index) => {
     if (!item.groupName.trim() || !item.description.trim()) {
@@ -2060,18 +2077,18 @@ export function assignPmTemplate(planId: string, input: AssignPmTemplateInput): 
     getPmTemplate(input.templateId);
   }
   const plan = row<RawPmPlan | undefined>(db.prepare(`
-    SELECT id, mainMachine, machineName, frequencyLabel, frequencyMonths, occurrencesPerMonth,
+    SELECT plantId, id, mainMachine, machineName, frequencyLabel, frequencyMonths, occurrencesPerMonth,
            technicianId, technicianName, templateId, startMonth, weekOfMonth, secondaryWeek, active
-    FROM pm_plans WHERE id = ?
+    FROM scoped_pm_plans WHERE id = ?
   `).get(planId));
   if (!plan) {
     throw new Error("PM plan not found.");
   }
   db.prepare("UPDATE pm_plans SET templateId = ?, updatedAt = ? WHERE id = ?").run(input.templateId, now(), planId);
   const updated = row<RawPmPlan>(db.prepare(`
-    SELECT id, mainMachine, machineName, frequencyLabel, frequencyMonths, occurrencesPerMonth,
+    SELECT plantId, id, mainMachine, machineName, frequencyLabel, frequencyMonths, occurrencesPerMonth,
            technicianId, technicianName, templateId, startMonth, weekOfMonth, secondaryWeek, active
-    FROM pm_plans WHERE id = ?
+    FROM scoped_pm_plans WHERE id = ?
   `).get(planId));
   return { ...updated, active: Boolean(updated.active) };
 }
@@ -2082,10 +2099,14 @@ function pmFrequencyLabel(frequencyMonths: number, occurrencesPerMonth: number) 
   return `Every ${frequencyMonths} months`;
 }
 
-export function updatePmPlan(planId: string, input: UpdatePmPlanInput): PmPlan {
+export function createPmPlan(input: UpdatePmPlanInput): PmPlan {
+  return updatePmPlan(randomUUID(), input, true);
+}
+
+export function updatePmPlan(planId: string, input: UpdatePmPlanInput, creating = false): PmPlan {
   requirePmManager(input.actorId);
-  const existing = row<{ id: string } | undefined>(db.prepare("SELECT id FROM pm_plans WHERE id = ?").get(planId));
-  if (!existing) throw new Error("PM plan not found.");
+  const existing = row<{ id: string } | undefined>(db.prepare("SELECT id FROM scoped_pm_plans WHERE id = ?").get(planId));
+  if (!existing && !creating) throw new Error("PM plan not found.");
 
   const mainMachine = input.mainMachine.trim();
   const machineName = input.machineName.trim();
@@ -2110,13 +2131,19 @@ export function updatePmPlan(planId: string, input: UpdatePmPlanInput): PmPlan {
   const technician = row<{ id: string; name: string } | undefined>(db.prepare(`
     SELECT id, name FROM users WHERE id = ? AND role IN ('technician', 'executive')
   `).get(input.technicianId));
-  if (!technician) throw new Error("Select a valid maintenance technician.");
+  if (!technician || !userPlants(getUser(technician.id)).includes(writePlant())) throw new Error("Select a maintenance technician assigned to this plant.");
 
   const timestamp = now();
   const today = timestamp.slice(0, 10);
   const active = input.active ?? true;
   db.exec("BEGIN");
   try {
+    if (creating) {
+      db.prepare(`INSERT INTO pm_plans
+        (plantId, id, mainMachine, machineName, frequencyLabel, technicianId, technicianName, createdAt, updatedAt)
+        VALUES (cmms_write_plant(), ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(planId, mainMachine, machineName, pmFrequencyLabel(frequencyMonths, occurrencesPerMonth), technician.id, technician.name, timestamp, timestamp);
+    }
     db.prepare(`
       UPDATE pm_plans
       SET mainMachine = ?, machineName = ?, frequencyLabel = ?, frequencyMonths = ?, occurrencesPerMonth = ?,
@@ -2161,7 +2188,7 @@ export function createSection(input: { actorId: string; name: string; active?: b
     throw new Error("Section name is required.");
   }
 
-  db.prepare("INSERT INTO sections (id, name, active, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)")
+  db.prepare("INSERT INTO sections (plantId, id, name, active, createdAt, updatedAt) VALUES (cmms_write_plant(), ?, ?, ?, ?, ?)")
     .run(id, name, boolNumber(input.active ?? true), timestamp, timestamp);
 
   return getSection(id);
@@ -2190,7 +2217,7 @@ export function createMachine(input: { actorId: string; sectionId: string; area:
     throw new Error("Machine name is required.");
   }
 
-  db.prepare("INSERT INTO machines (id, sectionId, area, name, active, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?)")
+  db.prepare("INSERT INTO machines (plantId, id, sectionId, area, name, active, createdAt, updatedAt) VALUES (cmms_write_plant(), ?, ?, ?, ?, ?, ?, ?)")
     .run(id, input.sectionId, area, name, boolNumber(input.active ?? true), timestamp, timestamp);
 
   return getMachine(id);
@@ -2218,10 +2245,10 @@ export function importMachines(input: { actorId: string; rows: MachineImportRow[
   let importedMachines = 0;
   let skippedMachines = 0;
 
-  const getSectionByName = db.prepare("SELECT * FROM sections WHERE lower(name) = lower(?)");
-  const insertSection = db.prepare("INSERT INTO sections (id, name, active, createdAt, updatedAt) VALUES (?, ?, 1, ?, ?)");
-  const getMachineBySectionName = db.prepare("SELECT * FROM machines WHERE sectionId = ? AND lower(area) = lower(?) AND lower(name) = lower(?)");
-  const insertMachine = db.prepare("INSERT INTO machines (id, sectionId, area, name, active, createdAt, updatedAt) VALUES (?, ?, ?, ?, 1, ?, ?)");
+  const getSectionByName = db.prepare("SELECT * FROM scoped_sections WHERE lower(name) = lower(?)");
+  const insertSection = db.prepare("INSERT INTO sections (plantId, id, name, active, createdAt, updatedAt) VALUES (cmms_write_plant(), ?, ?, 1, ?, ?)");
+  const getMachineBySectionName = db.prepare("SELECT * FROM scoped_machines WHERE sectionId = ? AND lower(area) = lower(?) AND lower(name) = lower(?)");
+  const insertMachine = db.prepare("INSERT INTO machines (plantId, id, sectionId, area, name, active, createdAt, updatedAt) VALUES (cmms_write_plant(), ?, ?, ?, ?, 1, ?, ?)");
   const reactivateMachine = db.prepare("UPDATE machines SET area = ?, active = 1, updatedAt = ? WHERE id = ?");
 
   for (const [index, rowInput] of input.rows.entries()) {
@@ -2280,7 +2307,7 @@ export function createIssueCategory(input: { actorId: string; name: string; acti
     throw new Error("Issue category name is required.");
   }
 
-  db.prepare("INSERT INTO issue_categories (id, name, active, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)")
+  db.prepare("INSERT INTO issue_categories (plantId, id, name, active, createdAt, updatedAt) VALUES (cmms_write_plant(), ?, ?, ?, ?, ?)")
     .run(id, name, boolNumber(input.active ?? true), timestamp, timestamp);
 
   return getIssueCategory(id);
@@ -2304,11 +2331,13 @@ type RawStockMovementDetail = Omit<StockMovementDetail, "syncStatus"> & { syncSt
 type SheetRecord = Record<string, string>;
 
 function getSpareSetting(key: string) {
+  key = plantSettingKey(key);
   const setting = row<{ value: string } | undefined>(db.prepare("SELECT value FROM spare_settings WHERE key = ?").get(key));
   return setting?.value || "";
 }
 
 function setSpareSetting(key: string, value: string) {
+  key = plantSettingKey(key);
   db.prepare(`
     INSERT INTO spare_settings (key, value, updatedAt)
     VALUES (?, ?, ?)
@@ -2317,11 +2346,11 @@ function setSpareSetting(key: string, value: string) {
 }
 
 function spareSyncRuntimeSettings() {
-  const scriptUrl = getSpareSetting("scriptUrl") || process.env.SPARE_SYNC_SCRIPT_URL || "";
-  const token = getSpareSetting("token") || process.env.SPARE_SYNC_TOKEN || "";
-  const masterSheetName = getSpareSetting("masterSheetName") || process.env.SPARE_MASTER_SHEET_NAME || "Masterlist";
-  const supplierSheetName = getSpareSetting("supplierSheetName") || process.env.SPARE_SUPPLIER_SHEET_NAME || "Supplier";
-  const movementSheetName = getSpareSetting("movementSheetName") || process.env.SPARE_MOVEMENT_SHEET_NAME || "Movement Log";
+  const scriptUrl = getSpareSetting("scriptUrl") || (writePlant() === "port-klang" && process.env.SPARE_SYNC_SCRIPT_URL) || "";
+  const token = getSpareSetting("token") || (writePlant() === "port-klang" && process.env.SPARE_SYNC_TOKEN) || "";
+  const masterSheetName = getSpareSetting("masterSheetName") || (writePlant() === "port-klang" && process.env.SPARE_MASTER_SHEET_NAME) || "Masterlist";
+  const supplierSheetName = getSpareSetting("supplierSheetName") || (writePlant() === "port-klang" && process.env.SPARE_SUPPLIER_SHEET_NAME) || "Supplier";
+  const movementSheetName = getSpareSetting("movementSheetName") || (writePlant() === "port-klang" && process.env.SPARE_MOVEMENT_SHEET_NAME) || "Movement Log";
 
   return {
     scriptUrl,
@@ -2449,7 +2478,7 @@ function normalizeMovementDetail(movement: RawStockMovementDetail): StockMovemen
 }
 
 function getSparePart(itemNo: string): SparePart {
-  const part = db.prepare("SELECT * FROM spare_parts WHERE itemNo = ?").get(itemNo);
+  const part = db.prepare("SELECT * FROM scoped_spare_parts WHERE itemNo = ?").get(itemNo);
   if (!part) {
     throw new Error("Spare part not found.");
   }
@@ -2465,10 +2494,10 @@ function getMovementDetail(id: string): StockMovementDetail {
       COALESCE(sp.category, '') as itemCategory,
       COALESCE(u.name, sm.actorId) as actorName,
       wo.number as workOrderNumber
-    FROM stock_movements sm
-    LEFT JOIN spare_parts sp ON sp.itemNo = sm.itemNo
+    FROM scoped_stock_movements sm
+    LEFT JOIN scoped_spare_parts sp ON sp.itemNo = sm.itemNo AND sp.plantId = sm.plantId
     LEFT JOIN users u ON u.id = sm.actorId
-    LEFT JOIN work_orders wo ON wo.id = sm.workOrderId
+    LEFT JOIN scoped_work_orders wo ON wo.id = sm.workOrderId
     WHERE sm.id = ?
   `).get(id);
   if (!movement) {
@@ -2487,10 +2516,10 @@ function listMovementDetails(whereClause = "", params: Array<string | number | n
         COALESCE(sp.category, '') as itemCategory,
         COALESCE(u.name, sm.actorId) as actorName,
         wo.number as workOrderNumber
-      FROM stock_movements sm
-      LEFT JOIN spare_parts sp ON sp.itemNo = sm.itemNo
+      FROM scoped_stock_movements sm
+      LEFT JOIN scoped_spare_parts sp ON sp.itemNo = sm.itemNo AND sp.plantId = sm.plantId
       LEFT JOIN users u ON u.id = sm.actorId
-      LEFT JOIN work_orders wo ON wo.id = sm.workOrderId
+      LEFT JOIN scoped_work_orders wo ON wo.id = sm.workOrderId
       ${whereClause}
       ORDER BY sm.createdAt DESC
       LIMIT ?
@@ -2510,10 +2539,10 @@ function inventorySummary(): SpareInventoryResponse["summary"] {
       SUM(CASE WHEN minStock > 0 AND currentStock <= minStock THEN 1 ELSE 0 END) as lowStock,
       SUM(CASE WHEN currentStock <= 0 THEN 1 ELSE 0 END) as outOfStock,
       SUM(currentStock * price) as totalValue
-    FROM spare_parts
+    FROM scoped_spare_parts
   `).get());
   const unsyncedMovements = row<{ count: number }>(
-    db.prepare("SELECT COUNT(*) as count FROM stock_movements WHERE syncStatus IN ('pending', 'failed')").get()
+    db.prepare("SELECT COUNT(*) as count FROM scoped_stock_movements WHERE syncStatus IN ('pending', 'failed')").get()
   ).count;
 
   return {
@@ -2527,10 +2556,10 @@ function inventorySummary(): SpareInventoryResponse["summary"] {
 
 export function listSpareInventory(): SpareInventoryResponse {
   const parts = rows<RawSparePart>(
-    db.prepare("SELECT * FROM spare_parts ORDER BY category, searchName, itemNo").all()
+    db.prepare("SELECT * FROM scoped_spare_parts ORDER BY category, searchName, itemNo").all()
   ).map(normalizeSparePart);
   const suppliers = rows<SpareSupplier>(
-    db.prepare("SELECT * FROM spare_suppliers ORDER BY supplier, category, description").all()
+    db.prepare("SELECT * FROM scoped_spare_suppliers ORDER BY supplier, category, description").all()
   ).map(normalizeSupplier);
 
   return {
@@ -2538,7 +2567,7 @@ export function listSpareInventory(): SpareInventoryResponse {
     suppliers,
     recentMovements: listMovementDetails("", [], 12),
     summary: inventorySummary(),
-    syncConfigured: spareSyncConfigured()
+    syncConfigured: plantContext.getStore()?.plant === "all" ? false : spareSyncConfigured()
   };
 }
 
@@ -2577,7 +2606,7 @@ export function updateSpareSyncSettings(input: UpdateSpareSyncSettingsInput): Sp
 export function getSparePartDetail(itemNo: string): SparePartDetail {
   const part = getSparePart(itemNo);
   const allSuppliers = rows<SpareSupplier>(
-    db.prepare("SELECT * FROM spare_suppliers ORDER BY supplier, description").all()
+    db.prepare("SELECT * FROM scoped_spare_suppliers ORDER BY supplier, description").all()
   ).map(normalizeSupplier);
   const supplierNames = new Set(
     [part.supplier, part.supplier1, part.supplier2, part.supplier3]
@@ -2605,14 +2634,14 @@ function importSpareRows(actorId: string, masterRows: SheetRecord[], supplierRow
   let importedSuppliers = 0;
   const seenItemNos = new Map<string, number>();
   const timestamp = now();
-  const findPart = db.prepare("SELECT itemNo, currentStock FROM spare_parts WHERE itemNo = ?");
+  const findPart = db.prepare("SELECT itemNo, currentStock FROM scoped_spare_parts WHERE itemNo = ?");
   const upsertPart = db.prepare(`
-    INSERT INTO spare_parts (
+    INSERT INTO spare_parts (plantId,
       itemNo, no, category, description, uom, price, partRank, status, stockRank,
       minStock, maxStock, searchName, openingStock, currentStock, source,
       supplier, supplier1, supplier2, supplier3, leadTime, active, createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(itemNo) DO UPDATE SET
+    ) VALUES (cmms_write_plant(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(plantId, itemNo) DO UPDATE SET
       no = excluded.no,
       category = excluded.category,
       description = excluded.description,
@@ -2697,12 +2726,12 @@ function importSpareRows(actorId: string, masterRows: SheetRecord[], supplierRow
   }
 
   if (supplierRows.length > 0) {
-    db.prepare("DELETE FROM spare_suppliers").run();
+    db.prepare("DELETE FROM spare_suppliers WHERE plantId = cmms_write_plant()").run();
     const insertSupplier = db.prepare(`
-      INSERT INTO spare_suppliers (
+      INSERT INTO spare_suppliers (plantId,
         id, no, category, description, supplier, address, pic, contactNo,
         faxNo, autoDial, email, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (cmms_write_plant(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const [index, record] of supplierRows.entries()) {
@@ -2758,7 +2787,7 @@ export function lookupSpareQr(value: string): SpareQrLookupResult {
   }
 
   const exactPart = row<RawSparePart | undefined>(
-    db.prepare("SELECT * FROM spare_parts WHERE lower(itemNo) = lower(?)").get(query)
+    db.prepare("SELECT * FROM scoped_spare_parts WHERE lower(itemNo) = lower(?)").get(query)
   );
   if (exactPart) {
     return { query, exact: true, matches: [normalizeSparePart(exactPart)] };
@@ -2767,7 +2796,7 @@ export function lookupSpareQr(value: string): SpareQrLookupResult {
   const like = `%${query.replace(/[%_]/g, "")}%`;
   const matches = rows<RawSparePart>(
     db.prepare(`
-      SELECT * FROM spare_parts
+      SELECT * FROM scoped_spare_parts
       WHERE lower(searchName) = lower(?)
         OR lower(description) = lower(?)
         OR itemNo LIKE ?
@@ -2842,7 +2871,7 @@ function createStockMovement(input: {
   db.exec("BEGIN IMMEDIATE");
   try {
     const rawPart = row<RawSparePart | undefined>(
-      db.prepare("SELECT * FROM spare_parts WHERE itemNo = ?").get(input.itemNo)
+      db.prepare("SELECT * FROM scoped_spare_parts WHERE itemNo = ?").get(input.itemNo)
     );
     if (!rawPart) {
       throw new Error("Spare part not found.");
@@ -2854,13 +2883,13 @@ function createStockMovement(input: {
       throw new Error(`Insufficient stock for ${part.itemNo}. Current stock is ${part.currentStock}.`);
     }
 
-    db.prepare("UPDATE spare_parts SET currentStock = ?, updatedAt = ? WHERE itemNo = ?")
+    db.prepare("UPDATE spare_parts SET currentStock = ?, updatedAt = ? WHERE itemNo = ? AND plantId = cmms_write_plant()")
       .run(afterStock, timestamp, part.itemNo);
     db.prepare(`
-      INSERT INTO stock_movements (
+      INSERT INTO stock_movements (plantId,
         id, itemNo, workOrderId, actorId, type, quantity, beforeStock, afterStock,
         note, source, syncStatus, syncError, syncedAt, createdAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (cmms_write_plant(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       movementId,
       part.itemNo,
@@ -2912,7 +2941,7 @@ async function callSpareScript<T>(action: string, payload: Record<string, unknow
 }
 
 function recordSyncAttempt(action: string, status: "success" | "failed" | "disabled", message: string) {
-  db.prepare("INSERT INTO spare_sync_attempts (id, action, status, message, createdAt) VALUES (?, ?, ?, ?, ?)")
+  db.prepare("INSERT INTO spare_sync_attempts (plantId, id, action, status, message, createdAt) VALUES (cmms_write_plant(), ?, ?, ?, ?, ?)")
     .run(randomUUID(), action, status, message, now());
 }
 
@@ -3060,7 +3089,7 @@ export async function retrySpareSync(actorId: string): Promise<SpareSyncResult> 
   }
 
   const movementIds = rows<{ id: string }>(
-    db.prepare("SELECT id FROM stock_movements WHERE syncStatus IN ('pending', 'failed') ORDER BY createdAt ASC").all()
+    db.prepare("SELECT id FROM scoped_stock_movements WHERE syncStatus IN ('pending', 'failed') ORDER BY createdAt ASC").all()
   ).map((movement) => movement.id);
   let retriedMovements = 0;
   let failedMovements = 0;
@@ -3086,11 +3115,13 @@ export async function retrySpareSync(actorId: string): Promise<SpareSyncResult> 
 }
 
 function getWorkOrderSetting(key: string) {
+  key = plantSettingKey(key);
   const setting = row<{ value: string } | undefined>(db.prepare("SELECT value FROM work_order_settings WHERE key = ?").get(key));
   return setting?.value || "";
 }
 
 function setWorkOrderSetting(key: string, value: string) {
+  key = plantSettingKey(key);
   db.prepare(`
     INSERT INTO work_order_settings (key, value, updatedAt) VALUES (?, ?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt
@@ -3098,13 +3129,13 @@ function setWorkOrderSetting(key: string, value: string) {
 }
 
 function workOrderSyncRuntimeSettings() {
-  const scriptUrl = getWorkOrderSetting("scriptUrl") || process.env.WORK_ORDER_SYNC_SCRIPT_URL || "";
-  const token = getWorkOrderSetting("token") || process.env.WORK_ORDER_SYNC_TOKEN || "";
+  const scriptUrl = getWorkOrderSetting("scriptUrl") || (writePlant() === "port-klang" && process.env.WORK_ORDER_SYNC_SCRIPT_URL) || "";
+  const token = getWorkOrderSetting("token") || (writePlant() === "port-klang" && process.env.WORK_ORDER_SYNC_TOKEN) || "";
   return {
     scriptUrl,
     token,
-    sheetName: getWorkOrderSetting("sheetName") || process.env.WORK_ORDER_SYNC_SHEET_NAME || "WorkOrders",
-    webhookUrl: getWorkOrderSetting("webhookUrl") || process.env.WORK_ORDER_WEBHOOK_URL || "",
+    sheetName: getWorkOrderSetting("sheetName") || (writePlant() === "port-klang" && process.env.WORK_ORDER_SYNC_SHEET_NAME) || "WorkOrders",
+    webhookUrl: getWorkOrderSetting("webhookUrl") || (writePlant() === "port-klang" && process.env.WORK_ORDER_WEBHOOK_URL) || "",
     configured: Boolean(scriptUrl && token)
   };
 }
@@ -3115,13 +3146,13 @@ export function getWorkOrderSyncSettings(): WorkOrderSyncSettings {
     SELECT
       SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pendingCount,
       SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failedCount
-    FROM work_order_sync_queue
+    FROM scoped_work_order_sync_queue
   `).get());
   const deletionCounts = row<{ pendingCount: number; failedCount: number }>(db.prepare(`
     SELECT
       SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pendingCount,
       SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failedCount
-    FROM work_order_sync_deletions
+    FROM scoped_work_order_sync_deletions
   `).get());
   return {
     scriptUrl: runtime.scriptUrl,
@@ -3152,8 +3183,8 @@ export function updateWorkOrderSyncSettings(input: UpdateWorkOrderSyncSettingsIn
 
 function enqueueWorkOrderSync(workOrderId: string, notifyWebhook = false) {
   db.prepare(`
-    INSERT INTO work_order_sync_queue (workOrderId, status, attempts, lastError, queuedAt, syncedAt, webhookPending)
-    VALUES (?, 'pending', 0, NULL, ?, NULL, ?)
+    INSERT INTO work_order_sync_queue (plantId, workOrderId, status, attempts, lastError, queuedAt, syncedAt, webhookPending)
+    VALUES (cmms_write_plant(), ?, 'pending', 0, NULL, ?, NULL, ?)
     ON CONFLICT(workOrderId) DO UPDATE SET
       status = 'pending', attempts = 0, lastError = NULL, queuedAt = excluded.queuedAt, syncedAt = NULL,
       webhookPending = MAX(work_order_sync_queue.webhookPending, excluded.webhookPending)
@@ -3162,8 +3193,8 @@ function enqueueWorkOrderSync(workOrderId: string, notifyWebhook = false) {
 
 function enqueueWorkOrderSheetDeletion(workOrderNumber: string) {
   db.prepare(`
-    INSERT INTO work_order_sync_deletions (workOrderNumber, status, attempts, lastError, queuedAt)
-    VALUES (?, 'pending', 0, NULL, ?)
+    INSERT INTO work_order_sync_deletions (plantId, workOrderNumber, status, attempts, lastError, queuedAt)
+    VALUES (cmms_write_plant(), ?, 'pending', 0, NULL, ?)
     ON CONFLICT(workOrderNumber) DO UPDATE SET
       status = 'pending', attempts = 0, lastError = NULL, queuedAt = excluded.queuedAt
   `).run(workOrderNumber, now());
@@ -3194,7 +3225,7 @@ function workOrderSheetRow(workOrderId: string) {
   const returnPhoto = detail.attachments.find((item) => item.kind === "return_evidence");
   const parts = rows<{ searchName: string; itemNo: string; quantity: number }>(db.prepare(`
     SELECT sp.searchName, sm.itemNo, SUM(sm.quantity) AS quantity
-    FROM stock_movements sm JOIN spare_parts sp ON sp.itemNo = sm.itemNo
+    FROM scoped_stock_movements sm JOIN scoped_spare_parts sp ON sp.itemNo = sm.itemNo AND sp.plantId = sm.plantId
     WHERE sm.workOrderId = ? AND sm.type = 'issue'
     GROUP BY sm.itemNo, sp.searchName ORDER BY sm.createdAt
   `).all(workOrderId));
@@ -3253,12 +3284,15 @@ async function postJson(url: string, body: unknown) {
   if (result?.ok === false || result?.success === false) throw new Error(String(result.error || result.message || "Integration rejected the update."));
 }
 
-let activeWorkOrderSync: Promise<WorkOrderSyncResult> | null = null;
+const activeWorkOrderSync = new Map<string, Promise<WorkOrderSyncResult>>();
 
 export function flushWorkOrderSyncQueue(actorId?: string): Promise<WorkOrderSyncResult> {
-  if (activeWorkOrderSync) return activeWorkOrderSync;
-  activeWorkOrderSync = runWorkOrderSyncQueue(actorId).finally(() => { activeWorkOrderSync = null; });
-  return activeWorkOrderSync;
+  const plant = writePlant();
+  const active = activeWorkOrderSync.get(plant);
+  if (active) return active;
+  const pending = runWorkOrderSyncQueue(actorId).finally(() => { activeWorkOrderSync.delete(plant); });
+  activeWorkOrderSync.set(plant, pending);
+  return pending;
 }
 
 async function runWorkOrderSyncQueue(actorId?: string): Promise<WorkOrderSyncResult> {
@@ -3267,9 +3301,9 @@ async function runWorkOrderSyncQueue(actorId?: string): Promise<WorkOrderSyncRes
   if (!runtime.configured) {
     return { configured: false, ok: false, synced: 0, failed: 0, message: "Google Sheets sync is not configured.", errors: [], settings: getWorkOrderSyncSettings() };
   }
-  const queued = rows<{ workOrderId: string; status: string; webhookPending: number }>(db.prepare("SELECT workOrderId, status, webhookPending FROM work_order_sync_queue WHERE status IN ('pending', 'failed') OR webhookPending = 1 ORDER BY queuedAt LIMIT 100").all());
+  const queued = rows<{ workOrderId: string; status: string; webhookPending: number }>(db.prepare("SELECT workOrderId, status, webhookPending FROM scoped_work_order_sync_queue WHERE status IN ('pending', 'failed') OR webhookPending = 1 ORDER BY queuedAt LIMIT 100").all());
   const deletions = rows<{ workOrderNumber: string }>(
-    db.prepare("SELECT workOrderNumber FROM work_order_sync_deletions WHERE status IN ('pending', 'failed') ORDER BY queuedAt LIMIT 100").all()
+    db.prepare("SELECT workOrderNumber FROM scoped_work_order_sync_deletions WHERE status IN ('pending', 'failed') ORDER BY queuedAt LIMIT 100").all()
   );
   let synced = 0;
   let failed = 0;
@@ -3343,18 +3377,18 @@ async function runWorkOrderSyncQueue(actorId?: string): Promise<WorkOrderSyncRes
 }
 
 export function listWorkOrders(): WorkOrder[] {
-  return rows<WorkOrder>(db.prepare("SELECT * FROM work_orders ORDER BY updatedAt DESC").all());
+  return rows<WorkOrder>(db.prepare("SELECT * FROM scoped_work_orders ORDER BY updatedAt DESC").all());
 }
 
 export function listTvWorkOrders(): TvWorkOrder[] {
   return rows<TvWorkOrder>(db.prepare(`
     SELECT id, number, title, location, area, machineName, assetName, priority, status, updatedAt
-    FROM work_orders WHERE status NOT IN ('closed', 'cancelled') ORDER BY updatedAt DESC
+    FROM scoped_work_orders WHERE status NOT IN ('closed', 'cancelled') ORDER BY updatedAt DESC
   `).all());
 }
 
 export function getWorkOrder(id: string): WorkOrder {
-  const workOrder = db.prepare("SELECT * FROM work_orders WHERE id = ?").get(id);
+  const workOrder = db.prepare("SELECT * FROM scoped_work_orders WHERE id = ?").get(id);
   if (!workOrder) {
     throw new Error("Work order not found");
   }
@@ -3370,10 +3404,10 @@ export function getWorkOrderDetail(id: string): WorkOrderDetail {
   const machine = getOptionalMachine(workOrder.machineId);
   const issueCategory = getOptionalIssueCategory(workOrder.issueCategoryId);
   const activities = rows<WorkOrderActivity>(
-    db.prepare("SELECT * FROM work_order_activities WHERE workOrderId = ? ORDER BY createdAt DESC").all(id)
+    db.prepare("SELECT * FROM scoped_work_order_activities WHERE workOrderId = ? ORDER BY createdAt DESC").all(id)
   );
   const attachments = rows<WorkOrderAttachment>(
-    db.prepare("SELECT * FROM work_order_attachments WHERE workOrderId = ? ORDER BY createdAt DESC").all(id)
+    db.prepare("SELECT * FROM scoped_work_order_attachments WHERE workOrderId = ? ORDER BY createdAt DESC").all(id)
   );
 
   return { ...workOrder, requester, assignedTo, section, machine, issueCategory, activities, attachments };
@@ -3400,12 +3434,12 @@ export function createWorkOrder(input: CreateWorkOrderInput): WorkOrder {
   const number = nextWorkOrderNumber(input.type, section?.name || input.location || "General", responsibleDepartment);
 
   db.prepare(`
-    INSERT INTO work_orders (
+    INSERT INTO work_orders (plantId,
       id, number, type, title, description, assetName, location, priority, status,
       requesterId, assignedToId, dueDate, completionNote, workDate, shiftGroup, sectionId,
       machineId, area, machineName, reportedByName, reportedByDepartment, responsibleDepartment,
       issueCategoryId, issueDescription, createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (cmms_write_plant(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     number,
@@ -3462,13 +3496,13 @@ function nextWorkOrderNumber(type: WorkOrderType, sectionName: string, responsib
     Management: "MGT",
     "Business Development": "BD"
   };
-  const counterKey = `${yearMonth}-${departmentCode[responsibleDepartment]}-${sectionCode}-${typeCode[type]}`;
+  const counterKey = `${writePlant()}-${yearMonth}-${departmentCode[responsibleDepartment]}-${sectionCode}-${typeCode[type]}`;
   const counter = row<{ value: number }>(db.prepare(`
     INSERT INTO work_order_counters (counterKey, value) VALUES (?, 1)
     ON CONFLICT(counterKey) DO UPDATE SET value = value + 1
     RETURNING value
   `).get(counterKey));
-  return `WO-${departmentCode[responsibleDepartment]}-${sectionCode}-${typeCode[type]}-${yearMonth}-${String(counter.value).padStart(3, "0")}`;
+  return `WO-${writePlant() === "sendayan" ? "SDN-" : ""}${departmentCode[responsibleDepartment]}-${sectionCode}-${typeCode[type]}-${yearMonth}-${String(counter.value).padStart(3, "0")}`;
 }
 
 export function updateWorkOrderStatus(id: string, input: UpdateWorkOrderStatusInput): WorkOrder {
@@ -3487,6 +3521,7 @@ export function updateWorkOrderStatus(id: string, input: UpdateWorkOrderStatusIn
   }
   const updatedAt = now();
   const assignedToId = input.assignedToId === undefined ? current.assignedToId : input.assignedToId;
+  if (assignedToId && !userPlants(getUser(assignedToId)).includes(current.plantId)) throw new Error("Assignee must have access to this plant.");
   const trimmedNote = input.note.trim();
 
   if (input.status === "resolved") {
@@ -3495,7 +3530,7 @@ export function updateWorkOrderStatus(id: string, input: UpdateWorkOrderStatusIn
     }
 
     const afterAttachmentCount = row<{ count: number }>(
-      db.prepare("SELECT COUNT(*) as count FROM work_order_attachments WHERE workOrderId = ? AND kind = 'after'").get(id)
+      db.prepare("SELECT COUNT(*) as count FROM scoped_work_order_attachments WHERE workOrderId = ? AND kind = 'after'").get(id)
     ).count;
 
     if (afterAttachmentCount === 0) {
@@ -3557,6 +3592,8 @@ export function assignWorkOrder(id: string, assignedToId: string, actorId: strin
   if (!["executive", "admin", "developer"].includes(actor.role)) {
     throw new Error("Executive, admin, or developer access is required to assign work orders.");
   }
+  const workOrderPlant = getWorkOrder(id).plantId;
+  if (!userPlants(getUser(assignedToId)).includes(workOrderPlant)) throw new Error("Assignee must have access to this plant.");
   const updatedAt = now();
   db.prepare("UPDATE work_orders SET assignedToId = ?, updatedAt = ? WHERE id = ?").run(assignedToId, updatedAt, id);
   const assignedUser = getUser(assignedToId);
@@ -3593,9 +3630,9 @@ export function addAttachment(input: {
   const id = randomUUID();
   const createdAt = now();
   db.prepare(`
-    INSERT INTO work_order_attachments (
+    INSERT INTO work_order_attachments (plantId,
       id, workOrderId, uploadedBy, filename, originalName, mimeType, size, url, kind, createdAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (cmms_write_plant(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     input.workOrderId,
@@ -3613,7 +3650,7 @@ export function addAttachment(input: {
   enqueueWorkOrderSync(input.workOrderId);
 
   return row<WorkOrderAttachment>(
-    db.prepare("SELECT * FROM work_order_attachments WHERE id = ?").get(id)
+    db.prepare("SELECT * FROM scoped_work_order_attachments WHERE id = ?").get(id)
   );
 }
 
@@ -3637,16 +3674,16 @@ export function listRequesterWorkOrders(): PublicRequesterWorkOrder[] {
         wo.responsibleDepartment,
         wo.createdAt,
         wo.updatedAt
-      FROM work_orders wo
+      FROM scoped_work_orders wo
       JOIN users requester ON requester.id = wo.requesterId
-      LEFT JOIN sections s ON s.id = wo.sectionId
-      LEFT JOIN issue_categories ic ON ic.id = wo.issueCategoryId
+      LEFT JOIN scoped_sections s ON s.id = wo.sectionId
+      LEFT JOIN scoped_issue_categories ic ON ic.id = wo.issueCategoryId
       WHERE requester.role = 'requester'
       ORDER BY wo.updatedAt DESC
     `).all()
   );
   const attachmentsForWorkOrder = db.prepare(`
-    SELECT * FROM work_order_attachments
+    SELECT * FROM scoped_work_order_attachments
     WHERE workOrderId = ?
     ORDER BY createdAt ASC, id ASC
   `);
@@ -3726,7 +3763,7 @@ export function getGuestWorkOrderTracking(workOrderId: string, token: string): G
       reportedByName: detail.reportedByName,
       reportedByDepartment: detail.reportedByDepartment,
       responsibleDepartment: detail.responsibleDepartment,
-      attachments: detail.attachments,
+      attachments: detail.attachments.map((attachment) => ({ ...attachment, url: `${attachment.url}?token=${encodeURIComponent(token)}` })),
       createdAt: detail.createdAt,
       updatedAt: detail.updatedAt,
       title: detail.title,
@@ -3798,16 +3835,16 @@ export async function deleteWorkOrder(id: string, actorId: string) {
 
 export function listNotifications(userId: string): NotificationRecord[] {
   return rows<NotificationRecord>(
-    db.prepare("SELECT * FROM notifications WHERE userId = ? ORDER BY createdAt DESC LIMIT 50").all(userId)
+    db.prepare("SELECT * FROM scoped_notifications WHERE userId = ? ORDER BY createdAt DESC LIMIT 50").all(userId)
   );
 }
 
-export function markNotificationRead(id: string) {
-  db.prepare("UPDATE notifications SET readAt = ? WHERE id = ? AND readAt IS NULL").run(now(), id);
+export function markNotificationRead(id: string, userId: string) {
+  db.prepare("UPDATE notifications SET readAt = ? WHERE id = ? AND userId = ? AND cmms_can_access(plantId) AND readAt IS NULL").run(now(), id, userId);
 }
 
 export function markAllNotificationsRead(userId: string) {
-  db.prepare("UPDATE notifications SET readAt = ? WHERE userId = ? AND readAt IS NULL").run(now(), userId);
+  db.prepare("UPDATE notifications SET readAt = ? WHERE userId = ? AND cmms_can_access(plantId) AND readAt IS NULL").run(now(), userId);
 }
 
 export interface StoredPushSubscription {
@@ -3874,7 +3911,7 @@ export function dashboardSummary(): DashboardSummary {
         SUM(CASE WHEN status = 'pending_material' THEN 1 ELSE 0 END) as pendingMaterial,
         SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) as resolvedWaitingVerification,
         SUM(CASE WHEN status = 'closed' AND substr(updatedAt, 1, 10) = ? THEN 1 ELSE 0 END) as closedToday
-      FROM work_orders
+      FROM scoped_work_orders
     `).get(today)
   );
 
@@ -3898,23 +3935,24 @@ function addActivity(
   const id = randomUUID();
   const createdAt = now();
   db.prepare(`
-    INSERT INTO work_order_activities (id, workOrderId, actorId, action, status, message, createdAt)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO work_order_activities (plantId, id, workOrderId, actorId, action, status, message, createdAt)
+    VALUES (cmms_write_plant(), ?, ?, ?, ?, ?, ?, ?)
   `).run(id, workOrderId, actorId, action, status, message, createdAt);
 
   return row<WorkOrderActivity>(
-    db.prepare("SELECT * FROM work_order_activities WHERE id = ?").get(id)
+    db.prepare("SELECT * FROM scoped_work_order_activities WHERE id = ?").get(id)
   );
 }
 
 function notifyUsers(userIds: string[], workOrderId: string, title: string, body: string) {
   const uniqueUserIds = [...new Set(userIds)];
   const insert = db.prepare(`
-    INSERT INTO notifications (id, userId, workOrderId, title, body, readAt, createdAt)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO notifications (plantId, id, userId, workOrderId, title, body, readAt, createdAt)
+    VALUES (cmms_write_plant(), ?, ?, ?, ?, ?, ?, ?)
   `);
 
   for (const userId of uniqueUserIds) {
+    if (!userPlants(getUser(userId)).includes(getWorkOrder(workOrderId).plantId)) continue;
     const notification: NotificationRecord = {
       id: randomUUID(),
       userId,
@@ -4103,4 +4141,10 @@ export function validateStatusInput(body: Partial<UpdateWorkOrderStatusInput>): 
     note: body.note ? String(body.note) : "",
     assignedToId: body.assignedToId
   };
+}
+
+function validatePlantAccess(value: unknown, actor: User): User["plantAccess"] {
+  if (!["port-klang", "sendayan", "both"].includes(String(value))) throw new Error("Select valid plant access.");
+  if (actor.plantAccess !== "both" && value !== actor.plantAccess) throw new Error("Only an administrator with both plants can grant access to another plant.");
+  return value as User["plantAccess"];
 }

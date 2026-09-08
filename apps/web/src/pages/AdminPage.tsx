@@ -3,8 +3,8 @@ import QRCode from "qrcode";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { IssueCategory, Machine, MasterData, Section, User } from "@sugi-cmms/shared";
-import { workOrderDepartments } from "@sugi-cmms/shared";
-import { api, mediaUrl } from "../api/client";
+import { plantLabels, workOrderDepartments } from "@sugi-cmms/shared";
+import { api, mediaUrl, selectedPlant } from "../api/client";
 import { useCurrentUser } from "../state/UserContext";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
@@ -84,6 +84,7 @@ export function AdminPage() {
     password: "",
     name: "",
     role: "requester" as User["role"],
+    plantAccess: (selectedPlant() === "sendayan" ? "sendayan" : "port-klang") as User["plantAccess"],
     department: "",
     title: ""
   });
@@ -92,6 +93,7 @@ export function AdminPage() {
     password: "",
     name: "",
     role: "requester" as User["role"],
+    plantAccess: (selectedPlant() === "sendayan" ? "sendayan" : "port-klang") as User["plantAccess"],
     department: "",
     title: ""
   });
@@ -108,7 +110,7 @@ export function AdminPage() {
   const [qrSvg, setQrSvg] = useState("");
   const [posterBusy, setPosterBusy] = useState(false);
   const [adminError, setAdminError] = useState("");
-  const defaultRequesterUrl = `${window.location.origin}/requester`;
+  const defaultRequesterUrl = `${window.location.origin}/requester?plant=${selectedPlant()}`;
   const [requesterUrl, setRequesterUrl] = useState(defaultRequesterUrl);
   const canAdmin = Boolean(currentUser && ["admin", "developer"].includes(currentUser.role));
   const qrTargetUrl = requesterUrl.trim() || defaultRequesterUrl;
@@ -131,7 +133,11 @@ export function AdminPage() {
     loadMasterData().catch(console.error);
     api.publicConfig()
       .then((config) => {
-        if (config.requesterUrl) setRequesterUrl(config.requesterUrl);
+        if (config.requesterUrl) {
+          const url = new URL(config.requesterUrl, window.location.origin);
+          url.searchParams.set("plant", selectedPlant());
+          setRequesterUrl(url.toString());
+        }
       })
       .catch(console.error);
   }, []);
@@ -168,7 +174,7 @@ export function AdminPage() {
     setAdminError("");
     try {
       await api.createUser({ actorId: currentUser.id, ...newUser });
-      setNewUser({ username: "", password: "", name: "", role: "requester", department: "", title: "" });
+      setNewUser({ username: "", password: "", name: "", role: "requester", department: "", title: "", plantAccess: "port-klang" });
       await refreshUsers();
     } catch (error) {
       setAdminError(error instanceof Error ? error.message : "Unable to add user.");
@@ -185,6 +191,7 @@ export function AdminPage() {
       password: "",
       name: user.name,
       role: user.role,
+      plantAccess: user.plantAccess,
       department: user.department,
       title: user.title
     });
@@ -194,7 +201,7 @@ export function AdminPage() {
     event.preventDefault();
     if (!currentUser) return;
 
-    const sessionWillReset = originalUser.id === currentUser.id && (Boolean(editUser.password) || originalUser.role !== editUser.role);
+    const sessionWillReset = originalUser.id === currentUser.id && (Boolean(editUser.password) || originalUser.role !== editUser.role || originalUser.plantAccess !== editUser.plantAccess);
     setUpdatingUser(true);
     setAdminError("");
     try {
@@ -204,6 +211,7 @@ export function AdminPage() {
         password: editUser.password || undefined,
         name: editUser.name,
         role: editUser.role,
+        plantAccess: editUser.plantAccess,
         department: editUser.department,
         title: editUser.title
       });
@@ -448,13 +456,16 @@ export function AdminPage() {
                 <label>Full name<input required value={newUser.name} onChange={(event) => setNewUser((current) => ({ ...current, name: event.target.value }))} disabled={!canAdmin || savingUser} /></label>
                 <label>Username<input required minLength={3} autoComplete="off" value={newUser.username} onChange={(event) => setNewUser((current) => ({ ...current, username: event.target.value }))} disabled={!canAdmin || savingUser} /></label>
                 <label>Password<input required minLength={12} type="password" autoComplete="new-password" value={newUser.password} onChange={(event) => setNewUser((current) => ({ ...current, password: event.target.value }))} disabled={!canAdmin || savingUser} /></label>
-                <label>Role<select value={newUser.role} onChange={(event) => setNewUser((current) => ({ ...current, role: event.target.value as User["role"] }))} disabled={!canAdmin || savingUser}>
+                <label>Role<select value={newUser.role} onChange={(event) => setNewUser((current) => ({ ...current, role: event.target.value as User["role"], plantAccess: ["admin", "developer"].includes(event.target.value) ? "both" : current.plantAccess }))} disabled={!canAdmin || savingUser}>
                   <option value="requester">Requester</option>
                   <option value="technician">Technician</option>
                   <option value="executive">Executive</option>
                   <option value="admin">Admin</option>
                   {currentUser?.role === "developer" ? <option value="developer">Developer</option> : null}
                 </select></label>
+                <label>Plant access<select value={newUser.plantAccess} onChange={(event) => setNewUser((current) => ({ ...current, plantAccess: event.target.value as User["plantAccess"] }))}>
+    <option value="port-klang">Port Klang</option><option value="sendayan">Sendayan</option><option value="both">Both plants</option>
+  </select></label>
                 <label>Department<input list="company-departments" required value={newUser.department} onChange={(event) => setNewUser((current) => ({ ...current, department: event.target.value }))} disabled={!canAdmin || savingUser} /></label>
                 <label>Job title<input required value={newUser.title} onChange={(event) => setNewUser((current) => ({ ...current, title: event.target.value }))} disabled={!canAdmin || savingUser} /></label>
               </div>
@@ -473,6 +484,7 @@ export function AdminPage() {
                   </div>
                   <div className="admin-user-actions">
                     <span className={`role-pill role-${user.role}`}>{user.role}</span>
+                    <span>{user.plantAccess === "both" ? "Both plants" : plantLabels[user.plantAccess]}</span>
                     <label className={`avatar-upload-button ${uploadingUserId === user.id ? "loading" : ""}`}>
                       <Camera size={14} aria-hidden="true" />
                       {uploadingUserId === user.id ? "Uploading" : "Photo"}
@@ -514,7 +526,10 @@ export function AdminPage() {
                           <option value="admin">Admin</option>
                           {currentUser?.role === "developer" ? <option value="developer">Developer</option> : null}
                         </select></label>
-                        <label>Department<input list="company-departments" required value={editUser.department} onChange={(event) => setEditUser((current) => ({ ...current, department: event.target.value }))} disabled={updatingUser} /></label>
+                        <label>Plant access<select value={editUser.plantAccess} onChange={(event) => setEditUser((current) => ({ ...current, plantAccess: event.target.value as User["plantAccess"] }))}>
+    <option value="port-klang">Port Klang</option><option value="sendayan">Sendayan</option><option value="both">Both plants</option>
+  </select></label>
+                <label>Department<input list="company-departments" required value={editUser.department} onChange={(event) => setEditUser((current) => ({ ...current, department: event.target.value }))} disabled={updatingUser} /></label>
                         <label>Job title<input required value={editUser.title} onChange={(event) => setEditUser((current) => ({ ...current, title: event.target.value }))} disabled={updatingUser} /></label>
                       </div>
                       <div className="admin-user-edit-actions">

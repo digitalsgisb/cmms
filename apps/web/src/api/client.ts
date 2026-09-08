@@ -1,3 +1,4 @@
+import type { PlantId } from "@sugi-cmms/shared";
 import type {
   AssetDashboardResponse,
   AssetRecord,
@@ -53,15 +54,30 @@ import type {
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
 const authTokenKey = "sugi-cmms-auth-token-v1";
 
+export function selectedPlant(): PlantId | "all" {
+  const access = sessionStorage.getItem("cmms-user-plant-access");
+  if (localStorage.getItem(authTokenKey) && (access === "port-klang" || access === "sendayan")) return access;
+  const guestPlant = window.location.pathname === "/requester" ? new URLSearchParams(window.location.search).get("plant") : null;
+  const stored = guestPlant || sessionStorage.getItem("cmms-selected-plant") || "port-klang";
+  if (stored === "all") return ["/", "/reports", "/performance", "/tv"].includes(window.location.pathname) ? "all" : sessionStorage.getItem("cmms-operational-plant") === "sendayan" ? "sendayan" : "port-klang";
+  return stored === "sendayan" ? "sendayan" : "port-klang";
+}
+export function setSelectedPlant(plant: PlantId | "all") {
+  sessionStorage.setItem("cmms-selected-plant", plant);
+  if (plant !== "all") sessionStorage.setItem("cmms-operational-plant", plant);
+}
+
 export const liveEventsUrl = `${API_BASE}/api/events`;
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem(authTokenKey);
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: "include",
     cache: options.cache ?? "no-store",
     headers: {
       ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+      "X-CMMS-Plant": selectedPlant(),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers
     }
@@ -88,6 +104,7 @@ export function mediaUrl(url: string) {
 }
 
 export const api = {
+  createPmPlan: (input: UpdatePmPlanInput) => request<PmPlan>("/api/pm/plans", { method: "POST", body: JSON.stringify(input) }),
   health: () => request<{ ok: boolean; service: string; timestamp: string }>("/api/health"),
   login: async (username: string, password: string) => {
     const session = await request<AuthSession>("/api/auth/login", {
@@ -95,19 +112,21 @@ export const api = {
       body: JSON.stringify({ username, password })
     });
     localStorage.setItem(authTokenKey, session.token);
+    sessionStorage.setItem("cmms-user-plant-access", session.user.plantAccess);
+    setSelectedPlant(session.user.plantAccess === "both" ? "port-klang" : session.user.plantAccess);
     return session.user;
   },
-  me: () => request<User>("/api/auth/me"),
+  me: async () => { const user = await request<User>("/api/auth/me"); sessionStorage.setItem("cmms-user-plant-access", user.plantAccess); if (user.plantAccess !== "both") setSelectedPlant(user.plantAccess); return user; },
   hasSession: () => Boolean(localStorage.getItem(authTokenKey)),
-  clearSession: () => localStorage.removeItem(authTokenKey),
-  users: () => request<User[]>("/api/users"),
+  clearSession: () => { void request<void>("/api/auth/logout", { method: "POST" }).catch(() => {}); localStorage.removeItem(authTokenKey); },
+  users: () => request<User[]>(window.location.pathname === "/users" ? "/api/users?manage=1" : "/api/users"),
   usersByRole: (role: User["role"]) => request<User[]>(`/api/users?role=${role}`),
-  createUser: (input: { actorId: string; username: string; password: string; name: string; role: User["role"]; department: string; title: string }) =>
+  createUser: (input: { actorId: string; username: string; password: string; name: string; role: User["role"]; department: string; title: string; plantAccess?: User["plantAccess"] }) =>
     request<User>("/api/users", {
       method: "POST",
       body: JSON.stringify(input)
     }),
-  updateUser: (id: string, input: { actorId: string; username: string; password?: string; name: string; role: User["role"]; department: string; title: string }) =>
+  updateUser: (id: string, input: { actorId: string; username: string; password?: string; name: string; role: User["role"]; department: string; title: string; plantAccess?: User["plantAccess"] }) =>
     request<User>(`/api/users/${id}`, {
       method: "PATCH",
       body: JSON.stringify(input)
@@ -281,11 +300,14 @@ export const api = {
       body: JSON.stringify({ actorId })
     }),
   requesterWorkOrders: () => request<PublicRequesterWorkOrder[]>("/api/requester/work-orders"),
-  createRequesterWorkOrder: (input: Omit<CreateWorkOrderInput, "requesterId">) =>
-    request<GuestWorkOrderSubmission>("/api/requester/work-orders", {
+  createRequesterWorkOrder: async (input: Omit<CreateWorkOrderInput, "requesterId">) => {
+    const submission = await request<GuestWorkOrderSubmission>("/api/requester/work-orders", {
       method: "POST",
       body: JSON.stringify(input)
-    }),
+    });
+    sessionStorage.setItem(`cmms-guest-upload:${submission.workOrder.id}`, new URL(submission.tracking.path, window.location.origin).searchParams.get("token") || "");
+    return submission;
+  },
   guestWorkOrderTracking: (id: string, token: string) =>
     request<GuestWorkOrderTracking>(`/api/requester/work-orders/${encodeURIComponent(id)}/tracking?token=${encodeURIComponent(token)}`),
   verifyGuestWorkOrder: (id: string, token: string, status: "closed" | "returned", note: string) =>
@@ -346,6 +368,7 @@ export const api = {
   },
   uploadRequesterAttachments: (id: string, files: FileList | File[]) => {
     const formData = new FormData();
+    formData.append("token", sessionStorage.getItem(`cmms-guest-upload:${id}`) || "");
     Array.from(files).forEach((file) => {
       formData.append("attachments", file);
     });

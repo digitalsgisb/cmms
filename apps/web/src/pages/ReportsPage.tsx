@@ -1,3 +1,5 @@
+import { plantLabels, type PlantId } from "@sugi-cmms/shared";
+import { selectedPlant } from "../api/client";
 import type { PmDashboardResponse, SpareInventoryResponse, WorkOrder } from "@sugi-cmms/shared";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -257,12 +259,12 @@ export function ReportsPage() {
   }, [inventory]);
 
   const exceptions = useMemo(() => {
-    const rows: Array<{ area: string; reference: string; description: string; status: string; owner: string; action: string }> = [];
+    const rows: Array<{ plant: string; area: string; reference: string; description: string; status: string; owner: string; action: string }> = [];
     workOrders
       .filter((item) => !["closed", "cancelled"].includes(item.status) && (item.priority === "critical" || item.status === "pending_material"))
       .slice(0, 4)
       .forEach((item) => rows.push({
-        area: "Work Order", reference: item.number, description: item.machineName || item.title,
+        plant: plantLabels[item.plantId], area: "Work Order", reference: item.number, description: item.machineName || item.title,
         status: item.priority === "critical" ? "Critical" : "Waiting material", owner: item.assignedToId ? "Assigned technician" : "Planner",
         action: item.status === "pending_material" ? "Confirm material ETA" : "Escalate recovery"
       }));
@@ -271,12 +273,12 @@ export function ReportsPage() {
       .sort((a, b) => a.currentStock - b.currentStock)
       .slice(0, 4)
       .forEach((item) => rows.push({
-        area: "Spare Part", reference: item.itemNo, description: item.searchName || item.description,
+        plant: plantLabels[item.plantId || "port-klang"], area: "Spare Part", reference: item.itemNo, description: item.searchName || item.description,
         status: item.currentStock <= 0 ? "Stock-out" : "Below minimum", owner: "Store / Buyer",
         action: item.currentStock <= 0 ? "Expedite purchase" : "Raise replenishment"
       }));
     (pm?.schedules ?? []).filter((item) => item.overdue).slice(0, 4).forEach((item) => rows.push({
-      area: "PM", reference: item.scheduledDate, description: item.machineName,
+      plant: plantLabels[item.plantId || "port-klang"], area: "PM", reference: item.scheduledDate, description: item.machineName,
       status: "Overdue", owner: item.technicianName, action: "Recover and verify"
     }));
     return rows.slice(0, 10);
@@ -296,14 +298,14 @@ export function ReportsPage() {
   ];
 
   const downloadCsv = () => {
-    const header = ["Area", "Reference", "Description", "Status", "Owner", "Next Action"];
-    const rows = exceptions.length > 0 ? exceptions : [{ area: "Summary", reference: "-", description: "No active exceptions", status: "Clear", owner: "-", action: "Maintain control" }];
-    const content = [header.map(csvCell).join(","), ...rows.map((row) => [row.area, row.reference, row.description, row.status, row.owner, row.action].map(csvCell).join(","))].join("\r\n");
+    const header = ["Plant", "Area", "Reference", "Description", "Status", "Owner", "Next Action"];
+    const rows = exceptions.length > 0 ? exceptions : [{ plant: selectedPlant() === "all" ? "Both plants" : plantLabels[selectedPlant() as PlantId], area: "Summary", reference: "-", description: "No active exceptions", status: "Clear", owner: "-", action: "Maintain control" }];
+    const content = [header.map(csvCell).join(","), ...rows.map((row) => [row.plant, row.area, row.reference, row.description, row.status, row.owner, row.action].map(csvCell).join(","))].join("\r\n");
     const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `sugi-${activePreset}-report-${reportDate.toISOString().slice(0, 10)}.csv`;
+    link.download = `sugi-${selectedPlant()}-${activePreset}-report-${reportDate.toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -352,6 +354,7 @@ export function ReportsPage() {
       </div>
 
       <article className="report-document" aria-busy={loading}>
+        <p className="eyebrow">Plant: {selectedPlant() === "all" ? "Port Klang + Sendayan" : plantLabels[selectedPlant() as PlantId]}</p>
         <header className="report-document-header">
           <div><span>SUGI CMMS · MANAGEMENT REPORT</span><h2>{preset.title}</h2><p>{rangeStart.toLocaleDateString("en-MY", { day: "2-digit", month: "short", year: "numeric" })} — {rangeEnd.toLocaleDateString("en-MY", { day: "2-digit", month: "short", year: "numeric" })}</p></div>
           <div><strong>{currentUser?.department || "Maintenance"}</strong><span>Prepared for {preset.audience}</span><small>Source: Live CMMS records</small></div>
@@ -403,8 +406,8 @@ export function ReportsPage() {
 
         <section className="report-exception-section">
           <div className="report-section-title"><span>03</span><div><small>Action appendix</small><h3>Exceptions requiring ownership</h3></div><strong>{exceptions.length} items</strong></div>
-          <div className="report-table-wrap"><table><thead><tr><th>Area</th><th>Reference</th><th>Exception</th><th>Status</th><th>Owner</th><th>Required action</th></tr></thead><tbody>
-            {exceptions.length > 0 ? exceptions.map((row, index) => <tr key={`${row.reference}-${index}`}><td>{row.area}</td><td><strong>{row.reference}</strong></td><td>{row.description}</td><td><span className={row.status.toLowerCase().includes("critical") || row.status.toLowerCase().includes("overdue") || row.status.toLowerCase().includes("stock-out") ? "report-status-risk" : "report-status-watch"}>{row.status}</span></td><td>{row.owner}</td><td>{row.action}</td></tr>) : <tr><td colSpan={6}><div className="report-clear-state"><CheckCircle2 size={17} /> No active exceptions. Maintain current controls.</div></td></tr>}
+          <div className="report-table-wrap"><table><thead><tr><th>Plant</th><th>Area</th><th>Reference</th><th>Exception</th><th>Status</th><th>Owner</th><th>Required action</th></tr></thead><tbody>
+            {exceptions.length > 0 ? exceptions.map((row, index) => <tr key={`${row.reference}-${index}`}><td>{row.plant}</td><td>{row.area}</td><td><strong>{row.reference}</strong></td><td>{row.description}</td><td><span className={row.status.toLowerCase().includes("critical") || row.status.toLowerCase().includes("overdue") || row.status.toLowerCase().includes("stock-out") ? "report-status-risk" : "report-status-watch"}>{row.status}</span></td><td>{row.owner}</td><td>{row.action}</td></tr>) : <tr><td colSpan={7}><div className="report-clear-state"><CheckCircle2 size={17} /> No active exceptions. Maintain current controls.</div></td></tr>}
           </tbody></table></div>
         </section>
 

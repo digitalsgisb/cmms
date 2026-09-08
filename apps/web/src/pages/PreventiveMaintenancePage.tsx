@@ -187,6 +187,7 @@ function PmCommandCenter() {
               : "Your assigned machines and the exact checklist you need are ready in one place."}
           </p>
           <div className="pm-hero-actions">
+            {isManager && <button className="pm-button pm-button-light" type="button" onClick={() => setPlanEditor({ id: "", mainMachine: "", machineName: "", frequencyLabel: "Monthly", frequencyMonths: 1, occurrencesPerMonth: 1, technicianId: maintenanceTechnicians[0]?.id || "", technicianName: "", templateId: null, startMonth: new Date().getMonth() + 1, weekOfMonth: 1, secondaryWeek: null, active: true })}><Plus size={17} /> New PM plan</button>}
             <button className="pm-button pm-button-light" type="button" onClick={() => navigate("/preventive-maintenance/schedule")}>
               <CalendarCheck size={17} /> View {isManager ? "schedule" : "my assignments"}
             </button>
@@ -652,7 +653,8 @@ function PmPlanEditor({ plan, technicians, actorId, onClose, onSaved }: { plan: 
       active
     };
     try {
-      await api.updatePmPlan(plan.id, input);
+      if (plan.id) await api.updatePmPlan(plan.id, input);
+      else await api.createPmPlan(input);
       await onSaved();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to update PM plan.");
@@ -665,7 +667,7 @@ function PmPlanEditor({ plan, technicians, actorId, onClose, onSaved }: { plan: 
     <div className="pm-modal-backdrop" role="presentation">
       <form className="pm-template-editor pm-plan-editor" onSubmit={submit}>
         <header>
-          <div><span>Recurring PM schedule</span><h2>Edit schedule</h2></div>
+          <div><span>Recurring PM schedule</span><h2>{plan.id ? "Edit schedule" : "New PM plan"}</h2></div>
           <button type="button" onClick={onClose} aria-label="Close schedule editor"><X size={21} /></button>
         </header>
         <div className="pm-editor-scroll">

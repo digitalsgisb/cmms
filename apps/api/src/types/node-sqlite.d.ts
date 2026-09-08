@@ -3,6 +3,7 @@ declare module "node:sqlite" {
     constructor(filename: string);
     exec(sql: string): void;
     prepare(sql: string): StatementSync;
+    function(name: string, callback: (...args: any[]) => any): void;
     close(): void;
   }
 

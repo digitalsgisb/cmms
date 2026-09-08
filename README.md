@@ -29,7 +29,34 @@ Default local URLs:
 
 ## Production Access and Integrations
 
-Production users can use Work Orders and Spare Parts. Dashboard, Preventive Maintenance, Assets, Performance, Reports, Users, Profile, and Settings remain visible but locked. Admin and developer accounts have full access. API sessions are random bearer tokens with a 30-day expiry; the login screen does not publish development credentials.
+Work Orders and Spare Parts follow existing role permissions. Technicians can access assigned PM work; executives can manage PM and view Assets, Performance and Reports. Admin and developer accounts manage users and settings. API sessions expire after 30 days; an HttpOnly session cookie also authenticates photos and live updates. Dashboard and TV data now require sign-in.
+
+### Port Klang and Sendayan
+
+Role and plant access are separate. In **Users → People**, set each account's **Plant access** to **Port Klang**, **Sendayan**, or **Both plants**. Existing records and ordinary users migrate to Port Klang; existing admins and developers receive both plants. Changing plant access revokes the user's sessions, so they must sign in again. An administrator with access to only one plant cannot grant access to the other plant or manage its users.
+
+The plant selector above the application controls work orders, spare stock and movement history, sections/machines, assets, PM plans/checklists/schedules, notifications and integration settings. Single-plant users are restricted to their assignment by the API. Users assigned both plants can choose **Both plants** on Dashboard, Performance, Reports and TV. Combined reporting includes both datasets; operational changes require one selected plant. Exports identify the plant for each exception.
+
+To set up Sendayan:
+
+1. Back up the production SQLite database and uploads using the deployment instructions below before installing this update.
+2. Sign in as an admin/developer, select **Sendayan**, and create its users, sections, machines and issue categories.
+3. Import Sendayan's spare-parts master list. The same part number can exist in both plants with independent balances and movement history.
+4. In **Preventive Maintenance**, choose **New PM plan**, assign a Sendayan technician, then create and connect its checklists.
+5. Configure Sendayan's Google Sheets/webhook settings while Sendayan is selected. Existing settings and environment-variable integration defaults remain Port Klang-only; use separate spreadsheet destinations/tabs for Sendayan to keep external stock balances separate.
+6. Use `/requester?plant=sendayan` for Sendayan's guest request form/QR and `/requester?plant=port-klang` for Port Klang. The selected plant is visible on the form. Private tracking links remain specific to one work order.
+
+The migration preserves existing IDs, work-order numbers, stock balances and history. New Sendayan work orders include `SDN` in their number; counters are independent by plant. Sendayan starts without copied operational records. PM schedules are generated for the current and next year for each plant. Existing photo URLs now require an authorized session or a valid guest tracking token, including when opened from a spreadsheet.
+
+Plant regression tests run against isolated databases under `tmp`, without modifying the working database:
+
+```powershell
+pnpm test:plants
+pnpm typecheck
+pnpm build
+```
+
+For database development, query the `scoped_*` views for plant-owned reads, insert `plantId = cmms_write_plant()`, and execute request work inside `plantContext`. Base-table triggers reject cross-plant writes and relationships. The unscoped database connection is reserved for migrations, authentication and explicitly checked media access. Do not access base tables directly from new resource endpoints.
 
 Guest requesters receive a private signed tracking link after submitting a work order. The link shows live progress, photos, maintenance notes, and the requester verification controls when a repair is resolved. It does not require an account; anyone holding the link can view and verify that specific guest work order. Executives, admins, and developers can retrieve the same link from the work-order detail page.
 

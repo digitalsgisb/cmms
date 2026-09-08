@@ -10888,3 +10888,9 @@ body,
     font-size: 16px !important;
   }
 }
+
+.plant-scope-bar { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 10px 24px; background: #fff; border-bottom: 1px solid #e5dfe0; position: relative; z-index: 30; font-size: 13px; }
+.plant-scope-bar label { font-weight: 700; }
+.plant-scope-bar select { padding: 6px 12px; border: 1px solid #c8b9bd; border-radius: 8px; background: white; color: #741c28; font-weight: 600; }
+.plant-scope-bar span { color: #655b5e; }
+@media (max-width: 600px) { .plant-scope-bar { justify-content: center; padding: 8px; } .plant-scope-bar span { display: none; } }

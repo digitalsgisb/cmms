@@ -19,7 +19,7 @@ let sharedLiveSource: EventSource | null = null;
 function ensureSharedLiveSource() {
   if (sharedLiveSource || typeof EventSource === "undefined") return;
 
-  sharedLiveSource = new EventSource(liveEventsUrl);
+  sharedLiveSource = new EventSource(liveEventsUrl, { withCredentials: true });
   sharedLiveSource.onmessage = (event) => {
     try {
       const change = JSON.parse(event.data) as LiveChange;

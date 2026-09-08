@@ -36,7 +36,7 @@ const technicianTabs = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/technician", label: "Jobs", icon: ClipboardCheck },
   { to: "/spare-parts/scanner", label: "Parts", icon: Package },
-  { to: "/preventive-maintenance", label: "PM", icon: ShieldCheck, locked: true },
+  { to: "/preventive-maintenance", label: "PM", icon: ShieldCheck, locked: false },
   { to: "/profile", label: "Profile", icon: Settings }
 ];
 
@@ -404,7 +404,7 @@ export function Layout() {
             </div>
           </div>
 
-          {hasDeveloperAccess ? <div className={`nav-group ${preventiveOpen ? "open" : ""}`}>
+          {(hasDeveloperAccess || currentUser.role === "executive") ? <div className={`nav-group ${preventiveOpen ? "open" : ""}`}>
             <NavLink
               to="/preventive-maintenance"
               className={`nav-item nav-parent ${preventiveActive ? "active" : ""}`}
@@ -455,13 +455,13 @@ export function Layout() {
             </div>
           </div> : <span className="nav-item locked" aria-disabled="true"><ShieldCheck size={18} aria-hidden="true" /><span>Preventive</span><LockKeyhole className="nav-lock" size={14} aria-hidden="true" /></span>}
 
-          {hasDeveloperAccess ? <NavLink to="/assets" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} onClick={() => setMobileNavOpen(false)}>
+          {(hasDeveloperAccess || currentUser.role === "executive") ? <NavLink to="/assets" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} onClick={() => setMobileNavOpen(false)}>
             <Factory size={18} aria-hidden="true" />
             <span>Assets</span>
           </NavLink> : <span className="nav-item locked" aria-disabled="true"><Factory size={18} aria-hidden="true" /><span>Assets</span><LockKeyhole className="nav-lock" size={14} aria-hidden="true" /></span>}
 
           {navItems.map((item) => (
-            hasDeveloperAccess ? (
+            (hasDeveloperAccess || (currentUser.role === "executive" && ["/performance", "/reports"].includes(item.to))) ? (
               <NavLink key={item.to} to={item.to} className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} onClick={() => setMobileNavOpen(false)}>
                 <item.icon size={18} aria-hidden="true" />
                 <span>{item.label}</span>
