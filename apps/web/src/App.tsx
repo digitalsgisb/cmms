@@ -6,6 +6,7 @@ import { AdminPage } from "./pages/AdminPage";
 import { AssetsPage } from "./pages/AssetsPage";
 import { CreateWorkOrderPage } from "./pages/CreateWorkOrderPage";
 import { DashboardPage } from "./pages/DashboardPage";
+import { EditWorkOrderPage } from "./pages/EditWorkOrderPage";
 import { LoginPage } from "./pages/LoginPage";
 import { PreventiveMaintenancePage } from "./pages/PreventiveMaintenancePage";
 import { PublicRequesterPage } from "./pages/PublicRequesterPage";
@@ -42,6 +43,7 @@ export function App() {
         <Route index element={<HomePage />} />
         <Route path="/work-orders" element={<WorkOrdersPage />} />
         <Route path="/work-orders/new" element={<CreateWorkOrderPage />} />
+        <Route path="/work-orders/:id/edit" element={<EditWorkOrderPage />} />
         <Route path="/work-orders/:id" element={<WorkOrderDetailPage />} />
         <Route path="/technician" element={<TechnicianPage />} />
         <Route path="/assets" element={<RestrictedFeature name="Assets"><AssetsPage /></RestrictedFeature>} />

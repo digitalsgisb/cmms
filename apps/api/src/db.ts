@@ -58,6 +58,7 @@ import type {
   UpdateAssetInput,
   UpdatePmPlanInput,
   UpdateUserInput,
+  UpdateWorkOrderInput,
   UpdateWorkOrderStatusInput,
   User,
   UserRole,
@@ -1583,6 +1584,15 @@ function requireAdmin(actorId: string) {
   const actor = getUser(actorId);
   if (!["admin", "developer"].includes(actor.role)) {
     throw new Error("Admin or developer access is required.");
+  }
+
+  return actor;
+}
+
+function requireWorkOrderManager(actorId: string) {
+  const actor = getUser(actorId);
+  if (!["executive", "admin"].includes(actor.role)) {
+    throw new Error("Executive or admin access is required to manage work orders.");
   }
 
   return actor;
@@ -3481,6 +3491,62 @@ export function createWorkOrder(input: CreateWorkOrderInput): WorkOrder {
   return getWorkOrder(id);
 }
 
+export function updateWorkOrder(id: string, input: UpdateWorkOrderInput): WorkOrder {
+  const current = getWorkOrder(id);
+  requireWorkOrderManager(input.actorId);
+
+  const section = input.sectionId ? getSection(input.sectionId) : null;
+  const machine = input.machineId ? getMachine(input.machineId) : null;
+  if (machine && section && machine.sectionId !== section.id) {
+    throw new Error("The selected machine does not belong to the selected section.");
+  }
+
+  const issueCategory = input.issueCategoryId ? getIssueCategory(input.issueCategoryId) : null;
+  const issueDescription = input.issueDescription.trim();
+  if (!issueDescription) {
+    throw new Error("Issue description is required.");
+  }
+
+  const machineName = input.machineName?.trim() || machine?.name || current.machineName || "Others";
+  const area = input.area?.trim() || machine?.area || current.area || "General";
+  const location = section?.name || current.location || "Unassigned";
+  const responsibleDepartment = normalizeWorkOrderDepartment(input.responsibleDepartment);
+  const shiftGroup = responsibleDepartment === "Production" ? (input.shiftGroup === "B" ? "B" : "A") : "N/A";
+  const updatedAt = now();
+
+  db.prepare(
+    "UPDATE work_orders SET type = ?, title = ?, description = ?, assetName = ?, location = ?, priority = ?, " +
+    "dueDate = ?, workDate = ?, shiftGroup = ?, sectionId = ?, machineId = ?, area = ?, machineName = ?, " +
+    "reportedByName = ?, reportedByDepartment = ?, responsibleDepartment = ?, issueCategoryId = ?, " +
+    "issueDescription = ?, updatedAt = ? WHERE id = ?"
+  ).run(
+    input.type,
+    machineName + " - " + (issueCategory?.name || "Issue"),
+    issueDescription,
+    machineName,
+    location,
+    input.priority,
+    input.dueDate || null,
+    input.workDate,
+    shiftGroup,
+    section?.id || null,
+    machine?.id || null,
+    area,
+    machineName,
+    input.reportedByName.trim(),
+    input.reportedByDepartment.trim(),
+    responsibleDepartment,
+    issueCategory?.id || null,
+    issueDescription,
+    updatedAt,
+    id
+  );
+
+  addActivity(id, input.actorId, "edited", null, "Work order details edited.");
+  enqueueWorkOrderSync(id, true);
+  return getWorkOrder(id);
+}
+
 function nextWorkOrderNumber(type: WorkOrderType, sectionName: string, responsibleDepartment: WorkOrderDepartment) {
   const date = new Date();
   const yearMonth = `${String(date.getFullYear()).slice(-2)}${String(date.getMonth() + 1).padStart(2, "0")}`;
@@ -3803,7 +3869,7 @@ export function verifyGuestWorkOrder(
 }
 
 export async function deleteWorkOrder(id: string, actorId: string) {
-  requireAdmin(actorId);
+  requireWorkOrderManager(actorId);
   const workOrder = getWorkOrder(id);
   const runtime = workOrderSyncRuntimeSettings();
 
@@ -4121,6 +4187,49 @@ export function validateCreateWorkOrderInput(body: Partial<CreateWorkOrderInput>
     responsibleDepartment,
     issueCategoryId: body.issueCategoryId ? String(body.issueCategoryId) : null,
     issueDescription: String(issueDescription)
+  };
+}
+
+export function validateUpdateWorkOrderInput(body: Partial<UpdateWorkOrderInput>): UpdateWorkOrderInput {
+  if (!body.actorId) {
+    throw new Error("actorId is required.");
+  }
+  getUser(String(body.actorId));
+
+  const issueDescription = String(body.issueDescription || "").trim();
+  const reportedByName = String(body.reportedByName || "").trim();
+  const reportedByDepartment = String(body.reportedByDepartment || "").trim();
+  const workDate = String(body.workDate || "").trim();
+  if (!issueDescription || !reportedByName || !reportedByDepartment || !workDate) {
+    throw new Error("Date, reporter details, and issue description are required.");
+  }
+
+  if (body.sectionId) getSection(String(body.sectionId));
+  if (body.machineId) getMachine(String(body.machineId));
+  if (body.issueCategoryId) getIssueCategory(String(body.issueCategoryId));
+
+  const priority = String(body.priority || "medium");
+  if (!["low", "medium", "high", "critical"].includes(priority)) {
+    throw new Error("Select a valid work-order priority.");
+  }
+
+  const responsibleDepartment = normalizeWorkOrderDepartment(body.responsibleDepartment);
+  return {
+    actorId: String(body.actorId),
+    type: normalizeWorkOrderType(body.type),
+    priority: priority as UpdateWorkOrderInput["priority"],
+    dueDate: body.dueDate ? String(body.dueDate) : null,
+    workDate,
+    shiftGroup: responsibleDepartment === "Production" && body.shiftGroup === "B" ? "B" : responsibleDepartment === "Production" ? "A" : "N/A",
+    sectionId: body.sectionId ? String(body.sectionId) : null,
+    machineId: body.machineId ? String(body.machineId) : null,
+    area: String(body.area || ""),
+    machineName: String(body.machineName || ""),
+    reportedByName,
+    reportedByDepartment,
+    responsibleDepartment,
+    issueCategoryId: body.issueCategoryId ? String(body.issueCategoryId) : null,
+    issueDescription
   };
 }
 

@@ -4,7 +4,7 @@
   "private": true,
   "description": "Sugi CMMS foundation with React PWA, Express API, SQLite, and work order MVP.",
   "scripts": {
-    "test:plants": "pnpm --filter @sugi-cmms/api build && node apps/api/test/plant-migration.mjs && node apps/api/test/plant-isolation.mjs",
+    "test:plants": "pnpm --filter @sugi-cmms/api build && node apps/api/test/plant-migration.mjs && node apps/api/test/plant-isolation.mjs && node apps/api/test/work-order-management.mjs",
     "dev": "pnpm --filter @sugi-cmms/shared build && concurrently -n API,WEB -c cyan,green \"pnpm --filter @sugi-cmms/api dev\" \"pnpm --filter @sugi-cmms/web dev\"",
     "build": "pnpm --filter @sugi-cmms/shared build && pnpm --filter @sugi-cmms/api build && pnpm --filter @sugi-cmms/web build",
     "typecheck": "pnpm --filter @sugi-cmms/shared typecheck && pnpm --filter @sugi-cmms/api typecheck && pnpm --filter @sugi-cmms/web typecheck",

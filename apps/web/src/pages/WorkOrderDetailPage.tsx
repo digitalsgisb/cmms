@@ -1,7 +1,7 @@
-import { ArrowLeft, Check, CheckCircle2, ClipboardCopy, Clock3, ExternalLink, ImagePlus, MessageSquare, PackageOpen, RotateCcw, ShieldCheck, TimerReset, Wrench } from "lucide-react";
+import { ArrowLeft, Check, CheckCircle2, ClipboardCopy, Clock3, ExternalLink, ImagePlus, MessageSquare, PackageOpen, Pencil, RotateCcw, ShieldCheck, TimerReset, Trash2, Wrench } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import type { User, WorkOrder, WorkOrderAttachment, WorkOrderActivity, WorkOrderDetail, WorkOrderStatus } from "@sugi-cmms/shared";
 import { workOrderStatusLabels, workOrderTypeLabels } from "@sugi-cmms/shared";
 import { api, mediaUrl } from "../api/client";
@@ -32,6 +32,7 @@ function findActivityTime(activities: WorkOrderActivity[], action: WorkOrderActi
 
 export function WorkOrderDetailPage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { currentUser, users } = useCurrentUser();
   const [detail, setDetail] = useState<WorkOrderDetail | null>(null);
   const [note, setNote] = useState("");
@@ -129,6 +130,7 @@ export function WorkOrderDetailPage() {
 
   const technicians = useMemo(() => users.filter((user) => user.role === "technician"), [users]);
   const canMaintain = currentUser ? ["technician", "executive", "admin", "developer"].includes(currentUser.role) : false;
+  const canManageWorkOrder = currentUser ? ["executive", "admin"].includes(currentUser.role) : false;
   const canVerify =
     currentUser && detail
       ? currentUser.id === detail.requesterId || ["executive", "admin", "developer"].includes(currentUser.role)
@@ -282,6 +284,22 @@ export function WorkOrderDetailPage() {
     }
   }
 
+  async function removeWorkOrder() {
+    if (!detail || !currentUser || !canManageWorkOrder) return;
+    if (!window.confirm(`Delete ${detail.number}? This permanently removes the work order and uploaded images.`)) return;
+
+    setBusy(true);
+    setBusyAction("delete");
+    try {
+      await api.deleteWorkOrder(detail.id, { actorId: currentUser.id });
+      navigate("/work-orders", { replace: true });
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Unable to delete this work order.");
+      setBusy(false);
+      setBusyAction("");
+    }
+  }
+
   if (!detail) {
     return <p className="quiet-line">Loading work order...</p>;
   }
@@ -326,10 +344,24 @@ export function WorkOrderDetailPage() {
             <span>{workOrderTypeLabels[detail.type]}</span>
           </div>
         </div>
-        <Link className="secondary-action" to="/work-orders">
-          <ArrowLeft size={17} aria-hidden="true" />
-          Back
-        </Link>
+        <div className="work-order-command-actions">
+          <Link className="secondary-action" to="/work-orders">
+            <ArrowLeft size={17} aria-hidden="true" />
+            Back
+          </Link>
+          {canManageWorkOrder ? (
+            <>
+              <Link className="secondary-action work-order-edit-link" to={`/work-orders/${detail.id}/edit`}>
+                <Pencil size={17} aria-hidden="true" />
+                Edit
+              </Link>
+              <button className="secondary-action work-order-delete-link" type="button" disabled={busy} onClick={removeWorkOrder}>
+                <Trash2 size={17} aria-hidden="true" />
+                {busyAction === "delete" ? "Deleting..." : "Delete"}
+              </button>
+            </>
+          ) : null}
+        </div>
       </div>
 
       <div className="workflow-strip">

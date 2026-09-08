@@ -40,6 +40,7 @@ import type {
   UpdateSpareSyncSettingsInput,
   UpdateAssetInput,
   UpdatePmPlanInput,
+  UpdateWorkOrderInput,
   UpdateWorkOrderStatusInput,
   UpdateWorkOrderSyncSettingsInput,
   User,
@@ -320,6 +321,11 @@ export const api = {
   createWorkOrder: (input: CreateWorkOrderInput) =>
     request<WorkOrder>("/api/work-orders", {
       method: "POST",
+      body: JSON.stringify(input)
+    }),
+  updateWorkOrder: (id: string, input: UpdateWorkOrderInput) =>
+    request<WorkOrder>(`/api/work-orders/${id}`, {
+      method: "PATCH",
       body: JSON.stringify(input)
     }),
   updateWorkOrderStatus: (id: string, input: UpdateWorkOrderStatusInput) =>

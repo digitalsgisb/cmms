@@ -95,6 +95,7 @@ export interface MasterData {
 
 export type ActivityAction =
   | "created"
+  | "edited"
   | "acknowledged"
   | "assigned"
   | "started"
@@ -327,6 +328,24 @@ export interface UpdateWorkOrderStatusInput {
   actorId: string;
   note: string;
   assignedToId?: string | null;
+}
+
+export interface UpdateWorkOrderInput {
+  actorId: string;
+  type: WorkOrderType;
+  priority: WorkOrderPriority;
+  dueDate?: string | null;
+  workDate: string;
+  shiftGroup: ShiftGroup;
+  sectionId?: string | null;
+  machineId?: string | null;
+  area?: string;
+  machineName?: string;
+  reportedByName: string;
+  reportedByDepartment: string;
+  responsibleDepartment: WorkOrderDepartment;
+  issueCategoryId?: string | null;
+  issueDescription: string;
 }
 
 export interface ClaimWorkOrderInput {

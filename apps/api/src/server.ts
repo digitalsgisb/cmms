@@ -78,10 +78,12 @@ import {
   updateSection,
   updateUser,
   updateUserAvatar,
+  updateWorkOrder,
   updateWorkOrderStatus,
   uploadsRoot,
   validateCreateWorkOrderInput,
   validateStatusInput,
+  validateUpdateWorkOrderInput,
   verifyGuestWorkOrder,
   verifyPmSchedule
 } from "./db.js";
@@ -793,6 +795,11 @@ app.get("/api/work-orders/:id/guest-link", (request, response) => {
 
 app.get("/api/work-orders/:id", (request, response) => {
   response.json(getWorkOrderDetail(request.params.id));
+});
+
+app.patch("/api/work-orders/:id", (request, response) => {
+  const input = validateUpdateWorkOrderInput(request.body);
+  response.json(updateWorkOrder(request.params.id, input));
 });
 
 app.delete("/api/work-orders/:id", asyncHandler(async (request, response) => {
