@@ -1,4 +1,3 @@
-import { PlantSelector } from "./components/PlantSelector";
 import { lazy, Suspense, useEffect } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { LockKeyhole } from "lucide-react";
@@ -34,8 +33,6 @@ export function App() {
   }, [location.pathname]);
 
   return (
-    <>
-    <PlantSelector />
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/requester" element={<PublicRequesterPage />} />
@@ -62,7 +59,6 @@ export function App() {
         <Route path="/settings" element={<RestrictedFeature name="Settings"><SettingsPage /></RestrictedFeature>} />
       </Route>
     </Routes>
-    </>
   );
 }
 
@@ -72,7 +68,7 @@ function HomePage() {
 
 function RestrictedFeature({ name, children }: { name: string; children: React.ReactNode }) {
   const { currentUser } = useCurrentUser();
-  if (currentUser && (["admin", "developer"].includes(currentUser.role) || (currentUser.role === "executive" && ["Assets", "Preventive Maintenance", "Performance", "Reports"].includes(name)) || (currentUser.role === "technician" && name === "Preventive Maintenance"))) return children;
+  if (currentUser && (["admin", "developer"].includes(currentUser.role) || (currentUser.role === "executive" && ["Assets", "Preventive Maintenance", "Performance", "Reports"].includes(name)) || (currentUser.role === "technician" && name === "Preventive Maintenance") || (name === "Settings" && currentUser.plantAccess === "both"))) return children;
 
   return (
     <section className="locked-feature-page">

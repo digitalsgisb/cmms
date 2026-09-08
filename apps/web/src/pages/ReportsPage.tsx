@@ -43,6 +43,7 @@ import {
 } from "recharts";
 import { api } from "../api/client";
 import { useCurrentUser } from "../state/UserContext";
+import { PlantSelector } from "../components/PlantSelector";
 
 type PresetId = "daily" | "monthly" | "annual" | "work-orders" | "inventory" | "pm";
 type RangeId = "7d" | "30d" | "ytd";
@@ -312,6 +313,7 @@ export function ReportsPage() {
 
   return (
     <section className="reports-page page-stack">
+      <div className="analytics-plant-filter"><span>Report plant</span><PlantSelector allowCombined compact /></div>
       <header className="reports-hero">
         <div>
           <span className="reports-eyebrow"><Sparkles size={14} /> Maintenance intelligence studio</span>

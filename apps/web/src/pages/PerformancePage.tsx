@@ -44,6 +44,7 @@ import {
 } from "recharts";
 import { api } from "../api/client";
 import { useCurrentUser } from "../state/UserContext";
+import { PlantSelector } from "../components/PlantSelector";
 
 type Period = "daily" | "monthly" | "yearly";
 type Focus = "all" | "work-orders" | "spares" | "pm";
@@ -381,6 +382,7 @@ export function PerformancePage() {
 
   return (
     <section className="performance-page page-stack">
+      <div className="analytics-plant-filter"><span>Viewing</span><PlantSelector allowCombined compact /></div>
       <header className="performance-hero">
         <div className="performance-hero-copy">
           <div className="performance-eyebrow"><Sparkles size={14} /> {activePeriod.eyebrow}</div>

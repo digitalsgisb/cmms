@@ -35,7 +35,7 @@ Work Orders and Spare Parts follow existing role permissions. Technicians can ac
 
 Role and plant access are separate. In **Users → People**, set each account's **Plant access** to **Port Klang**, **Sendayan**, or **Both plants**. Existing records and ordinary users migrate to Port Klang; existing admins and developers receive both plants. Changing plant access revokes the user's sessions, so they must sign in again. An administrator with access to only one plant cannot grant access to the other plant or manage its users.
 
-The plant selector above the application controls work orders, spare stock and movement history, sections/machines, assets, PM plans/checklists/schedules, notifications and integration settings. Single-plant users are restricted to their assignment by the API. Users assigned both plants can choose **Both plants** on Dashboard, Performance, Reports and TV. Combined reporting includes both datasets; operational changes require one selected plant. Exports identify the plant for each exception.
+The **Settings → Plant view** selector controls work orders, spare stock and movement history, sections/machines, assets, PM plans/checklists/schedules, notifications and integration settings. It is not displayed above every page. Single-plant users are restricted to their assignment by the API. Users assigned both plants can choose **Both plants** from the compact filter on Performance and Reports. Combined reporting includes both datasets; operational changes require one selected plant. Exports identify the plant for each exception.
 
 To set up Sendayan:
 

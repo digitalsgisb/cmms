@@ -461,7 +461,7 @@ export function Layout() {
           </NavLink> : <span className="nav-item locked" aria-disabled="true"><Factory size={18} aria-hidden="true" /><span>Assets</span><LockKeyhole className="nav-lock" size={14} aria-hidden="true" /></span>}
 
           {navItems.map((item) => (
-            (hasDeveloperAccess || (currentUser.role === "executive" && ["/performance", "/reports"].includes(item.to))) ? (
+            (hasDeveloperAccess || (currentUser.role === "executive" && ["/performance", "/reports"].includes(item.to)) || (item.to === "/settings" && currentUser.plantAccess === "both")) ? (
               <NavLink key={item.to} to={item.to} className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} onClick={() => setMobileNavOpen(false)}>
                 <item.icon size={18} aria-hidden="true" />
                 <span>{item.label}</span>

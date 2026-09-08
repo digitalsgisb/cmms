@@ -1,9 +1,10 @@
-import { BellRing, Database, HardDrive, QrCode, RadioTower, RefreshCw, Save, Settings2, Smartphone, Tv, Wrench } from "lucide-react";
+import { BellRing, Database, Factory, HardDrive, QrCode, RadioTower, RefreshCw, Save, Settings2, Smartphone, Tv, Wrench } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import type { WorkOrderSyncSettings } from "@sugi-cmms/shared";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { PwaInstallButton } from "../components/PwaInstallButton";
+import { PlantSelector } from "../components/PlantSelector";
 import { useCurrentUser } from "../state/UserContext";
 
 const notificationRows = [
@@ -26,9 +27,10 @@ export function SettingsPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const canAdmin = Boolean(currentUser && ["admin", "developer"].includes(currentUser.role));
 
   async function loadSync() { setSync(await api.workOrderSyncSettings()); }
-  useEffect(() => { void loadSync().catch(console.error); }, []);
+  useEffect(() => { if (canAdmin) void loadSync().catch(console.error); }, [canAdmin]);
 
   async function saveSync(event: FormEvent) {
     event.preventDefault();
@@ -64,7 +66,15 @@ export function SettingsPage() {
         <span className="role-chip"><Settings2 size={17} aria-hidden="true" />Full access</span>
       </div>
 
-      <form className="section-panel work-order-sync-card" onSubmit={saveSync}>
+      <section className="section-panel plant-settings-card">
+        <div className="section-header">
+          <div><h2>Plant view</h2><span>Choose which plant's operational records you want to work with.</span></div>
+          <Factory size={22} aria-hidden="true" />
+        </div>
+        <PlantSelector />
+      </section>
+
+      {canAdmin ? <form className="section-panel work-order-sync-card" onSubmit={saveSync}>
         <div className="section-header">
           <div><h2>Work Order → Google Sheets</h2><span>SQLite remains primary; queued updates retry automatically every minute.</span></div>
           <Database size={22} aria-hidden="true" />
@@ -87,9 +97,9 @@ export function SettingsPage() {
           <button className="secondary-action" type="button" disabled={busy || !sync.configured} onClick={retrySync}><RefreshCw size={16} />Sync now</button>
           <button className="primary-action" type="submit" disabled={busy || !sync.scriptUrl.trim() || (!sync.hasToken && !token.trim())}><Save size={16} />Save integration</button>
         </div>
-      </form>
+      </form> : null}
 
-      <div className="settings-grid">
+      {canAdmin ? <div className="settings-grid">
         <section className="section-panel settings-card"><QrCode size={22} aria-hidden="true" /><h2>Requester QR Poster</h2><p>The live requester URL is inserted automatically into a branded, print-ready A4 PDF.</p><Link className="secondary-action" to="/users?tab=qr">Generate print-ready PDF</Link></section>
         <section className="section-panel settings-card"><Wrench size={22} aria-hidden="true" /><h2>Work Order Master Data</h2><p>Manage the production machine list, areas, sections, and issue categories.</p><Link className="secondary-action" to="/users?tab=machines">Manage machines</Link></section>
         <section className="section-panel settings-card"><BellRing size={22} aria-hidden="true" /><h2>Notification Rules</h2><div className="settings-list">{notificationRows.map(([event, receiver]) => <div key={event}><span>{event}</span><strong>{receiver}</strong></div>)}</div></section>
@@ -98,7 +108,7 @@ export function SettingsPage() {
         <section className="section-panel settings-card"><Tv size={22} aria-hidden="true" /><h2>TV Dashboard</h2><div className="settings-list"><div><span>Refresh</span><strong>30 seconds</strong></div><div><span>Board</span><strong>New, In Progress, Pending, Verify</strong></div></div></section>
         <section className="section-panel settings-card"><Database size={22} aria-hidden="true" /><h2>Database</h2><div className="settings-list"><div><span>Primary</span><strong>SQLite server database</strong></div><div><span>Secondary</span><strong>Google Sheet outbox sync</strong></div></div></section>
         <section className="section-panel settings-card"><RadioTower size={22} aria-hidden="true" /><h2>Factory Display</h2><div className="toggle-list"><label><input type="checkbox" checked readOnly />Auto-refresh board</label><label><input type="checkbox" checked readOnly />High contrast status colors</label></div></section>
-      </div>
+      </div> : null}
     </section>
   );
 }

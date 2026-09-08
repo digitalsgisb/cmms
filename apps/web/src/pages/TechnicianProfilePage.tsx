@@ -1,6 +1,7 @@
 import { BellRing, ClipboardCheck, LogOut, Smartphone, UserRound, Wifi } from "lucide-react";
 import { PwaInstallButton } from "../components/PwaInstallButton";
 import { useCurrentUser } from "../state/UserContext";
+import { PlantSelector } from "../components/PlantSelector";
 
 function initialsFor(name: string) {
   return name
@@ -45,6 +46,7 @@ export function TechnicianProfilePage() {
       </section>
 
       <div className="technician-profile-grid">
+        {currentUser.plantAccess === "both" ? <section className="section-panel settings-card"><UserRound size={22} aria-hidden="true" /><h2>Plant view</h2><p>Choose the plant whose jobs, parts and PM assignments you want to use.</p><PlantSelector /></section> : null}
         <section className="section-panel settings-card">
           <ClipboardCheck size={22} aria-hidden="true" />
           <h2>Daily Focus</h2>
