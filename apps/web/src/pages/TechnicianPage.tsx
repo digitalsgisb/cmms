@@ -438,7 +438,7 @@ export function TechnicianPage() {
       ) : null}
       <div className="page-title-row">
         <div>
-          <p className="eyebrow">Mobile-first</p>
+          <p className="eyebrow">Technician Workspace</p>
           <h1>{technicianTeamForUser(currentUser || { role: "technician", department: "Maintenance" }) === "kaizen" ? "Kaizen Jobs" : "Maintenance Jobs"}</h1>
         </div>
       </div>
