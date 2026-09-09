@@ -1,4 +1,4 @@
-import { AlertTriangle, BellRing, CheckCircle2, ChevronRight, Clock3, History, ImagePlus, PackageOpen, ShieldCheck, UsersRound, Wrench } from "lucide-react";
+import { BellRing, CheckCircle2, ChevronRight, ImagePlus, PackageOpen, ShieldCheck, UsersRound, Wrench } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent, PointerEvent } from "react";
 import { createPortal } from "react-dom";
@@ -58,8 +58,10 @@ export function TechnicianPage() {
   const [resolveFiles, setResolveFiles] = useState<FileList | null>(null);
   const [resolveError, setResolveError] = useState("");
   const [liveArrival, setLiveArrival] = useState<{ id: string; number: string; title: string } | null>(null);
+  const [activeQueueTab, setActiveQueueTab] = useState<"new" | "mine" | "team">("new");
   const workOrdersRef = useRef<WorkOrder[]>([]);
   const hasLoadedWorkOrdersRef = useRef(false);
+  const hasSelectedInitialQueueTabRef = useRef(false);
   const liveArrivalTimerRef = useRef<number | null>(null);
 
   function showLiveArrival(workOrder: WorkOrder) {
@@ -128,18 +130,16 @@ export function TechnicianPage() {
     () => jobs.filter((workOrder) => Boolean(workOrder.assignedToId) && workOrder.assignedToId !== currentUser?.id && !["resolved", "closed", "cancelled"].includes(workOrder.status)),
     [currentUser?.id, jobs]
   );
-  const recentHistory = useMemo(
-    () => workOrders.filter((workOrder) => ["resolved", "closed"].includes(workOrder.status)).slice(0, 4),
-    [workOrders]
+  const currentJob = useMemo(
+    () => [...myActiveJobs].sort((a, b) => Number(b.status === "in_progress") - Number(a.status === "in_progress") || b.updatedAt.localeCompare(a.updatedAt))[0],
+    [myActiveJobs]
   );
-  const queueCounts = useMemo(() => {
-    return {
-      newJobs: availableJobs.length,
-      assigned: myActiveJobs.length,
-      repairing: [...myActiveJobs, ...teamActiveJobs].filter((workOrder) => workOrder.status === "in_progress").length,
-      waitingParts: [...myActiveJobs, ...teamActiveJobs].filter((workOrder) => workOrder.status === "pending_material").length
-    };
-  }, [availableJobs, myActiveJobs, teamActiveJobs]);
+
+  useEffect(() => {
+    if (!workOrdersReady || hasSelectedInitialQueueTabRef.current) return;
+    setActiveQueueTab(myActiveJobs.length > 0 ? "mine" : "new");
+    hasSelectedInitialQueueTabRef.current = true;
+  }, [myActiveJobs.length, workOrdersReady]);
 
   if (currentUser?.role === "requester") {
     return <Navigate to="/work-orders" replace />;
@@ -188,6 +188,7 @@ export function TechnicianPage() {
       const scrollY = window.scrollY;
       vibrateAccepted();
       setWorkOrders((current) => promoteWorkOrder(current, updatedWorkOrder));
+      setActiveQueueTab("mine");
       markRecentlyUpdated(updatedWorkOrder.id);
       markRecentlyClaimed(updatedWorkOrder.id);
       restoreScroll(scrollX, scrollY);
@@ -407,51 +408,33 @@ export function TechnicianPage() {
         <span className="technician-live-version"><i />Live Sync R5</span>
       </div>
 
-      <div className="technician-focus-strip">
-        <article>
-          <AlertTriangle size={18} aria-hidden="true" />
-          <span>New</span>
-          <strong>{queueCounts.newJobs}</strong>
-        </article>
-        <article>
-          <ShieldCheck size={18} aria-hidden="true" />
-          <span>Mine</span>
-          <strong>{queueCounts.assigned}</strong>
-        </article>
-        <article>
-          <Wrench size={18} aria-hidden="true" />
-          <span>Repairing</span>
-          <strong>{queueCounts.repairing}</strong>
-        </article>
-        <article>
-          <PackageOpen size={18} aria-hidden="true" />
-          <span>Parts</span>
-          <strong>{queueCounts.waitingParts}</strong>
-        </article>
-      </div>
-
       {queueError ? <p className="error-line">{queueError}</p> : null}
 
-      {myActiveJobs.length > 0 ? (
-        <section className="technician-job-section technician-current-section">
-          <div className="technician-section-heading"><div><p className="eyebrow">Do not lose focus</p><h2>My Current Work</h2></div><span>{myActiveJobs.length} active</span></div>
-          <div className="technician-list">{myActiveJobs.map((workOrder) => renderJobCard(workOrder, "mine"))}</div>
-        </section>
+      {currentJob ? (
+        <Link className={`technician-current-job-banner technician-status-${currentJob.status}`} to={`/work-orders/${currentJob.id}`}>
+          <span className="technician-current-job-icon"><Wrench size={21} /></span>
+          <span><small>My current responsibility</small><strong>{currentJob.number} · {currentJob.title}</strong><em>{currentJob.location} · {currentJob.machineName || currentJob.assetName}</em></span>
+          <span><StatusBadge status={currentJob.status} /><ChevronRight size={18} /></span>
+        </Link>
       ) : null}
 
-      <section className="technician-job-section technician-open-section">
-        <div className="technician-section-heading"><div><p className="eyebrow">Priority queue</p><h2>New Work Orders</h2></div><span>{availableJobs.length} available</span></div>
-        {availableJobs.length > 0 ? <div className="technician-list">{availableJobs.map((workOrder) => renderJobCard(workOrder, "available"))}</div> : <EmptyState icon={Wrench} title="No new jobs" text="New eligible work orders will appear here." />}
-      </section>
+      <div className="technician-queue-tabs" role="tablist" aria-label="Job queues">
+        <button type="button" role="tab" aria-selected={activeQueueTab === "new"} className={activeQueueTab === "new" ? "active" : ""} onClick={() => setActiveQueueTab("new")}><span>New Jobs</span><strong>{availableJobs.length}</strong></button>
+        <button type="button" role="tab" aria-selected={activeQueueTab === "mine"} className={activeQueueTab === "mine" ? "active" : ""} onClick={() => setActiveQueueTab("mine")}><span>My Jobs</span><strong>{myActiveJobs.length}</strong></button>
+        <button type="button" role="tab" aria-selected={activeQueueTab === "team"} className={activeQueueTab === "team" ? "active" : ""} onClick={() => setActiveQueueTab("team")}><span>Team Status</span><strong>{teamActiveJobs.length}</strong></button>
+      </div>
 
-      <section className="technician-job-section">
-        <div className="technician-section-heading"><div><p className="eyebrow">Live visibility</p><h2>Team Activity</h2></div><span>{teamActiveJobs.length} active</span></div>
-        {teamActiveJobs.length > 0 ? <div className="technician-list">{teamActiveJobs.map((workOrder) => renderJobCard(workOrder, "team"))}</div> : <p className="quiet-panel">No other technician is working on an active job.</p>}
-      </section>
-
-      <section className="technician-job-section technician-history-preview">
-        <div className="technician-section-heading"><div><p className="eyebrow">Shared record</p><h2>Recently Completed</h2></div><Link to="/technician/history"><History size={16} /> View all</Link></div>
-        {recentHistory.length > 0 ? <div className="technician-history-list">{recentHistory.map((workOrder) => <Link key={workOrder.id} to={`/work-orders/${workOrder.id}`}><span><strong>{workOrder.number}</strong><small>{workOrder.title}</small></span><span><StatusBadge status={workOrder.status} /><time><Clock3 size={12} />{formatDateTime(workOrder.updatedAt)}</time></span></Link>)}</div> : <p className="quiet-panel">Completed work from the team will appear here.</p>}
+      <section className="technician-job-section technician-tabbed-queue" role="tabpanel">
+        <div className="technician-section-heading">
+          <div><p className="eyebrow">{activeQueueTab === "new" ? "Priority queue" : activeQueueTab === "mine" ? "My responsibility" : "Live visibility"}</p><h2>{activeQueueTab === "new" ? "New Work Orders" : activeQueueTab === "mine" ? "My Active Jobs" : "Team Activity"}</h2></div>
+        </div>
+        {activeQueueTab === "new" ? (
+          availableJobs.length > 0 ? <div className="technician-list">{availableJobs.map((workOrder) => renderJobCard(workOrder, "available"))}</div> : <EmptyState icon={Wrench} title="No new jobs" text="New eligible work orders will appear here." />
+        ) : activeQueueTab === "mine" ? (
+          myActiveJobs.length > 0 ? <div className="technician-list">{myActiveJobs.map((workOrder) => renderJobCard(workOrder, "mine"))}</div> : <EmptyState icon={Wrench} title="No jobs assigned to you" text="Open New Jobs when you are ready to accept work." />
+        ) : teamActiveJobs.length > 0 ? (
+          <div className="technician-list">{teamActiveJobs.map((workOrder) => renderJobCard(workOrder, "team"))}</div>
+        ) : <EmptyState icon={UsersRound} title="No team activity" text="No other technician is working on an active job." />}
       </section>
 
       {resolveTarget ? createPortal(

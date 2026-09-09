@@ -7,7 +7,6 @@ import {
   ClipboardCheck,
   Factory,
   FolderKanban,
-  History,
   LayoutDashboard,
   LogOut,
   LockKeyhole,
@@ -34,14 +33,12 @@ const navItems = [
   { to: "/settings", label: "Settings", icon: Settings }
 ];
 
-const technicianTabs = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
+const technicianTabs: Array<{ to: string; label: string; icon: typeof LayoutDashboard; locked?: boolean }> = [
+  { to: "/", label: "Home", icon: LayoutDashboard },
   { to: "/technician", label: "Jobs", icon: ClipboardCheck },
   { to: "/technician/projects", label: "Projects", icon: FolderKanban },
   { to: "/spare-parts/scanner", label: "Parts", icon: Package },
-  { to: "/preventive-maintenance", label: "PM", icon: ShieldCheck, locked: false },
-  { to: "/technician/history", label: "History", icon: History, desktopOnly: true },
-  { to: "/profile", label: "Profile", icon: Settings, desktopOnly: true }
+  { to: "/technician/more", label: "More", icon: Menu }
 ];
 
 function isTechnicianTabActive(tabPath: string, pathname: string) {
@@ -50,6 +47,9 @@ function isTechnicianTabActive(tabPath: string, pathname: string) {
   }
   if (tabPath === "/technician") {
     return pathname === "/technician" || pathname.startsWith("/work-orders");
+  }
+  if (tabPath === "/technician/more") {
+    return pathname === "/technician/more" || pathname.startsWith("/technician/history") || pathname.startsWith("/preventive-maintenance") || pathname.startsWith("/profile");
   }
 
   return pathname.startsWith(tabPath);
@@ -111,6 +111,7 @@ export function Layout() {
       { match: "/work-orders", label: "Work Orders" },
       { match: "/technician/projects", label: "Projects" },
       { match: "/technician/history", label: "History" },
+      { match: "/technician/more", label: "More" },
       { match: "/technician", label: "Technician" },
       { match: "/assets", label: "Assets" },
       { match: "/spare-parts/setup", label: "Sheet Setup" },
@@ -275,7 +276,7 @@ export function Layout() {
             const active = isTechnicianTabActive(item.to, location.pathname);
             if (item.locked) {
               return (
-                <span key={item.to} className={`technician-tab locked ${item.desktopOnly ? "desktop-only" : ""}`} aria-disabled="true" title="Feature in development">
+                <span key={item.to} className="technician-tab locked" aria-disabled="true" title="Feature in development">
                   <item.icon size={20} aria-hidden="true" />
                   <span>{item.label}</span>
                   <LockKeyhole className="nav-lock" size={11} aria-hidden="true" />
@@ -283,7 +284,7 @@ export function Layout() {
               );
             }
             return (
-              <NavLink key={item.to} to={item.to} className={`technician-tab ${active ? "active" : ""} ${item.desktopOnly ? "desktop-only" : ""}`}>
+              <NavLink key={item.to} to={item.to} className={`technician-tab ${active ? "active" : ""}`}>
                 <item.icon size={20} aria-hidden="true" />
                 <span>{item.label}</span>
               </NavLink>

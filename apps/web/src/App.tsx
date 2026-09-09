@@ -15,6 +15,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { SparePartsPage } from "./pages/SparePartsPage";
 import { TechnicianPage } from "./pages/TechnicianPage";
 import { TechnicianHistoryPage } from "./pages/TechnicianHistoryPage";
+import { TechnicianMorePage } from "./pages/TechnicianMorePage";
 import { TechnicianProjectsPage } from "./pages/TechnicianProjectsPage";
 import { TechnicianProfilePage } from "./pages/TechnicianProfilePage";
 import { TvDashboardPage } from "./pages/TvDashboardPage";
@@ -50,6 +51,7 @@ export function App() {
         <Route path="/technician" element={<TechnicianPage />} />
         <Route path="/technician/projects" element={<TechnicianProjectsPage />} />
         <Route path="/technician/history" element={<TechnicianHistoryPage />} />
+        <Route path="/technician/more" element={<TechnicianMorePage />} />
         <Route path="/assets" element={<RestrictedFeature name="Assets"><AssetsPage /></RestrictedFeature>} />
         <Route path="/spare-parts" element={<SparePartsPage />} />
         <Route path="/spare-parts/inventory" element={<SparePartsPage />} />
