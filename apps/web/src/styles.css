@@ -2216,7 +2216,7 @@ button:disabled {
 
 .spare-monitor-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -4743,7 +4743,7 @@ tbody tr:hover {
   position: relative;
   isolation: isolate;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
   border: 1px solid rgba(127, 17, 27, .09);
   border-radius: 12px;
