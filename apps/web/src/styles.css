@@ -4716,10 +4716,15 @@ tbody tr:hover {
 
 .quick-actions {
   display: grid;
+  width: 100%;
+  min-width: 0;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
+  overflow: hidden;
   animation: technicianActionsSwap 380ms cubic-bezier(.22, 1, .36, 1) both;
 }
+
+.quick-actions > button { width: 100%; min-width: 0; max-width: 100%; }
 
 .status-action-stack { animation: technicianActionsSwap 380ms cubic-bezier(.22, 1, .36, 1) both; }
 
@@ -4841,19 +4846,21 @@ tbody tr:hover {
 .work-order-command-copy { min-width: 0; flex: 1 1 auto; }
 .technician-work-order-command {
   border-color: rgba(255, 255, 255, .2);
+  background-color: #7f1111;
+  background-image: linear-gradient(125deg, rgba(0, 0, 0, .24), rgba(0, 0, 0, .02) 42%, rgba(255, 255, 255, .17) 68%, rgba(0, 0, 0, .16));
   background-size: 220% 220%;
   box-shadow: 0 18px 44px rgba(30, 23, 29, .22);
   animation: technicianCardGradient 5.2s ease-in-out infinite;
-  transition: background-image 100ms linear, box-shadow 180ms ease;
+  transition: background-color 560ms cubic-bezier(.2, .75, .25, 1), box-shadow 240ms ease;
 }
-.technician-work-order-command.technician-status-open { background-image: linear-gradient(125deg, #073b4c, #087486 42%, #0b9398 66%, #06475a); }
-.technician-work-order-command.technician-status-acknowledged { background-image: linear-gradient(125deg, #5d3600, #a46612 42%, #d29b32 66%, #744309); }
-.technician-work-order-command.technician-status-in_progress { background-image: linear-gradient(125deg, #064e3b, #087f6b 40%, #0b8390 67%, #075a55); }
-.technician-work-order-command.technician-status-pending_material { background-image: linear-gradient(125deg, #70260e, #bd3c0a 42%, #b56808 68%, #70310b); }
-.technician-work-order-command.technician-status-returned { background-image: linear-gradient(125deg, #641024, #b41638 43%, #8e1230 68%, #55101f); }
+.technician-work-order-command.technician-status-open { background-color: #087786; }
+.technician-work-order-command.technician-status-acknowledged { background-color: #a96e17; }
+.technician-work-order-command.technician-status-in_progress { background-color: #087b73; }
+.technician-work-order-command.technician-status-pending_material { background-color: #b94b0f; }
+.technician-work-order-command.technician-status-returned { background-color: #9e1938; }
 .technician-work-order-command.technician-status-resolved,
-.technician-work-order-command.technician-status-closed { background-image: linear-gradient(125deg, #124827, #147a3d 42%, #218d55 68%, #13552e); }
-.technician-work-order-command.technician-status-cancelled { background-image: linear-gradient(125deg, #312e35, #5d3540 46%, #783342 70%, #2f2930); }
+.technician-work-order-command.technician-status-closed { background-color: #187c45; }
+.technician-work-order-command.technician-status-cancelled { background-color: #563943; }
 
 .technician-command-summary {
   display: grid;
@@ -4939,20 +4946,21 @@ tbody tr:hover {
   overflow: hidden;
   border-color: rgba(255, 255, 255, .2);
   color: #fff;
-  background-color: #073b4c;
+  background-color: #087786;
+  background-image: linear-gradient(125deg, rgba(0, 0, 0, .24), rgba(0, 0, 0, .02) 40%, rgba(255, 255, 255, .17) 67%, rgba(0, 0, 0, .16));
   background-size: 230% 230%;
   box-shadow: 0 15px 34px rgba(23, 35, 41, .2);
   animation: technicianCardGradient 4.8s ease-in-out infinite;
-  transition: color 120ms linear, border-color 120ms linear, box-shadow 180ms ease, transform 360ms cubic-bezier(.22, 1, .36, 1);
+  transition: background-color 560ms cubic-bezier(.2, .75, .25, 1), color 180ms linear, border-color 180ms linear, box-shadow 240ms ease, transform 360ms cubic-bezier(.22, 1, .36, 1);
 }
-.technician-card.technician-status-open { background-image: linear-gradient(125deg, #073b4c, #087486 40%, #0b9398 66%, #06475a); }
-.technician-card.technician-status-acknowledged { background-image: linear-gradient(125deg, #5d3600, #a46612 40%, #d29b32 66%, #744309); }
-.technician-card.technician-status-in_progress { background-image: linear-gradient(125deg, #064e3b, #087f6b 39%, #0b8390 66%, #075a55); }
-.technician-card.technician-status-pending_material { background-image: linear-gradient(125deg, #70260e, #bd3c0a 41%, #b56808 68%, #70310b); }
-.technician-card.technician-status-returned { background-image: linear-gradient(125deg, #641024, #b41638 42%, #8e1230 68%, #55101f); }
+.technician-card.technician-status-open { background-color: #087786; }
+.technician-card.technician-status-acknowledged { background-color: #a96e17; }
+.technician-card.technician-status-in_progress { background-color: #087b73; }
+.technician-card.technician-status-pending_material { background-color: #b94b0f; }
+.technician-card.technician-status-returned { background-color: #9e1938; }
 .technician-card.technician-status-resolved,
-.technician-card.technician-status-closed { background-image: linear-gradient(125deg, #124827, #147a3d 41%, #218d55 68%, #13552e); }
-.technician-card.technician-status-cancelled { background-image: linear-gradient(125deg, #312e35, #5d3540 45%, #783342 70%, #2f2930); }
+.technician-card.technician-status-closed { background-color: #187c45; }
+.technician-card.technician-status-cancelled { background-color: #563943; }
 .technician-card[class*="technician-status-"] h2,
 .technician-card[class*="technician-status-"] p,
 .technician-card[class*="technician-status-"] .card-topline > strong,
@@ -4971,26 +4979,6 @@ tbody tr:hover {
   animation: technicianStatusLeave 500ms cubic-bezier(.4, 0, .2, 1) both, technicianCardGradient 4.8s ease-in-out infinite;
 }
 
-.technician-status-transition {
-  position: absolute;
-  z-index: 0;
-  inset: 0;
-  display: block;
-  border-radius: inherit;
-  pointer-events: none;
-  background-size: 230% 230%;
-  animation: technicianStatusCrossfade 560ms cubic-bezier(.2, .75, .25, 1) both;
-}
-.technician-card > :not(.technician-status-transition),
-.technician-work-order-command > :not(.technician-status-transition) { position: relative; z-index: 1; }
-.technician-transition-from-open { background-image: linear-gradient(125deg, #073b4c, #087486 40%, #0b9398 66%, #06475a); }
-.technician-transition-from-acknowledged { background-image: linear-gradient(125deg, #5d3600, #a46612 40%, #d29b32 66%, #744309); }
-.technician-transition-from-in_progress { background-image: linear-gradient(125deg, #064e3b, #087f6b 39%, #0b8390 66%, #075a55); }
-.technician-transition-from-pending_material { background-image: linear-gradient(125deg, #70260e, #bd3c0a 41%, #b56808 68%, #70310b); }
-.technician-transition-from-returned { background-image: linear-gradient(125deg, #641024, #b41638 42%, #8e1230 68%, #55101f); }
-.technician-transition-from-resolved,
-.technician-transition-from-closed { background-image: linear-gradient(125deg, #124827, #147a3d 41%, #218d55 68%, #13552e); }
-.technician-transition-from-cancelled { background-image: linear-gradient(125deg, #312e35, #5d3540 45%, #783342 70%, #2f2930); }
 
 .technician-history-list { display: grid; gap: 7px; }
 .technician-history-list > a {
@@ -5085,11 +5073,6 @@ tbody tr:hover {
   0% { filter: saturate(.82); transform: scale(.992); }
   55% { filter: saturate(1.22); transform: scale(1.006); }
   100% { filter: saturate(1); transform: scale(1); }
-}
-
-@keyframes technicianStatusCrossfade {
-  from { opacity: 1; filter: saturate(1); }
-  to { opacity: 0; filter: saturate(1.16); }
 }
 
 @keyframes technicianStatusLeave {

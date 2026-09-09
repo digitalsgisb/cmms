@@ -381,7 +381,6 @@ export function TechnicianPage() {
           }
         }}
       >
-        {pendingVisualStatus ? <span className={`technician-status-transition technician-transition-from-${workOrder.status}`} aria-hidden="true" /> : null}
         <div className="card-topline">
           <strong>{workOrder.number}</strong>
           <span className="technician-card-badges">
@@ -442,7 +441,6 @@ export function TechnicianPage() {
           <p className="eyebrow">Mobile-first</p>
           <h1>{technicianTeamForUser(currentUser || { role: "technician", department: "Maintenance" }) === "kaizen" ? "Kaizen Jobs" : "Maintenance Jobs"}</h1>
         </div>
-        <span className="technician-live-version"><i />Live Sync R5</span>
       </div>
 
       {queueError ? <p className="error-line">{queueError}</p> : null}
@@ -455,7 +453,10 @@ export function TechnicianPage() {
 
       <section key={activeQueueTab} className="technician-job-section technician-tabbed-queue" role="tabpanel">
         <div className="technician-section-heading">
-          <div><p className="eyebrow">{activeQueueTab === "new" ? "Priority queue" : activeQueueTab === "mine" ? "My responsibility" : "Live visibility"}</p><h2>{activeQueueTab === "new" ? "New Work Orders" : activeQueueTab === "mine" ? "My Active Jobs" : "Team Activity"}</h2></div>
+          <div>
+            {activeQueueTab !== "mine" ? <p className="eyebrow">{activeQueueTab === "new" ? "Priority queue" : "Live visibility"}</p> : null}
+            <h2>{activeQueueTab === "new" ? "New Work Orders" : activeQueueTab === "mine" ? "My Active Job" : "Team Activity"}</h2>
+          </div>
         </div>
         {activeQueueTab === "new" ? (
           availableJobs.length > 0 ? <div className="technician-list">{availableJobs.map((workOrder) => renderJobCard(workOrder, "available"))}</div> : <EmptyState icon={Wrench} title="No new jobs" text="New eligible work orders will appear here." />

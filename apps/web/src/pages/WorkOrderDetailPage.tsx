@@ -347,7 +347,6 @@ export function WorkOrderDetailPage() {
   return (
     <section className={`page-stack ${isTechnician ? "technician-detail-page" : ""}`}>
       <div className={`work-order-command ${isTechnician ? `technician-work-order-command technician-status-${visualStatus}` : ""}`}>
-        {isTechnician && visualStatus !== detail.status ? <span className={`technician-status-transition technician-transition-from-${detail.status}`} aria-hidden="true" /> : null}
         <div className="work-order-command-copy">
           <p className="eyebrow">{detail.number}</p>
           <h1>{detail.title}</h1>
