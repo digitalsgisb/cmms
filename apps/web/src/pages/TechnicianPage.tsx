@@ -1,8 +1,8 @@
 import { BellRing, CheckCircle2, ChevronRight, ImagePlus, PackageOpen, ShieldCheck, UsersRound, Wrench } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent, KeyboardEvent, PointerEvent } from "react";
+import type { FormEvent, KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent } from "react";
 import { createPortal } from "react-dom";
-import { Link, Navigate } from "react-router-dom";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 import { technicianTeamForUser, workOrderTypeLabels } from "@sugi-cmms/shared";
 import type { User, WorkOrder, WorkOrderStatus } from "@sugi-cmms/shared";
 import { api } from "../api/client";
@@ -45,6 +45,7 @@ function sortAvailableJobs(a: WorkOrder, b: WorkOrder) {
 }
 
 export function TechnicianPage() {
+  const navigate = useNavigate();
   const { users, currentUser, workOrders: liveWorkOrders, workOrdersReady, refreshWorkOrders } = useCurrentUser();
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [busyId, setBusyId] = useState("");
@@ -137,9 +138,20 @@ export function TechnicianPage() {
 
   useEffect(() => {
     if (!workOrdersReady || hasSelectedInitialQueueTabRef.current) return;
-    setActiveQueueTab(myActiveJobs.length > 0 ? "mine" : "new");
+    const hasAssignedWork = liveWorkOrders.some((workOrder) =>
+      workOrder.type !== "project" &&
+      workOrder.assignedToId === currentUser?.id &&
+      !["resolved", "closed", "cancelled"].includes(workOrder.status)
+    );
+    setActiveQueueTab(hasAssignedWork ? "mine" : "new");
     hasSelectedInitialQueueTabRef.current = true;
-  }, [myActiveJobs.length, workOrdersReady]);
+  }, [currentUser?.id, liveWorkOrders, workOrdersReady]);
+
+  useEffect(() => {
+    const selectDefaultQueue = () => setActiveQueueTab(myActiveJobs.length > 0 ? "mine" : "new");
+    window.addEventListener("sugi:open-technician-jobs", selectDefaultQueue);
+    return () => window.removeEventListener("sugi:open-technician-jobs", selectDefaultQueue);
+  }, [myActiveJobs.length]);
 
   if (currentUser?.role === "requester") {
     return <Navigate to="/work-orders" replace />;
@@ -343,8 +355,26 @@ export function TechnicianPage() {
       recentlyClaimedId === workOrder.id ? "is-claimed" : ""
     ].filter(Boolean).join(" ");
 
+    const openFromCard = (event: ReactMouseEvent<HTMLElement>) => {
+      if ((event.target as HTMLElement).closest("a, button, input, textarea, select, label, [role='button']")) return;
+      navigate(`/work-orders/${workOrder.id}`);
+    };
+
     return (
-      <article className={cardClasses} key={workOrder.id}>
+      <article
+        className={cardClasses}
+        key={workOrder.id}
+        role="link"
+        tabIndex={0}
+        aria-label={`Open ${workOrder.number} details`}
+        onClick={openFromCard}
+        onKeyDown={(event) => {
+          if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+            event.preventDefault();
+            navigate(`/work-orders/${workOrder.id}`);
+          }
+        }}
+      >
         <div className="card-topline">
           <strong>{workOrder.number}</strong>
           <span className="technician-card-badges">
@@ -418,13 +448,13 @@ export function TechnicianPage() {
         </Link>
       ) : null}
 
-      <div className="technician-queue-tabs" role="tablist" aria-label="Job queues">
+      <div className={`technician-queue-tabs active-${activeQueueTab}`} role="tablist" aria-label="Job queues">
         <button type="button" role="tab" aria-selected={activeQueueTab === "new"} className={activeQueueTab === "new" ? "active" : ""} onClick={() => setActiveQueueTab("new")}><span>New Jobs</span><strong>{availableJobs.length}</strong></button>
         <button type="button" role="tab" aria-selected={activeQueueTab === "mine"} className={activeQueueTab === "mine" ? "active" : ""} onClick={() => setActiveQueueTab("mine")}><span>My Jobs</span><strong>{myActiveJobs.length}</strong></button>
         <button type="button" role="tab" aria-selected={activeQueueTab === "team"} className={activeQueueTab === "team" ? "active" : ""} onClick={() => setActiveQueueTab("team")}><span>Team Status</span><strong>{teamActiveJobs.length}</strong></button>
       </div>
 
-      <section className="technician-job-section technician-tabbed-queue" role="tabpanel">
+      <section key={activeQueueTab} className="technician-job-section technician-tabbed-queue" role="tabpanel">
         <div className="technician-section-heading">
           <div><p className="eyebrow">{activeQueueTab === "new" ? "Priority queue" : activeQueueTab === "mine" ? "My responsibility" : "Live visibility"}</p><h2>{activeQueueTab === "new" ? "New Work Orders" : activeQueueTab === "mine" ? "My Active Jobs" : "Team Activity"}</h2></div>
         </div>

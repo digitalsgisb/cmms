@@ -284,7 +284,14 @@ export function Layout() {
               );
             }
             return (
-              <NavLink key={item.to} to={item.to} className={`technician-tab ${active ? "active" : ""}`}>
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={`technician-tab ${active ? "active" : ""}`}
+                onClick={() => {
+                  if (item.to === "/technician") window.dispatchEvent(new CustomEvent("sugi:open-technician-jobs"));
+                }}
+              >
                 <item.icon size={20} aria-hidden="true" />
                 <span>{item.label}</span>
               </NavLink>

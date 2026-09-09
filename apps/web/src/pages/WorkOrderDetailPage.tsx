@@ -49,6 +49,7 @@ export function WorkOrderDetailPage() {
   const [timerNow, setTimerNow] = useState(() => new Date().toISOString());
   const [guestTrackingPath, setGuestTrackingPath] = useState("");
   const [guestLinkCopied, setGuestLinkCopied] = useState(false);
+  const [showTechnicianTools, setShowTechnicianTools] = useState(false);
 
   async function loadDetail() {
     if (!id) {
@@ -324,7 +325,10 @@ export function WorkOrderDetailPage() {
   const isAssignedToCurrentUser = currentUser ? detail.assignedToId === currentUser.id : false;
   const isTechnician = currentUser?.role === "technician";
   const canClaimOpen = detail.status === "open" && !detail.assignedToId && detail.type !== "project";
-  const canUseMaintenanceActions = canMaintain && (!isTechnician || isAssignedToCurrentUser || canClaimOpen);
+  const canUseMaintenanceActions =
+    canMaintain &&
+    !["resolved", "closed", "cancelled"].includes(detail.status) &&
+    (!isTechnician || isAssignedToCurrentUser || canClaimOpen);
   const canStartRepair =
     ["acknowledged", "returned", "pending_material"].includes(detail.status) ||
     (detail.status === "open" && (currentUser?.role !== "technician" || isAssignedToCurrentUser));
@@ -338,7 +342,7 @@ export function WorkOrderDetailPage() {
   }
 
   return (
-    <section className="page-stack">
+    <section className={`page-stack ${isTechnician ? "technician-detail-page" : ""}`}>
       <div className="work-order-command">
         <div>
           <p className="eyebrow">{detail.number}</p>
@@ -351,7 +355,7 @@ export function WorkOrderDetailPage() {
           </div>
         </div>
         <div className="work-order-command-actions">
-          <Link className="secondary-action" to="/work-orders">
+          <Link className="secondary-action" to={isTechnician ? "/technician" : "/work-orders"}>
             <ArrowLeft size={17} aria-hidden="true" />
             Back
           </Link>
@@ -370,17 +374,21 @@ export function WorkOrderDetailPage() {
         </div>
       </div>
 
-      <div className="workflow-strip">
-        {displayWorkflow.map((step, index) => (
-          <div
-            key={step}
-            className={`workflow-step ${index <= workflowIndex ? "done" : ""} ${step === detail.status ? "current" : ""}`}
-          >
-            <span>{index + 1}</span>
-            <strong>{workOrderStatusLabels[step]}</strong>
-          </div>
-        ))}
-      </div>
+      {isTechnician ? (
+        <div className={`technician-detail-status technician-status-${detail.status}`}>
+          <span><Wrench size={19} /></span>
+          <div><small>Current job status</small><strong>{workOrderStatusLabels[detail.status]}</strong></div>
+          <div><small>Assigned technician</small><strong>{detail.assignedTo?.name || "Waiting for acceptance"}</strong></div>
+        </div>
+      ) : (
+        <div className="workflow-strip">
+          {displayWorkflow.map((step, index) => (
+            <div key={step} className={`workflow-step ${index <= workflowIndex ? "done" : ""} ${step === detail.status ? "current" : ""}`}>
+              <span>{index + 1}</span><strong>{workOrderStatusLabels[step]}</strong>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="timer-grid">
         <article className="timer-card primary">
@@ -388,7 +396,7 @@ export function WorkOrderDetailPage() {
           <span>Total open time</span>
           <strong>{formatDuration(createdAt, terminalAt || timerNow)}</strong>
         </article>
-        <article className="timer-card">
+        <article className="timer-card technician-secondary-timer">
           <Clock3 size={18} aria-hidden="true" />
           <span>Time to acknowledge</span>
           <strong>{acknowledgedAt ? formatDuration(createdAt, acknowledgedAt) : "Waiting"}</strong>
@@ -398,19 +406,19 @@ export function WorkOrderDetailPage() {
           <span>Repair duration</span>
           <strong>{startedAt ? formatDuration(startedAt, resolvedAt || terminalAt || timerNow) : "Not started"}</strong>
         </article>
-        <article className="timer-card">
+        <article className="timer-card technician-secondary-timer">
           <CheckCircle2 size={18} aria-hidden="true" />
           <span>Verification wait</span>
           <strong>{resolvedAt ? formatDuration(resolvedAt, closedAt || timerNow) : "Not ready"}</strong>
         </article>
       </div>
 
-      <div className="detail-layout">
+      <div className={`detail-layout ${isTechnician && canUseMaintenanceActions ? "technician-actions-first" : ""}`}>
         <div className="detail-main">
           <div className="section-panel detail-summary-panel">
             <div className="detail-heading">
               <div>
-                <h2>Work Order Brief</h2>
+                <h2>{isTechnician ? "Job Information" : "Work Order Brief"}</h2>
                 <span>{detail.number}</span>
               </div>
               <span>{formatDateTime(detail.createdAt)}</span>
@@ -433,20 +441,20 @@ export function WorkOrderDetailPage() {
                   <dt>Reported by</dt>
                   <dd>{detail.reportedByName}</dd>
                 </div>
-                <div>
+                <div className="technician-secondary-detail">
                   <dt>Reported by department</dt>
                   <dd>{detail.reportedByDepartment}</dd>
                 </div>
-                <div>
+                <div className="technician-secondary-detail">
                   <dt>Responsible department</dt>
                   <dd>{detail.responsibleDepartment}</dd>
                 </div>
-                <div>
+                <div className="technician-secondary-detail">
                   <dt>Work date</dt>
                   <dd>{formatDate(detail.workDate)}</dd>
                 </div>
                 {detail.responsibleDepartment === "Production" && detail.shiftGroup !== "N/A" ? (
-                  <div>
+                  <div className="technician-secondary-detail">
                     <dt>Shift</dt>
                     <dd>{detail.shiftGroup}</dd>
                   </div>
@@ -459,7 +467,7 @@ export function WorkOrderDetailPage() {
                   <dt>Assigned</dt>
                   <dd>{detail.assignedTo?.name || "Unassigned"}</dd>
                 </div>
-                <div>
+                <div className="technician-secondary-detail">
                   <dt>Requester account</dt>
                   <dd>{detail.requester.name}</dd>
                 </div>
@@ -473,8 +481,8 @@ export function WorkOrderDetailPage() {
           <div className="section-panel">
             <div className="section-header">
               <div>
-                <h2>Timeline</h2>
-                <span>{detail.activities.length} updates</span>
+                <h2>{isTechnician ? "Recent Activity" : "Timeline"}</h2>
+                <span>{isTechnician && detail.activities.length > 3 ? `Latest 3 of ${detail.activities.length}` : `${detail.activities.length} updates`}</span>
               </div>
             </div>
             <div className="timeline">
@@ -654,7 +662,7 @@ export function WorkOrderDetailPage() {
             </div>
           ) : null}
 
-          {canMaintain ? (
+          {canManageWorkOrder ? (
             <form className="section-panel action-panel" onSubmit={assign}>
               <h2>Assignment</h2>
               <select value={assignedToId} onChange={(event) => setAssignedToId(event.target.value)}>
@@ -671,30 +679,41 @@ export function WorkOrderDetailPage() {
             </form>
           ) : null}
 
-          <form className="section-panel action-panel" onSubmit={addComment}>
-            <h2>Comment</h2>
-            <textarea value={comment} onChange={(event) => setComment(event.target.value)} rows={3} placeholder="Add comment" />
-            <button type="submit" disabled={!comment.trim()}>
-              <MessageSquare size={17} aria-hidden="true" />
-              Comment
+          {isTechnician ? (
+            <button className="technician-detail-tools-toggle" type="button" aria-expanded={showTechnicianTools} onClick={() => setShowTechnicianTools((visible) => !visible)}>
+              <MessageSquare size={18} />
+              <span><strong>{showTechnicianTools ? "Hide extra tools" : "Add note or photo"}</strong><small>Optional updates and progress evidence</small></span>
             </button>
-          </form>
+          ) : null}
 
-          <form className="section-panel action-panel" onSubmit={upload}>
-            <h2>Upload Images</h2>
-            <select value={uploadKind} onChange={(event) => setUploadKind(event.target.value as WorkOrderAttachment["kind"])}>
-              <option value="general">General</option>
-              <option value="issue">Issue</option>
-              <option value="before">Before</option>
-              <option value="progress">Progress</option>
-              <option value="after">After</option>
-              <option value="return_evidence">Return evidence</option>
-            </select>
-            <input type="file" accept="image/*" multiple onChange={(event) => setFiles(event.target.files)} />
-            <ActionButton type="submit" icon={ImagePlus} tone="upload" busy={busy && busyAction === "upload"} busyLabel="Uploading..." disabled={actionLocked || !files || files.length === 0}>
-              Upload
-            </ActionButton>
-          </form>
+          {!isTechnician || showTechnicianTools ? (
+            <div className="technician-detail-tools-panel">
+              <form className="section-panel action-panel" onSubmit={addComment}>
+                <h2>Comment</h2>
+                <textarea value={comment} onChange={(event) => setComment(event.target.value)} rows={3} placeholder="Add comment" />
+                <button type="submit" disabled={!comment.trim()}>
+                  <MessageSquare size={17} aria-hidden="true" />
+                  Comment
+                </button>
+              </form>
+
+              <form className="section-panel action-panel" onSubmit={upload}>
+                <h2>Upload Images</h2>
+                <select value={uploadKind} onChange={(event) => setUploadKind(event.target.value as WorkOrderAttachment["kind"])}>
+                  <option value="general">General</option>
+                  <option value="issue">Issue</option>
+                  <option value="before">Before</option>
+                  <option value="progress">Progress</option>
+                  <option value="after">After</option>
+                  <option value="return_evidence">Return evidence</option>
+                </select>
+                <input type="file" accept="image/*" multiple onChange={(event) => setFiles(event.target.files)} />
+                <ActionButton type="submit" icon={ImagePlus} tone="upload" busy={busy && busyAction === "upload"} busyLabel="Uploading..." disabled={actionLocked || !files || files.length === 0}>
+                  Upload
+                </ActionButton>
+              </form>
+            </div>
+          ) : null}
         </aside>
       </div>
 
