@@ -12,7 +12,7 @@ import { EmptyState } from "../components/EmptyState";
 import { useCurrentUser } from "../state/UserContext";
 import { formatDateTime } from "../utils/format";
 
-const actionSettleMs = 620;
+const actionSettleMs = 500;
 
 function waitForActionMotion() {
   return new Promise((resolve) => window.setTimeout(resolve, actionSettleMs));
@@ -235,6 +235,7 @@ export function TechnicianPage() {
         assignedToId
       });
       setSubmitting(false);
+      await waitForActionMotion();
       const scrollX = window.scrollX;
       const scrollY = window.scrollY;
       if (document.activeElement instanceof HTMLElement && document.activeElement.classList.contains("motion-button")) {
@@ -355,7 +356,8 @@ export function TechnicianPage() {
       recentlyUpdatedId === workOrder.id ? "is-updated" : "",
       liveArrival?.id === workOrder.id ? "is-new-live" : "",
       recentlyClaimedId === workOrder.id ? "is-claimed" : "",
-      pendingVisualStatus ? "is-status-changing" : ""
+      pendingVisualStatus ? "is-status-changing" : "",
+      pendingVisualStatus && !submitting && ["resolved", "closed", "cancelled"].includes(pendingVisualStatus) ? "is-status-leaving" : ""
     ].filter(Boolean).join(" ");
 
     const openFromCard = (event: ReactMouseEvent<HTMLElement>) => {
@@ -379,6 +381,7 @@ export function TechnicianPage() {
           }
         }}
       >
+        {pendingVisualStatus ? <span className={`technician-status-transition technician-transition-from-${workOrder.status}`} aria-hidden="true" /> : null}
         <div className="card-topline">
           <strong>{workOrder.number}</strong>
           <span className="technician-card-badges">
@@ -403,7 +406,7 @@ export function TechnicianPage() {
             onAccept={() => claimWorkOrder(workOrder)}
           />
         ) : isMine ? (
-          <div className="quick-actions">
+          <div key={workOrder.status} className="quick-actions">
             {canStart ? (
               <ActionButton type="button" icon={Wrench} tone="start" busy={submitting && busyId === workOrder.id && busyAction === "in_progress"} busyLabel="Starting..." disabled={Boolean(busyId)} onClick={() => quickAction(workOrder, "in_progress", "Work started from technician queue.")}>Start</ActionButton>
             ) : null}

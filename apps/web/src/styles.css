@@ -1372,13 +1372,13 @@ button:disabled {
 }
 
 .motion-button:active:not(:disabled) {
-  transform: translateY(0) scale(0.985);
+  transform: translateY(0) scale(0.992);
 }
 
 .motion-button.is-loading {
   cursor: progress;
   opacity: 1;
-  transform: translateY(0) scale(0.992);
+  transform: translateY(0) scale(0.997);
   box-shadow:
     0 18px 34px var(--button-shadow-strong, rgba(127, 17, 27, 0.22)),
     inset 0 0 0 1px rgba(255, 255, 255, 0.18);
@@ -1392,25 +1392,25 @@ button:disabled {
 
 .motion-button.is-loading .button-face {
   opacity: 0;
-  filter: blur(7px);
-  transform: scale(0.62);
+  filter: blur(3px);
+  transform: scale(0.92);
 }
 
 .motion-button.is-loading .button-face-icon {
   opacity: 0;
-  transform: translateX(15px) scale(0.62);
+  transform: translateX(6px) scale(0.9);
 }
 
 .motion-button.is-loading .button-face-label {
   opacity: 0;
-  transform: translateX(-13px) scale(0.86);
+  transform: translateX(-5px) scale(0.96);
 }
 
 .motion-button.is-loading .button-progress {
   opacity: 1;
   filter: blur(0);
   transform: scale(1);
-  transition-delay: 110ms;
+  transition-delay: 70ms;
 }
 
 .motion-button.is-loading .button-progress svg {
@@ -1486,15 +1486,15 @@ button:disabled {
 }
 
 .motion-button.is-settling .button-face {
-  animation: buttonSeparate 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: buttonSeparate 440ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .motion-button.is-settling .button-face-icon {
-  animation: buttonIconSeparate 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: buttonIconSeparate 440ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .motion-button.is-settling .button-face-label {
-  animation: buttonLabelSeparate 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: buttonLabelSeparate 440ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .motion-button.is-settling .button-progress {
@@ -4718,7 +4718,10 @@ tbody tr:hover {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
+  animation: technicianActionsSwap 380ms cubic-bezier(.22, 1, .36, 1) both;
 }
+
+.status-action-stack { animation: technicianActionsSwap 380ms cubic-bezier(.22, 1, .36, 1) both; }
 
 .technician-card > a {
   color: var(--maroon);
@@ -4932,6 +4935,7 @@ tbody tr:hover {
 }
 
 .technician-card[class*="technician-status-"] {
+  isolation: isolate;
   overflow: hidden;
   border-color: rgba(255, 255, 255, .2);
   color: #fff;
@@ -4962,6 +4966,31 @@ tbody tr:hover {
 .technician-card[class*="technician-status-"].is-status-changing {
   animation: technicianStatusCommit 420ms cubic-bezier(.22, 1, .36, 1) both, technicianCardGradient 4.8s ease-in-out infinite;
 }
+.technician-card[class*="technician-status-"].is-status-leaving {
+  pointer-events: none;
+  animation: technicianStatusLeave 500ms cubic-bezier(.4, 0, .2, 1) both, technicianCardGradient 4.8s ease-in-out infinite;
+}
+
+.technician-status-transition {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  display: block;
+  border-radius: inherit;
+  pointer-events: none;
+  background-size: 230% 230%;
+  animation: technicianStatusCrossfade 560ms cubic-bezier(.2, .75, .25, 1) both;
+}
+.technician-card > :not(.technician-status-transition),
+.technician-work-order-command > :not(.technician-status-transition) { position: relative; z-index: 1; }
+.technician-transition-from-open { background-image: linear-gradient(125deg, #073b4c, #087486 40%, #0b9398 66%, #06475a); }
+.technician-transition-from-acknowledged { background-image: linear-gradient(125deg, #5d3600, #a46612 40%, #d29b32 66%, #744309); }
+.technician-transition-from-in_progress { background-image: linear-gradient(125deg, #064e3b, #087f6b 39%, #0b8390 66%, #075a55); }
+.technician-transition-from-pending_material { background-image: linear-gradient(125deg, #70260e, #bd3c0a 41%, #b56808 68%, #70310b); }
+.technician-transition-from-returned { background-image: linear-gradient(125deg, #641024, #b41638 42%, #8e1230 68%, #55101f); }
+.technician-transition-from-resolved,
+.technician-transition-from-closed { background-image: linear-gradient(125deg, #124827, #147a3d 41%, #218d55 68%, #13552e); }
+.technician-transition-from-cancelled { background-image: linear-gradient(125deg, #312e35, #5d3540 45%, #783342 70%, #2f2930); }
 
 .technician-history-list { display: grid; gap: 7px; }
 .technician-history-list > a {
@@ -5056,6 +5085,21 @@ tbody tr:hover {
   0% { filter: saturate(.82); transform: scale(.992); }
   55% { filter: saturate(1.22); transform: scale(1.006); }
   100% { filter: saturate(1); transform: scale(1); }
+}
+
+@keyframes technicianStatusCrossfade {
+  from { opacity: 1; filter: saturate(1); }
+  to { opacity: 0; filter: saturate(1.16); }
+}
+
+@keyframes technicianStatusLeave {
+  0%, 30% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(7px) scale(.985); }
+}
+
+@keyframes technicianActionsSwap {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes technicianQueueSwap {
@@ -6232,8 +6276,8 @@ tbody tr:hover {
 @keyframes buttonSeparate {
   from {
     opacity: 0;
-    filter: blur(7px);
-    transform: scale(0.62);
+    filter: blur(3px);
+    transform: scale(0.92);
   }
   to {
     opacity: 1;
@@ -6245,7 +6289,7 @@ tbody tr:hover {
 @keyframes buttonIconSeparate {
   from {
     opacity: 0;
-    transform: translateX(15px) scale(0.62);
+    transform: translateX(6px) scale(0.9);
   }
   to {
     opacity: 1;
@@ -6256,7 +6300,7 @@ tbody tr:hover {
 @keyframes buttonLabelSeparate {
   from {
     opacity: 0;
-    transform: translateX(-13px) scale(0.86);
+    transform: translateX(-5px) scale(0.96);
   }
   to {
     opacity: 1;
@@ -6272,8 +6316,8 @@ tbody tr:hover {
   }
   to {
     opacity: 0;
-    filter: blur(10px);
-    transform: scale(0.68);
+    filter: blur(4px);
+    transform: scale(0.9);
   }
 }
 

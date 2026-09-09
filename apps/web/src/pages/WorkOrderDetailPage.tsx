@@ -12,7 +12,7 @@ import { formatDate, formatDateTime, formatDuration, userName } from "../utils/f
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
 const workflowSteps: WorkOrderStatus[] = ["open", "acknowledged", "in_progress", "pending_material", "resolved", "closed"];
-const actionSettleMs = 620;
+const actionSettleMs = 500;
 
 function waitForActionMotion() {
   return new Promise((resolve) => window.setTimeout(resolve, actionSettleMs));
@@ -166,6 +166,7 @@ export function WorkOrderDetailPage() {
       }
       setNote("");
       setBusy(false);
+      await waitForActionMotion();
       mergeWorkOrder(updatedWorkOrder);
       void refreshDetailQuietly().catch(console.error);
     } finally {
@@ -346,6 +347,7 @@ export function WorkOrderDetailPage() {
   return (
     <section className={`page-stack ${isTechnician ? "technician-detail-page" : ""}`}>
       <div className={`work-order-command ${isTechnician ? `technician-work-order-command technician-status-${visualStatus}` : ""}`}>
+        {isTechnician && visualStatus !== detail.status ? <span className={`technician-status-transition technician-transition-from-${detail.status}`} aria-hidden="true" /> : null}
         <div className="work-order-command-copy">
           <p className="eyebrow">{detail.number}</p>
           <h1>{detail.title}</h1>
@@ -580,7 +582,7 @@ export function WorkOrderDetailPage() {
               <h2>Maintenance Actions</h2>
               <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={4} placeholder="Update note" />
 
-              <div className="button-stack">
+              <div key={detail.status} className="button-stack status-action-stack">
                 {detail.status === "open" && (!isTechnician || canClaimOpen) ? (
                   <ActionButton
                     type="button"

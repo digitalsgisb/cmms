@@ -39,7 +39,7 @@ export function ActionButton({
       return undefined;
     }
 
-    const timeout = window.setTimeout(() => setPhase("idle"), 560);
+    const timeout = window.setTimeout(() => setPhase("idle"), 460);
     return () => window.clearTimeout(timeout);
   }, [phase]);
 
