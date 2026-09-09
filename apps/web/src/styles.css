@@ -2216,7 +2216,7 @@ button:disabled {
 
 .spare-monitor-stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -4756,7 +4756,7 @@ tbody tr:hover {
   top: 6px;
   bottom: 6px;
   left: 6px;
-  width: calc((100% - 24px) / 3);
+  width: calc((100% - 30px) / 4);
   border: 1px solid rgba(127, 17, 27, .14);
   border-radius: 9px;
   content: "";
@@ -4768,6 +4768,7 @@ tbody tr:hover {
 .technician-queue-tabs.active-new::before { transform: translateX(0); }
 .technician-queue-tabs.active-mine::before { transform: translateX(calc(100% + 6px)); }
 .technician-queue-tabs.active-team::before { transform: translateX(calc(200% + 12px)); }
+.technician-queue-tabs.active-history::before { transform: translateX(calc(300% + 18px)); }
 .technician-queue-tabs button {
   position: relative;
   z-index: 1;
@@ -4790,6 +4791,7 @@ tbody tr:hover {
 .technician-queue-tabs button.active strong { color: #fff; background: var(--maroon); transform: scale(1.04); }
 .technician-queue-tabs button strong { transition: color 260ms ease, background 260ms ease, transform 360ms cubic-bezier(.22, 1, .36, 1); }
 .technician-tabbed-queue { min-height: 300px; animation: technicianQueueSwap 360ms cubic-bezier(.22, 1, .36, 1) both; }
+.technician-history-tab-content { display: grid; gap: 12px; }
 
 .technician-more-team { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 7px 10px; color: var(--maroon); background: rgba(127, 17, 27, .07); font-size: 11px; font-weight: 900; }
 .technician-more-grid { display: grid; gap: 10px; }
@@ -5152,6 +5154,8 @@ tbody tr:hover {
   .technician-history-meta { grid-column: 2; grid-row: auto; justify-items: start; }
   .technician-command-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .technician-command-summary strong { font-size: 12px; }
+  .technician-queue-tabs button { gap: 4px; padding: 7px 6px; font-size: 10px; }
+  .technician-queue-tabs button strong { min-width: 24px; width: 24px; height: 24px; font-size: 10px; }
 }
 
 .technician-profile-page {

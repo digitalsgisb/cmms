@@ -1,4 +1,4 @@
-import { ChevronRight, History, Package, ShieldCheck, UserRound } from "lucide-react";
+import { ChevronRight, Package, ShieldCheck, UserRound } from "lucide-react";
 import { Link, Navigate } from "react-router-dom";
 import { useCurrentUser } from "../state/UserContext";
 
@@ -9,13 +9,6 @@ const moreItems = [
     title: "Preventive Maintenance",
     description: "View scheduled PM work and complete assigned checklists.",
     tone: "pm"
-  },
-  {
-    to: "/technician/history",
-    icon: History,
-    title: "Work History",
-    description: "Review completed work from all technicians in your visible work streams.",
-    tone: "history"
   },
   {
     to: "/profile",

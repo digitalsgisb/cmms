@@ -1,4 +1,4 @@
-import { BellRing, CheckCircle2, ChevronRight, ImagePlus, PackageOpen, ShieldCheck, UsersRound, Wrench } from "lucide-react";
+import { BellRing, CheckCircle2, ChevronRight, History, ImagePlus, PackageOpen, Search, ShieldCheck, UsersRound, Wrench } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent } from "react";
 import { createPortal } from "react-dom";
@@ -59,7 +59,9 @@ export function TechnicianPage() {
   const [resolveFiles, setResolveFiles] = useState<FileList | null>(null);
   const [resolveError, setResolveError] = useState("");
   const [liveArrival, setLiveArrival] = useState<{ id: string; number: string; title: string } | null>(null);
-  const [activeQueueTab, setActiveQueueTab] = useState<"new" | "mine" | "team">("new");
+  const [activeQueueTab, setActiveQueueTab] = useState<"new" | "mine" | "team" | "history">("new");
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyType, setHistoryType] = useState<"all" | "maintenance" | "office" | "kaizen" | "project">("all");
   const workOrdersRef = useRef<WorkOrder[]>([]);
   const hasLoadedWorkOrdersRef = useRef(false);
   const hasSelectedInitialQueueTabRef = useRef(false);
@@ -131,6 +133,18 @@ export function TechnicianPage() {
     () => jobs.filter((workOrder) => Boolean(workOrder.assignedToId) && workOrder.assignedToId !== currentUser?.id && !["resolved", "closed", "cancelled"].includes(workOrder.status)),
     [currentUser?.id, jobs]
   );
+  const completedJobs = useMemo(
+    () => workOrders.filter((workOrder) => ["resolved", "closed"].includes(workOrder.status)),
+    [workOrders]
+  );
+  const filteredHistory = useMemo(() => {
+    const query = historySearch.trim().toLowerCase();
+    return completedJobs.filter((workOrder) => {
+      if (historyType !== "all" && workOrder.type !== historyType) return false;
+      const haystack = `${workOrder.number} ${workOrder.title} ${workOrder.issueDescription} ${workOrder.location} ${workOrder.machineName}`.toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [completedJobs, historySearch, historyType]);
   useEffect(() => {
     if (!workOrdersReady || hasSelectedInitialQueueTabRef.current) return;
     const hasAssignedWork = liveWorkOrders.some((workOrder) =>
@@ -449,22 +463,53 @@ export function TechnicianPage() {
         <button type="button" role="tab" aria-selected={activeQueueTab === "new"} className={activeQueueTab === "new" ? "active" : ""} onClick={() => setActiveQueueTab("new")}><span>New Jobs</span><strong>{availableJobs.length}</strong></button>
         <button type="button" role="tab" aria-selected={activeQueueTab === "mine"} className={activeQueueTab === "mine" ? "active" : ""} onClick={() => setActiveQueueTab("mine")}><span>My Jobs</span><strong>{myActiveJobs.length}</strong></button>
         <button type="button" role="tab" aria-selected={activeQueueTab === "team"} className={activeQueueTab === "team" ? "active" : ""} onClick={() => setActiveQueueTab("team")}><span>Team Status</span><strong>{teamActiveJobs.length}</strong></button>
+        <button type="button" role="tab" aria-selected={activeQueueTab === "history"} className={activeQueueTab === "history" ? "active" : ""} onClick={() => setActiveQueueTab("history")}><span>Work History</span><strong>{completedJobs.length}</strong></button>
       </div>
 
       <section key={activeQueueTab} className="technician-job-section technician-tabbed-queue" role="tabpanel">
         <div className="technician-section-heading">
           <div>
-            {activeQueueTab !== "mine" ? <p className="eyebrow">{activeQueueTab === "new" ? "Priority queue" : "Live visibility"}</p> : null}
-            <h2>{activeQueueTab === "new" ? "New Work Orders" : activeQueueTab === "mine" ? "My Active Job" : "Team Activity"}</h2>
+            {activeQueueTab !== "mine" ? <p className="eyebrow">{activeQueueTab === "new" ? "Priority queue" : activeQueueTab === "team" ? "Live visibility" : "Shared team record"}</p> : null}
+            <h2>{activeQueueTab === "new" ? "New Work Orders" : activeQueueTab === "mine" ? "My Active Job" : activeQueueTab === "team" ? "Team Activity" : "Work History"}</h2>
           </div>
         </div>
         {activeQueueTab === "new" ? (
           availableJobs.length > 0 ? <div className="technician-list">{availableJobs.map((workOrder) => renderJobCard(workOrder, "available"))}</div> : <EmptyState icon={Wrench} title="No new jobs" text="New eligible work orders will appear here." />
         ) : activeQueueTab === "mine" ? (
           myActiveJobs.length > 0 ? <div className="technician-list">{myActiveJobs.map((workOrder) => renderJobCard(workOrder, "mine"))}</div> : <EmptyState icon={Wrench} title="No jobs assigned to you" text="Open New Jobs when you are ready to accept work." />
-        ) : teamActiveJobs.length > 0 ? (
+        ) : activeQueueTab === "team" && teamActiveJobs.length > 0 ? (
           <div className="technician-list">{teamActiveJobs.map((workOrder) => renderJobCard(workOrder, "team"))}</div>
-        ) : <EmptyState icon={UsersRound} title="No team activity" text="No other technician is working on an active job." />}
+        ) : activeQueueTab === "team" ? (
+          <EmptyState icon={UsersRound} title="No team activity" text="No other technician is working on an active job." />
+        ) : (
+          <div className="technician-history-tab-content">
+            <div className="technician-history-filters">
+              <label><Search size={17} /><input value={historySearch} onChange={(event) => setHistorySearch(event.target.value)} placeholder="Search completed work" /></label>
+              <select value={historyType} onChange={(event) => setHistoryType(event.target.value as typeof historyType)}>
+                <option value="all">All visible work</option>
+                <option value="maintenance">Maintenance</option>
+                <option value="office">Office</option>
+                <option value="kaizen">Kaizen</option>
+                <option value="project">Projects</option>
+              </select>
+            </div>
+            {!workOrdersReady ? <p className="quiet-panel">Loading team history…</p> : filteredHistory.length > 0 ? (
+              <div className="technician-history-table">
+                {filteredHistory.map((workOrder) => {
+                  const owner = users.find((user) => user.id === workOrder.assignedToId)?.name || "Unassigned";
+                  return (
+                    <Link key={workOrder.id} to={`/work-orders/${workOrder.id}`}>
+                      <span className="technician-history-icon"><CheckCircle2 size={18} /></span>
+                      <span className="technician-history-main"><strong>{workOrder.number} · {workOrder.title}</strong><small>{workOrder.machineName || workOrder.assetName} · {workOrder.location}</small></span>
+                      <span className="technician-history-owner"><small>Completed by</small><strong>{owner}</strong></span>
+                      <span className="technician-history-meta"><StatusBadge status={workOrder.status} /><PriorityBadge priority={workOrder.priority} /><small>{workOrderTypeLabels[workOrder.type]} · {formatDateTime(workOrder.updatedAt)}</small></span>
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : <EmptyState icon={History} title="No completed work found" text="Try another search or work-order type." />}
+          </div>
+        )}
       </section>
 
       {resolveTarget ? createPortal(
