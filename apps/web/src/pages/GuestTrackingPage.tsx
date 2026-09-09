@@ -41,6 +41,7 @@ export function GuestTrackingPage() {
   const { id = "" } = useParams();
   const [searchParams] = useSearchParams();
   const token = searchParams.get("token") || "";
+  const photosFailed = searchParams.get("photos") === "failed";
   const justCreated = searchParams.get("created") === "1";
   const [tracking, setTracking] = useState<GuestWorkOrderTracking | null>(null);
   const [loading, setLoading] = useState(true);
@@ -75,14 +76,16 @@ export function GuestTrackingPage() {
   }, [id, token]);
 
   async function copyLink() {
-    await navigator.clipboard.writeText(shareUrl);
+    try { await navigator.clipboard.writeText(shareUrl); }
+    catch { setError("Couldn’t copy the link. Copy the address from your browser to save or share it."); return; }
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1800);
   }
 
   async function shareLink() {
     if (navigator.share && tracking) {
-      await navigator.share({ title: tracking.workOrder.number, text: "Track this SUGI CMMS work order", url: shareUrl });
+      try { await navigator.share({ title: tracking.workOrder.number, text: "Track this SUGI CMMS work order", url: shareUrl }); }
+      catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) setError("Sharing is unavailable. Use Copy link instead."); }
       return;
     }
     await copyLink();
@@ -122,7 +125,8 @@ export function GuestTrackingPage() {
     </header>
 
     <main className="guest-tracker-main">
-      {justCreated ? <section className="guest-created-success"><span><Check size={28} /></span><div><p>Submitted successfully</p><h1>{workOrder.number} has been created</h1><small>Save this private link. You will need it to track and verify this work order.</small></div></section> : null}
+      {photosFailed ? <p className="ux-load-error" role="alert">Your request was submitted, but the photos could not be uploaded. Contact maintenance with the work order number below. You do not need to submit another request.</p> : null}
+        {justCreated ? <section className="guest-created-success"><span><Check size={28} /></span><div><p>Submitted successfully</p><h1>{workOrder.number} has been created</h1><small>Save this private link. You will need it to track and verify this work order.</small></div></section> : null}
       {error ? <div className="requester-app-toast error"><RefreshCcw size={18} />{error}</div> : null}
 
       <section className={`guest-progress-card status-${workOrder.status}`}>

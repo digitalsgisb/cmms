@@ -70,7 +70,7 @@ export function MultiPhotoPicker({
           <strong id={`${inputId}-label`}><Camera size={16} aria-hidden="true" />{label}</strong>
           <span>{help}</span>
         </div>
-        <small>{files.length}/{maxFiles}</small>
+        <small aria-live="polite">{files.length}/{maxFiles} photos · 8 MB each</small>
       </div>
       <input
         id={inputId}
@@ -115,7 +115,7 @@ export function MultiPhotoPicker({
           ))}
         </div>
       ) : null}
-      {message ? <p className="multi-photo-message">{message}</p> : null}
+      {message ? <p className="multi-photo-message" role="status">{message}</p> : null}
     </section>
   );
 }

@@ -156,6 +156,7 @@ export function ReportsPage() {
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [inventory, setInventory] = useState<SpareInventoryResponse | null>(null);
   const [pm, setPm] = useState<PmDashboardResponse | null>(null);
+  const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [generatedAt, setGeneratedAt] = useState<Date | null>(null);
@@ -174,6 +175,9 @@ export function ReportsPage() {
       setInventory(nextInventory);
       setPm(nextPm);
       setGeneratedAt(new Date());
+      setLoadError("");
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Couldn’t load this page.");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -311,13 +315,16 @@ export function ReportsPage() {
     URL.revokeObjectURL(url);
   };
 
+  if (loading && !generatedAt) return <div className="ux-recovery" role="status"><h1>Reports</h1><p>Preparing report data…</p></div>;
+
   return (
     <section className="reports-page page-stack">
+      {loadError ? <div className="ux-load-error" role="alert"><span>Some information could not load. Displayed figures may be incomplete or out of date. {loadError}</span><button className="secondary-action" type="button" onClick={() => void loadData()}>Try again</button></div> : null}
       <div className="analytics-plant-filter"><span>Report plant</span><PlantSelector allowCombined compact /></div>
       <header className="reports-hero">
         <div>
           <span className="reports-eyebrow"><Sparkles size={14} /> Maintenance intelligence studio</span>
-          <h1>Reports that lead to action.</h1>
+          <h1>Reports</h1>
           <p>Build a meeting-ready maintenance pack from live Work Order, Spare Part and PM records—then print it or take the exception register with you.</p>
           <div className="reports-hero-actions">
             <button type="button" onClick={() => window.print()}><Printer size={16} /> Print / Save PDF</button>

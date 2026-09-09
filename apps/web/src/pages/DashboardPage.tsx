@@ -46,6 +46,7 @@ export function DashboardPage() {
   const [pm, setPm] = useState<PmDashboardResponse | null>(null);
   const [assets, setAssets] = useState<AssetDashboardResponse | null>(null);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
   const technicianMode = currentUser?.role === "technician";
   const canUseInProgressModules = Boolean(currentUser && ["admin", "developer"].includes(currentUser.role));
@@ -72,6 +73,9 @@ export function DashboardPage() {
         setPm(null);
         setAssets(null);
       }
+      setLoadError("");
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Couldn’t load this page.");
     } finally {
       setLoading(false);
     }
@@ -150,8 +154,11 @@ export function DashboardPage() {
     [assets]
   );
 
+  if (loading && !summary) return <div className="ux-recovery" role="status"><h1>Dashboard</h1><p>Loading maintenance activity…</p></div>;
+
   return (
     <section className="page-stack dashboard-page dashboard-command-page">
+      {loadError ? <div className="ux-load-error" role="alert"><span>Some information could not load. Displayed figures may be incomplete or out of date. {loadError}</span><button className="secondary-action" type="button" onClick={() => void loadDashboard()}>Try again</button></div> : null}
       <div className="dashboard-hero dashboard-command-hero">
         <div className="dashboard-hero-main">
           <p className="hero-eyebrow"><span aria-hidden="true" /> Live maintenance command · {formatLongDisplayDate()}</p>

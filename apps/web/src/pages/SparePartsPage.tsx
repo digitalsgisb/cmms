@@ -236,7 +236,7 @@ export function SparePartsPage() {
   useLiveRefresh(["work-orders"], async () => setWorkOrders(await api.workOrders()));
 
   useEffect(() => {
-    loadInventory().catch(console.error);
+    loadInventory().catch((error) => setError(error instanceof Error ? error.message : "Couldn’t load inventory. Please reload this page."));
     api.workOrders().then(setWorkOrders).catch(console.error);
     api.spareSyncSettings().then(setSyncSettings).catch(console.error);
   }, []);
@@ -1534,7 +1534,7 @@ export function SparePartsPage() {
       {technicianMode ? renderTechnicianTabs() : null}
       {renderIssueFeedback()}
       {message ? <p className="success-line">{message}</p> : null}
-      {error ? <p className="error-line">{error}</p> : null}
+      {error ? <p className="error-line" role="alert">{error}</p> : null}
 
       {!["scanner", "setup"].includes(view) ? renderMetrics() : null}
       {view === "dashboard" ? renderDashboard() : null}

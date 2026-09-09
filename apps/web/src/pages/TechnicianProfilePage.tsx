@@ -1,4 +1,6 @@
 import { BellRing, ClipboardCheck, LogOut, Smartphone, UserRound, Wifi } from "lucide-react";
+import { PushNotificationControl } from "../components/PushNotificationControl";
+import { mediaUrl } from "../api/client";
 import { PwaInstallButton } from "../components/PwaInstallButton";
 import { useCurrentUser } from "../state/UserContext";
 import { PlantSelector } from "../components/PlantSelector";
@@ -23,17 +25,17 @@ export function TechnicianProfilePage() {
     <section className="page-stack technician-profile-page">
       <div className="page-title-row page-title-clean">
         <div>
-          <p className="eyebrow">Technician account</p>
+          <p className="eyebrow">Your account</p>
           <h1>Profile</h1>
         </div>
         <span className="role-chip">
           <UserRound size={17} aria-hidden="true" />
-          Technician
+          {currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1)}
         </span>
       </div>
 
       <section className="section-panel technician-profile-panel">
-        <span className="technician-profile-avatar">{initialsFor(currentUser.name)}</span>
+        <span className="technician-profile-avatar">{currentUser.avatarUrl ? <img src={mediaUrl(currentUser.avatarUrl)} alt={currentUser.name} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit" }} /> : initialsFor(currentUser.name)}</span>
         <div>
           <h2>{currentUser.name}</h2>
           <p>{currentUser.title}</p>
@@ -53,7 +55,7 @@ export function TechnicianProfilePage() {
           <div className="settings-list">
             <div>
               <span>Main screen</span>
-              <strong>Technician queue</strong>
+              <strong>{currentUser.role === "technician" ? "Technician queue" : "Maintenance dashboard"}</strong>
             </div>
             <div>
               <span>Required to resolve</span>
@@ -64,21 +66,8 @@ export function TechnicianProfilePage() {
 
         <section className="section-panel settings-card">
           <Smartphone size={22} aria-hidden="true" />
-          <h2>PWA Status</h2>
-          <div className="toggle-list">
-            <label>
-              <input type="checkbox" checked readOnly />
-              Installable app shell
-            </label>
-            <label>
-              <input type="checkbox" checked readOnly />
-              Technician start screen
-            </label>
-            <label>
-              <input type="checkbox" readOnly />
-              Offline sync later
-            </label>
-          </div>
+          <h2>Install on your device</h2>
+          <p className="ux-form-help">Add SUGI CMMS to your home screen for quick access. An internet connection is needed to save changes and receive updates.</p>
           <PwaInstallButton />
         </section>
 
@@ -91,8 +80,8 @@ export function TechnicianProfilePage() {
               <strong>Online required</strong>
             </div>
             <div>
-              <span>Camera upload</span>
-              <strong>HTTPS required</strong>
+              <span>Photos</span>
+              <strong>Camera or photo library</strong>
             </div>
           </div>
         </section>
@@ -100,6 +89,7 @@ export function TechnicianProfilePage() {
         <section className="section-panel settings-card">
           <BellRing size={22} aria-hidden="true" />
           <h2>Notifications</h2>
+          <PushNotificationControl />
           <div className="settings-list">
             <div>
               <span>Queue updates</span>
@@ -107,7 +97,7 @@ export function TechnicianProfilePage() {
             </div>
             <div>
               <span>Push alerts</span>
-              <strong>Future phase</strong>
+              <strong>Available on supported devices</strong>
             </div>
           </div>
         </section>

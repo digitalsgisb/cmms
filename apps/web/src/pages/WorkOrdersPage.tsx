@@ -1,6 +1,6 @@
 import { AlertTriangle, CheckCircle2, Clock3, Eye, Layers3, Pencil, Plus, Search, Trash2, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import type { MasterData, User, WorkOrder, WorkOrderStatus } from "@sugi-cmms/shared";
 import { workOrderDepartmentForUser, workOrderStatusLabels, workOrderTypeLabels } from "@sugi-cmms/shared";
 import { api } from "../api/client";
@@ -25,21 +25,30 @@ export function WorkOrdersPage() {
   const { users, currentUser } = useCurrentUser();
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [masterData, setMasterData] = useState<MasterData>({ sections: [], machines: [], issueCategories: [] });
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<WorkOrderStatus | "all">("all");
-  const [scope, setScope] = useState<"all" | "department" | "mine">("all");
-  const [month, setMonth] = useState("");
-  const [sectionId, setSectionId] = useState("all");
-  const [machineId, setMachineId] = useState("all");
+  const [params, setParams] = useSearchParams();
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [search, setSearch] = useState(params.get("q") || "");
+  const [status, setStatus] = useState<WorkOrderStatus | "all">(statusOptions.includes(params.get("status") as WorkOrderStatus) ? params.get("status") as WorkOrderStatus : "all");
+  const [scope, setScope] = useState<"all" | "department" | "mine">(params.get("scope") === "mine" ? "mine" : params.get("scope") === "all" ? "all" : workOrderDepartmentForUser(currentUser?.department || "") ? "department" : "all");
+  const [month, setMonth] = useState(params.get("month") || "");
+  const [sectionId, setSectionId] = useState(params.get("section") || "all");
+  const [machineId, setMachineId] = useState(params.get("machine") || "all");
   const [timerNow, setTimerNow] = useState(() => new Date().toISOString());
 
   async function loadWorkOrders() {
-    setWorkOrders(await api.workOrders());
+    try {
+      const [orders, master] = await Promise.all([api.workOrders(), api.masterData()]);
+      setWorkOrders(orders); setMasterData(master); setLoadError("");
+    } catch (error) { setLoadError(error instanceof Error ? error.message : "Couldn’t load work orders."); }
+    finally { setLoading(false); }
   }
 
   useEffect(() => {
     loadWorkOrders().catch(console.error);
-    api.masterData().then(setMasterData).catch(console.error);
+
   }, []);
 
   useLiveRefresh(["work-orders"], loadWorkOrders);
@@ -50,8 +59,15 @@ export function WorkOrdersPage() {
   }, []);
 
   useEffect(() => {
-    setScope(workOrderDepartmentForUser(currentUser?.department || "") ? "department" : "all");
-  }, [currentUser?.department, currentUser?.id]);
+    const next = new URLSearchParams();
+    if (search) next.set("q", search);
+    if (status !== "all") next.set("status", status);
+    next.set("scope", scope);
+    if (month) next.set("month", month);
+    if (sectionId !== "all") next.set("section", sectionId);
+    if (machineId !== "all") next.set("machine", machineId);
+    setParams(next, { replace: true });
+  }, [search, status, scope, month, sectionId, machineId, setParams]);
 
   const accountDepartment = workOrderDepartmentForUser(currentUser?.department || "");
 
@@ -67,7 +83,7 @@ export function WorkOrdersPage() {
         (scope === "department" && (!accountDepartment || workOrder.responsibleDepartment === accountDepartment)) ||
         (scope === "mine" && (workOrder.requesterId === currentUser?.id || workOrder.assignedToId === currentUser?.id));
       const searchable = `${workOrder.number} ${workOrder.title} ${workOrder.description} ${workOrder.location} ${workOrder.area} ${workOrder.assetName} ${workOrder.machineName} ${workOrder.reportedByName} ${workOrder.reportedByDepartment} ${workOrder.responsibleDepartment} ${workOrder.issueDescription}`.toLowerCase();
-      return matchesStatus && matchesMonth && matchesSection && matchesMachine && matchesScope && searchable.includes(search.toLowerCase());
+      return matchesStatus && matchesMonth && matchesSection && matchesMachine && matchesScope && searchable.includes(search.trim().toLowerCase());
     });
   }, [accountDepartment, workOrders, status, month, sectionId, machineId, scope, search, currentUser?.id]);
 
@@ -101,15 +117,18 @@ export function WorkOrdersPage() {
       return;
     }
 
-    await api.deleteWorkOrder(workOrder.id, { actorId: currentUser.id });
-    setWorkOrders((current) => current.filter((item) => item.id !== workOrder.id));
+    setActionError("");
+    try {
+      await api.deleteWorkOrder(workOrder.id, { actorId: currentUser.id });
+      setWorkOrders((current) => current.filter((item) => item.id !== workOrder.id));
+    } catch (error) { setActionError(error instanceof Error ? error.message : "Couldn’t delete this work order."); }
   }
 
   return (
     <section className="page-stack">
       <div className="page-title-row page-title-clean">
         <div>
-          <p className="eyebrow">Flow control</p>
+          <p className="eyebrow">Maintenance queue</p>
           <h1>Work Orders</h1>
         </div>
         {currentUser?.role !== "technician" ? (
@@ -124,7 +143,7 @@ export function WorkOrdersPage() {
         <article>
           <Layers3 size={18} aria-hidden="true" />
           <span>Active</span>
-          <strong>{counts.active}</strong>
+          <strong>{loading ? "—" : counts.active}</strong>
         </article>
         <article>
           <AlertTriangle size={18} aria-hidden="true" />
@@ -133,7 +152,7 @@ export function WorkOrdersPage() {
         </article>
         <article>
           <Wrench size={18} aria-hidden="true" />
-          <span>Moving</span>
+          <span>In progress</span>
           <strong>{counts.moving}</strong>
         </article>
         <article>
@@ -151,20 +170,22 @@ export function WorkOrdersPage() {
       <div className="filter-bar">
         <label className="search-input">
           <Search size={17} aria-hidden="true" />
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search work orders" />
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search number, machine or issue…" aria-label="Search work orders" />
         </label>
 
-        <select value={status} onChange={(event) => setStatus(event.target.value as WorkOrderStatus | "all")}>
+        <button className="ux-filter-toggle secondary-action" type="button" aria-expanded={filtersOpen} aria-controls="work-order-filters" onClick={() => setFiltersOpen(!filtersOpen)}>{filtersOpen ? "Hide filters" : "Filter work orders"}{[status !== "all", Boolean(month), sectionId !== "all", machineId !== "all", scope !== "all"].filter(Boolean).length ? ` (${[status !== "all", Boolean(month), sectionId !== "all", machineId !== "all", scope !== "all"].filter(Boolean).length})` : ""}</button>
+        <div id="work-order-filters" className={`ux-extra-filters ${filtersOpen ? "is-open" : ""}`}>
+        <select aria-label="Filter by status" value={status} onChange={(event) => setStatus(event.target.value as WorkOrderStatus | "all")}>
           {statusOptions.map((option) => (
             <option key={option} value={option}>
-              {option === "all" ? "All status" : workOrderStatusLabels[option]}
+              {option === "all" ? "All statuses" : workOrderStatusLabels[option]}
             </option>
           ))}
         </select>
 
         <input type="month" value={month} onChange={(event) => setMonth(event.target.value)} aria-label="Filter by month" />
 
-        <select value={sectionId} onChange={(event) => {
+        <select aria-label="Filter by section" value={sectionId} onChange={(event) => {
           setSectionId(event.target.value);
           setMachineId("all");
         }}>
@@ -176,7 +197,7 @@ export function WorkOrdersPage() {
           ))}
         </select>
 
-        <select value={machineId} onChange={(event) => setMachineId(event.target.value)}>
+        <select aria-label="Filter by machine" value={machineId} onChange={(event) => setMachineId(event.target.value)}>
           <option value="all">All machines</option>
           <option value="__others">Others</option>
           {filteredMachines.map((machine) => (
@@ -199,8 +220,15 @@ export function WorkOrdersPage() {
               Mine
             </button>
         </div>
+        </div>
       </div>
 
+      <div className="ux-results-bar">
+        <span role="status">{loading ? "Loading work orders…" : filtered.length + " of " + workOrders.length + " work orders"}</span>
+        <button className="secondary-action" type="button" onClick={() => { setSearch(""); setStatus("all"); setMonth(""); setSectionId("all"); setMachineId("all"); setScope("all"); }}>Reset filters</button>
+      </div>
+      {loadError ? <div className="ux-load-error" role="alert"><span>Couldn’t refresh work orders. {loadError} {workOrders.length ? "Showing the last loaded information." : ""}</span><button type="button" className="secondary-action" onClick={() => void loadWorkOrders()}>Try again</button></div> : null}
+      {actionError ? <p className="error-line" role="alert">{actionError}</p> : null}
       {requesterMode ? (
         <section className="requester-subsection">
           <div className="subsection-heading">
@@ -250,7 +278,7 @@ export function WorkOrdersPage() {
               onDelete={removeWorkOrder}
             />
           ))}
-        </div> : closedWorkOrders.length === 0 ? <p className="quiet-panel">No work orders match these filters.</p> : null}
+        </div> : closedWorkOrders.length === 0 ? <p className="quiet-panel">{loading ? "Loading work orders…" : loadError && workOrders.length === 0 ? "Work orders are unavailable. Try loading them again." : workOrders.length ? "No matching work orders. Try a different search or reset the filters above." : "No work orders yet. Create a work order to report your first issue."}</p> : null}
       </section>
 
       {closedWorkOrders.length ? (

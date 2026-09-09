@@ -9,7 +9,8 @@ import { MultiPhotoPicker } from "../components/MultiPhotoPicker";
 import { useCurrentUser } from "../state/UserContext";
 
 function todayDate() {
-  return new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
 const initialForm = {
@@ -38,7 +39,9 @@ export function CreateWorkOrderPage() {
   const assetFromQuery = searchParams.get("asset")?.trim() || "";
   const { currentUser } = useCurrentUser();
   const [masterData, setMasterData] = useState<MasterData>({ sections: [], machines: [], issueCategories: [] });
-  const [form, setForm] = useState(initialForm);
+  const [form, setForm] = useState(() => ({ ...initialForm, workDate: todayDate() }));
+  const [masterReady, setMasterReady] = useState(false);
+  const [createdOrderId, setCreatedOrderId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [issueFiles, setIssueFiles] = useState<File[]>([]);
@@ -47,6 +50,7 @@ export function CreateWorkOrderPage() {
     api.masterData()
       .then((nextMasterData) => {
         setMasterData(nextMasterData);
+        setMasterReady(true);
         setForm((current) => ({
           ...current,
           sectionId: current.sectionId || nextMasterData.sections.find((section) => section.active)?.id || "",
@@ -57,7 +61,7 @@ export function CreateWorkOrderPage() {
           responsibleDepartment: workOrderDepartmentForUser(currentUser?.department || "") || current.responsibleDepartment
         }));
       })
-      .catch(console.error);
+      .catch(() => setError("Couldn’t load sections and machines. Reload this page before submitting."));
   }, [assetFromQuery, currentUser?.department, currentUser?.name]);
 
   const activeSections = useMemo(() => masterData.sections.filter((section) => section.active), [masterData.sections]);
@@ -80,7 +84,7 @@ export function CreateWorkOrderPage() {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!currentUser) {
+    if (!currentUser || submitting || !masterReady) {
       return;
     }
 
@@ -90,7 +94,7 @@ export function CreateWorkOrderPage() {
     try {
       const selectedMachine = filteredMachines.find((machine) => machine.id === form.machineId);
       const customMachineName = form.customMachineName.trim();
-      const workOrder = await api.createWorkOrder({
+      const workOrder = createdOrderId ? { id: createdOrderId } : await api.createWorkOrder({
         type: form.type,
         requesterId: currentUser.id,
         workDate: form.workDate || todayDate(),
@@ -105,6 +109,7 @@ export function CreateWorkOrderPage() {
         issueCategoryId: form.issueCategoryId || null,
         issueDescription: form.issueDescription
       });
+      setCreatedOrderId(workOrder.id);
       if (issueFiles && issueFiles.length > 0) {
         await api.uploadAttachments(workOrder.id, currentUser.id, "issue", issueFiles);
       }
@@ -133,7 +138,9 @@ export function CreateWorkOrderPage() {
         </Link>
       </div>
 
-      <form className="form-panel" onSubmit={handleSubmit}>
+      <form className="form-panel" onSubmit={handleSubmit} aria-busy={submitting}>
+        <p className="ux-form-help">Describe the issue and where it happened. Photos are optional and help the maintenance team prepare.</p>
+        <fieldset className="ux-form-fields" disabled={submitting || Boolean(createdOrderId)}>
         <div className="form-grid two-columns">
           <label>
             Work order type
@@ -169,7 +176,8 @@ export function CreateWorkOrderPage() {
             icon={<Factory size={15} aria-hidden="true" />}
             value={form.sectionId}
             options={sectionOptions}
-            placeholder="Search section"
+            placeholder="Choose a section"
+            disabled={submitting || Boolean(createdOrderId)}
             onChange={(sectionId) => setForm({ ...form, sectionId, machineId: "", customMachineName: "" })}
           />
 
@@ -177,7 +185,8 @@ export function CreateWorkOrderPage() {
             label="Machine"
             value={form.machineId}
             options={machineOptions}
-            placeholder="Search machine"
+            placeholder="Choose a machine"
+            disabled={submitting || Boolean(createdOrderId)}
             onChange={(machineId) => setForm({ ...form, machineId, customMachineName: "" })}
           />
         </div>
@@ -216,13 +225,14 @@ export function CreateWorkOrderPage() {
           label="Issue category"
           value={form.issueCategoryId}
           options={issueCategoryOptions}
-          placeholder="Search category"
+          placeholder="Choose an issue category"
+          disabled={submitting || Boolean(createdOrderId)}
           onChange={(issueCategoryId) => setForm({ ...form, issueCategoryId })}
         />
 
         <label>
           Issue description
-          <textarea value={form.issueDescription} onChange={(event) => setForm({ ...form, issueDescription: event.target.value })} rows={5} required />
+          <textarea value={form.issueDescription} onChange={(event) => setForm({ ...form, issueDescription: event.target.value })} rows={5} placeholder="What happened? Include symptoms, when it started, and any impact on production." required />
         </label>
 
         <MultiPhotoPicker
@@ -232,12 +242,14 @@ export function CreateWorkOrderPage() {
           help="Choose several issue photos before creating the work order."
         />
 
-        {error ? <p className="error-line">{error}</p> : null}
+        </fieldset>
+        {error ? <p className="error-line" role="alert">{createdOrderId ? "Your work order was created, but the photos could not be uploaded. Retry the upload or open the work order to add photos later. " : ""}{error}</p> : null}
+        {createdOrderId ? <Link className="secondary-action" to={`/work-orders/${createdOrderId}`}>Open created work order</Link> : null}
 
         <div className="form-actions">
-          <button className="primary-action" type="submit" disabled={submitting}>
+          <button className="primary-action" type="submit" disabled={submitting || !masterReady}>
             <Send size={17} aria-hidden="true" />
-            {submitting ? "Submitting..." : "Issue Work Order"}
+            {submitting ? "Submitting..." : createdOrderId ? "Retry photo upload" : "Create work order"}
           </button>
         </div>
       </form>

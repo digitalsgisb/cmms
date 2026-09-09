@@ -18,7 +18,7 @@ import { formatDateTime } from "../utils/format";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
 import { useCurrentUser } from "../state/UserContext";
 
-function todayDate() { return new Date().toISOString().slice(0, 10); }
+function todayDate() { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`; }
 
 const otherMachineValue = "__other__";
 const initialRequesterForm = {
@@ -207,7 +207,7 @@ export function PublicRequesterPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!selectedType || !selectedDepartment) return;
+    if (!selectedType || !selectedDepartment || submitting) return;
     const selectedMachine = filteredMachines.find((machine) => machine.id === form.machineId);
     const place = form.placeOrEquipment.trim();
     if (!isOffice && !form.machineId) { setError("Choose a machine or select Other place / equipment."); return; }
@@ -229,14 +229,18 @@ export function PublicRequesterPage() {
       };
       if (!signedRequester) {
         const submission = await api.createRequesterWorkOrder(payload);
-        if (issueFiles.length) await api.uploadRequesterAttachments(submission.workOrder.id, issueFiles);
-        navigate(`${submission.tracking.path}&created=1`);
+        let photosFailed = false;
+        try { if (issueFiles.length) await api.uploadRequesterAttachments(submission.workOrder.id, issueFiles); }
+        catch { photosFailed = true; }
+        navigate(`${submission.tracking.path}&created=1${photosFailed ? "&photos=failed" : ""}`);
         return;
       }
 
       const workOrder = await api.createWorkOrder({ ...payload, requesterId: currentUser.id });
-      if (issueFiles.length) await api.uploadAttachments(workOrder.id, currentUser.id, "issue", issueFiles);
-      setSuccess(`${workOrder.number} submitted successfully.`); setSelectedDepartment(null); setSelectedType(null);
+      let photosFailed = false;
+      try { if (issueFiles.length) await api.uploadAttachments(workOrder.id, currentUser.id, "issue", issueFiles); }
+      catch { photosFailed = true; }
+      setSuccess(`${workOrder.number} submitted successfully.${photosFailed ? " Photos could not be uploaded. Contact maintenance with this work order number; do not submit another request." : ""}`); setSelectedDepartment(null); setSelectedType(null);
       setForm({ ...initialRequesterForm, workDate: todayDate(), sectionId: form.sectionId, reportedByName: signedRequester ? currentUser.name : "", reportedByDepartment: signedRequester ? currentUser.department : "" });
       setIssueFiles([]);
       await loadAccountWorkOrders(); setStatusFilter("open"); setView("tracking");
@@ -290,7 +294,7 @@ export function PublicRequesterPage() {
 
     {view === "new" && !selectedType ? <div className={`requester-category-gate ${categoryClosing ? "is-exiting" : ""}`} role="dialog" aria-modal="true" aria-labelledby="requester-category-title" aria-busy={categoryClosing} onClick={(event) => { if (signedRequester && event.target === event.currentTarget) openView("dashboard"); }}><section className="requester-category-card" key={selectedDepartment ? "request-type" : choosingOtherDepartment ? "other-department" : "primary-department"}>{signedRequester ? <button className="requester-category-close" type="button" disabled={categoryClosing} onClick={() => openView("dashboard")} aria-label="Cancel new work order and return home"><X size={20} /></button> : null}<div className="requester-category-heading"><span><img src="/brand/sugi_symbol.png" alt="" /></span><div><p>{selectedDepartment ? `FOR ${selectedDepartment.toUpperCase()}` : signedRequester ? "ACCOUNT REQUEST" : "CONTINUE AS GUEST"}</p><h1 id="requester-category-title">{selectedDepartment ? "What type of work is needed?" : choosingOtherDepartment ? "Which department is responsible?" : "Which department is this for?"}</h1></div></div><p className="requester-category-copy">{selectedDepartment ? "Choose Maintenance, Project, or Kaizen." : choosingOtherDepartment ? "Select the department PIC who should prioritize this work order." : "Production and SHE are listed first. Use Others for the remaining departments."}</p>{selectedDepartment ? <div className="requester-type-grid">{requestTypes.map(({ type, Icon, title, description }) => <button className={`requester-type-card type-${type}`} type="button" key={type} disabled={categoryClosing} onClick={() => chooseType(type)}><span><Icon size={24} /></span><strong>{title}</strong><small>{description}</small></button>)}</div> : choosingOtherDepartment ? <div className="requester-department-grid">{otherDepartments.map((department) => <button type="button" key={department} onClick={() => chooseDepartment(department)}><Building2 size={20} /><strong>{department}</strong></button>)}</div> : <div className="requester-type-grid requester-department-primary"><button className="requester-type-card type-production" type="button" onClick={() => chooseDepartment("Production")}><span><Factory size={24} /></span><strong>Production</strong><small>Production-owned issue</small></button><button className="requester-type-card type-she" type="button" onClick={() => chooseDepartment("SHE")}><span><ShieldCheck size={24} /></span><strong>SHE</strong><small>Safety, Health & Environment</small></button><button className="requester-type-card type-others" type="button" onClick={() => setChoosingOtherDepartment(true)}><span><Building2 size={24} /></span><strong>Others</strong><small>Logistic, DTU, R&amp;D, Account, Management, or Business Development</small></button></div>}{selectedDepartment || choosingOtherDepartment ? <button className="requester-category-back" type="button" onClick={() => { setSelectedDepartment(null); setChoosingOtherDepartment(false); }}><ArrowLeft size={15} />Change department</button> : null}<small className="requester-category-note"><ShieldCheck size={14} />{signedRequester ? `Signed in as ${currentUser.name}` : "Guest access · new requests only"}</small>{!signedRequester ? currentUser ? <a className="requester-category-signin" href="/"><Home size={15} />Return to staff CMMS</a> : <button className="requester-category-signin" type="button" onClick={() => setLoginOpen(true)}><LogIn size={15} />Department user? Sign in to track</button> : null}</section></div> : null}
 
-    {loginOpen ? <div className="requester-login-backdrop"><form className="requester-login-card" role="dialog" aria-modal="true" aria-labelledby="requester-login-title" onSubmit={submitLogin}><button className="requester-dialog-close" type="button" onClick={() => setLoginOpen(false)} aria-label="Close sign in"><X size={18} /></button><span className="requester-login-icon"><ShieldCheck size={24} /></span><p>Department access</p><h2 id="requester-login-title">Sign in to your requester account</h2><small>Track department work orders, review maintenance updates, and verify work that you requested.</small><label>Username<input value={loginUsername} onChange={(event) => setLoginUsername(event.target.value)} autoComplete="username" required /></label><label>Password<input type="password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} autoComplete="current-password" required /></label>{loginError ? <p className="error-line">{loginError}</p> : null}<button className="primary-action" type="submit" disabled={loginBusy}>{loginBusy ? "Signing in..." : "Open my requester app"}<LogIn size={17} /></button><button className="requester-guest-continue" type="button" onClick={() => setLoginOpen(false)}>Continue as guest</button></form></div> : null}
+    {loginOpen ? <div className="requester-login-backdrop"><form className="requester-login-card" role="dialog" aria-modal="true" aria-labelledby="requester-login-title" onSubmit={submitLogin}><button className="requester-dialog-close" type="button" onClick={() => setLoginOpen(false)} aria-label="Close sign in"><X size={18} /></button><span className="requester-login-icon"><ShieldCheck size={24} /></span><p>Department access</p><h2 id="requester-login-title">Sign in to your requester account</h2><small>Track department work orders, review maintenance updates, and verify work that you requested.</small><label>Username<input value={loginUsername} onChange={(event) => setLoginUsername(event.target.value)} autoComplete="username" required /></label><label>Password<input type="password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} autoComplete="current-password" required /></label>{loginError ? <p className="error-line" role="alert">{loginError}</p> : null}<button className="primary-action" type="submit" disabled={loginBusy}>{loginBusy ? "Signing in..." : "Open my requester app"}<LogIn size={17} /></button><button className="requester-guest-continue" type="button" onClick={() => setLoginOpen(false)}>Continue as guest</button></form></div> : null}
     {detail ? <RequesterDetailDialog detail={detail} canVerify={detail.requesterId === currentUser?.id} onClose={() => setDetail(null)} onVerify={verifyWorkOrder} actionId={actionId} note={verificationNotes[detail.id] || ""} onNote={(note) => setVerificationNotes((current) => ({ ...current, [detail.id]: note }))} /> : null}
   </div>;
 }

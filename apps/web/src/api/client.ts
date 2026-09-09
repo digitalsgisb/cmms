@@ -70,9 +70,15 @@ export function setSelectedPlant(plant: PlantId | "all") {
 
 export const liveEventsUrl = `${API_BASE}/api/events`;
 
+export class ApiError extends Error {
+  constructor(message: string, public status: number) { super(message); this.name = "ApiError"; }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem(authTokenKey);
-  const response = await fetch(`${API_BASE}${path}`, {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
     ...options,
     credentials: "include",
     cache: options.cache ?? "no-store",
@@ -84,9 +90,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     }
   });
 
+  } catch {
+    throw new Error(navigator.onLine ? "Can’t reach the server. Please try again in a moment." : "You’re offline. Reconnect and try again.");
+  }
+
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    throw new Error(body?.error || `Request failed with ${response.status}`);
+    throw new ApiError(body?.error || (response.status >= 500 ? "The server couldn’t complete this request. Please try again." : response.status === 401 ? "Your session has expired. Please sign in again." : response.status === 403 ? "You don’t have permission to perform this action." : response.status === 404 ? "This record is unavailable or may have been removed." : `Request failed (${response.status}). Please try again.`), response.status);
   }
 
   if (response.status === 204) {

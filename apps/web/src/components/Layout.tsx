@@ -20,7 +20,7 @@ import {
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import type { NotificationRecord } from "@sugi-cmms/shared";
-import { api, mediaUrl } from "../api/client";
+import { api, mediaUrl, selectedPlant } from "../api/client";
 import { PushNotificationControl } from "./PushNotificationControl";
 import { useCurrentUser } from "../state/UserContext";
 import { formatShortDate } from "../utils/format";
@@ -60,6 +60,8 @@ export function Layout() {
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const knownNotificationIdsRef = useRef<Set<string> | null>(null);
   const technicianMainRef = useRef<HTMLElement>(null);
+  const [notificationError, setNotificationError] = useState("");
+  const [markingRead, setMarkingRead] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const location = useLocation();
@@ -78,7 +80,11 @@ export function Layout() {
       return;
     }
 
-    const nextNotifications = await api.notifications(currentUser.id);
+    const nextNotifications = await api.notifications(currentUser.id).catch((error) => {
+      setNotificationError("Couldn’t refresh notifications. Please reopen this panel to try again.");
+      throw error;
+    });
+    setNotificationError("");
     const knownNotificationIds = knownNotificationIdsRef.current;
     if (knownNotificationIds) {
       const incomingWorkOrderNotification = nextNotifications.find(
@@ -114,15 +120,16 @@ export function Layout() {
       { match: "/technician/more", label: "More" },
       { match: "/technician", label: "Technician" },
       { match: "/assets", label: "Assets" },
-      { match: "/spare-parts/setup", label: "Sheet Setup" },
+      { match: "/spare-parts/setup", label: "Integration setup" },
       { match: "/spare-parts/scanner", label: "Spare Scanner" },
       { match: "/spare-parts/inventory", label: "Spare Inventory" },
       { match: "/spare-parts/issue", label: "Spare Scanner" },
       { match: "/spare-parts", label: "Spare Parts" },
-      { match: "/preventive-maintenance", label: "Preventive" },
+      { match: "/preventive-maintenance", label: "Preventive Maintenance" },
       { match: "/performance", label: "Performance" },
       { match: "/reports", label: "Reports" },
-      { match: "/users", label: "Admin" },
+      { match: "/users", label: "Users" },
+      { match: "/profile", label: "Profile" },
       { match: "/settings", label: "Settings" }
     ].find((item) => location.pathname.startsWith(item.match));
 
@@ -188,19 +195,56 @@ export function Layout() {
     }
 
     const originalOverflow = document.body.style.overflow;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const navigation = document.getElementById("mobile-main-navigation");
+    const focusable = () => Array.from(navigation?.querySelectorAll<HTMLElement>('a[href], button:not(:disabled), [tabindex="0"]') || []).filter((element) => element.getClientRects().length > 0);
+    focusable()[0]?.focus();
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      const items = focusable();
+      const first = items[0]; const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
     document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", trapFocus);
     return () => {
       document.body.style.overflow = originalOverflow;
+      document.removeEventListener("keydown", trapFocus);
+      previousFocus?.focus();
     };
   }, [mobileNavOpen]);
+
+  useEffect(() => { if (panelOpen) void loadNotifications().catch(console.error); }, [panelOpen]);
+
+  useEffect(() => {
+    document.title = breadcrumb + " · SUGI CMMS";
+  }, [breadcrumb]);
+
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setPanelOpen(false); setMobileNavOpen(false); }
+    };
+    const outside = (event: MouseEvent) => {
+      if (!(event.target instanceof Element) || !event.target.closest(".notification-wrap")) setPanelOpen(false);
+    };
+    document.addEventListener("keydown", close);
+    document.addEventListener("mousedown", outside);
+    return () => { document.removeEventListener("keydown", close); document.removeEventListener("mousedown", outside); };
+  }, []);
 
   async function markAllRead() {
     if (!currentUser) {
       return;
     }
 
-    await api.markAllNotificationsRead(currentUser.id);
-    await loadNotifications();
+    setMarkingRead(true);
+    setNotificationError("");
+    try {
+      await api.markAllNotificationsRead(currentUser.id);
+      await loadNotifications();
+    } catch { setNotificationError("Couldn’t mark notifications as read. Please try again."); }
+    finally { setMarkingRead(false); }
   }
 
   if (loadingUsers) {
@@ -218,6 +262,7 @@ export function Layout() {
   if (currentUser.role === "technician") {
     return (
       <div className="technician-app-shell">
+        <a className="ux-skip-link" href="#main-content">Skip to content</a>
         <header className="technician-app-topbar">
           <div className="technician-brand-lockup">
             <span className="technician-brand-mark">
@@ -234,7 +279,7 @@ export function Layout() {
               {avatarSrc ? <img src={avatarSrc} alt={currentUser.name} /> : initials}
             </NavLink>
             <div className="notification-wrap">
-              <button className="icon-button" type="button" onClick={() => setPanelOpen((open) => !open)} aria-label="Notifications">
+              <button className="icon-button" type="button" onClick={() => setPanelOpen((open) => !open)} aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ""}`} aria-expanded={panelOpen}>
                 <Bell size={19} aria-hidden="true" />
                 {unreadCount > 0 ? <span className="notification-count">{unreadCount}</span> : null}
               </button>
@@ -242,17 +287,18 @@ export function Layout() {
                 <div className="notification-panel technician-notification-panel">
                   <div className="panel-header">
                     <strong>Notifications</strong>
-                    <button type="button" onClick={markAllRead}>
+                    <button type="button" onClick={markAllRead} disabled={markingRead || unreadCount === 0}>
                       Mark all read
                     </button>
                   </div>
+                  {notificationError ? <p className="error-line" role="alert">{notificationError}</p> : null}
                   <div className="notification-list">
                     {notifications.length === 0 ? (
                       <p>No notifications yet.</p>
                     ) : (
                       notifications.slice(0, 8).map((notification) => (
                         <div key={notification.id} className={`notification-item ${notification.readAt ? "" : "unread"}`}>
-                          <strong>{notification.title}</strong>
+                          {notification.workOrderId ? <NavLink to={`/work-orders/${notification.workOrderId}`}><strong>{notification.title}</strong></NavLink> : <strong>{notification.title}</strong>}
                           <span>{notification.body}</span>
                         </div>
                       ))
@@ -265,7 +311,7 @@ export function Layout() {
           </div>
         </header>
 
-        <main className="technician-app-main" ref={technicianMainRef}>
+        <main id="main-content" tabIndex={-1} className="technician-app-main" ref={technicianMainRef}>
           <div className="technician-route-stage" key={location.pathname}>
             <Outlet />
           </div>
@@ -505,6 +551,7 @@ export function Layout() {
       />
 
       <div className="content-shell">
+        <a className="ux-skip-link" href="#main-content">Skip to content</a>
         <header className="topbar">
           <div className="topbar-main">
             <button
@@ -525,16 +572,17 @@ export function Layout() {
           </div>
 
           <div className="topbar-actions">
+            <span className="ux-plant-badge"><Factory size={14} aria-hidden="true" />{selectedPlant() === "all" ? "Both plants" : selectedPlant() === "sendayan" ? "Sendayan" : "Port Klang"}</span>
             <span className="topbar-date">{formatShortDate()}</span>
-            <button className="profile-chip" type="button" aria-label="Current user">
+            <NavLink className="profile-chip" to="/profile" aria-label="Open your profile">
               {avatarSrc ? <img src={avatarSrc} alt={currentUser.name} /> : initials}
-            </button>
+            </NavLink>
             <button className="logout-button" type="button" onClick={logout}>
               <LogOut size={16} aria-hidden="true" />
               Sign out
             </button>
             <div className="notification-wrap">
-              <button className="icon-button" type="button" onClick={() => setPanelOpen((open) => !open)} aria-label="Notifications">
+              <button className="icon-button" type="button" onClick={() => setPanelOpen((open) => !open)} aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ""}`} aria-expanded={panelOpen}>
                 <Bell size={19} aria-hidden="true" />
                 {unreadCount > 0 ? <span className="notification-count">{unreadCount}</span> : null}
               </button>
@@ -542,17 +590,18 @@ export function Layout() {
                 <div className="notification-panel">
                   <div className="panel-header">
                     <strong>Notifications</strong>
-                    <button type="button" onClick={markAllRead}>
+                    <button type="button" onClick={markAllRead} disabled={markingRead || unreadCount === 0}>
                       Mark all read
                     </button>
                   </div>
+                  {notificationError ? <p className="error-line" role="alert">{notificationError}</p> : null}
                   <div className="notification-list">
                     {notifications.length === 0 ? (
                       <p>No notifications yet.</p>
                     ) : (
                       notifications.slice(0, 8).map((notification) => (
                         <div key={notification.id} className={`notification-item ${notification.readAt ? "" : "unread"}`}>
-                          <strong>{notification.title}</strong>
+                          {notification.workOrderId ? <NavLink to={`/work-orders/${notification.workOrderId}`}><strong>{notification.title}</strong></NavLink> : <strong>{notification.title}</strong>}
                           <span>{notification.body}</span>
                         </div>
                       ))
@@ -566,7 +615,7 @@ export function Layout() {
           </div>
         </header>
 
-        <main className="page-frame">
+        <main id="main-content" tabIndex={-1} className="page-frame">
           <Outlet />
         </main>
       </div>

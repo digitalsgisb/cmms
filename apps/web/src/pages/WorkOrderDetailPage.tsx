@@ -34,6 +34,7 @@ export function WorkOrderDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { currentUser, users } = useCurrentUser();
+  const [loadError, setLoadError] = useState("");
   const [detail, setDetail] = useState<WorkOrderDetail | null>(null);
   const [note, setNote] = useState("");
   const [comment, setComment] = useState("");
@@ -56,9 +57,12 @@ export function WorkOrderDetailPage() {
       return;
     }
 
-    const nextDetail = await api.workOrder(id);
-    setDetail(nextDetail);
-    setAssignedToId(nextDetail.assignedToId || "");
+    setLoadError("");
+    try {
+      const nextDetail = await api.workOrder(id);
+      setDetail(nextDetail);
+      setAssignedToId(nextDetail.assignedToId || "");
+    } catch (error) { setLoadError(error instanceof Error ? error.message : "Couldn’t load this work order."); }
   }
 
   useEffect(() => {
@@ -305,7 +309,7 @@ export function WorkOrderDetailPage() {
   }
 
   if (!detail) {
-    return <p className="quiet-line">Loading work order...</p>;
+    return loadError ? <section className="ux-recovery" role="alert"><h1>Work order unavailable</h1><p>{loadError}</p><button className="primary-action" type="button" onClick={() => void loadDetail()}>Try again</button><Link to="/work-orders">Back to work orders</Link></section> : <p className="quiet-line" role="status">Loading work order...</p>;
   }
 
   const displayWorkflow =
@@ -757,7 +761,7 @@ export function WorkOrderDetailPage() {
               <span>{resolveFiles && resolveFiles.length > 0 ? `${resolveFiles.length} photo selected` : "Upload at least one after-repair photo"}</span>
             </label>
 
-            {resolveError ? <p className="error-line">{resolveError}</p> : null}
+            {resolveError ? <p className="error-line" role="alert">{resolveError}</p> : null}
 
             <div className="modal-actions">
               <button type="button" className="modal-secondary" disabled={busy} onClick={() => setResolveDialogOpen(false)}>

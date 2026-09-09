@@ -457,7 +457,7 @@ export function TechnicianPage() {
         </div>
       </div>
 
-      {queueError ? <p className="error-line">{queueError}</p> : null}
+      {queueError ? <p className="error-line" role="alert">{queueError}</p> : null}
 
       <div className={`technician-queue-tabs active-${activeQueueTab}`} role="tablist" aria-label="Job queues">
         <button type="button" role="tab" aria-selected={activeQueueTab === "new"} className={activeQueueTab === "new" ? "active" : ""} onClick={() => setActiveQueueTab("new")}><span>New Jobs</span><strong>{availableJobs.length}</strong></button>
@@ -546,7 +546,7 @@ export function TechnicianPage() {
               <span>{resolveFiles && resolveFiles.length > 0 ? `${resolveFiles.length} photo selected` : "Upload at least one after-repair photo"}</span>
             </label>
 
-            {resolveError ? <p className="error-line">{resolveError}</p> : null}
+            {resolveError ? <p className="error-line" role="alert">{resolveError}</p> : null}
 
             <div className="modal-actions">
               <button type="button" className="modal-secondary" disabled={submitting} onClick={() => setResolveTarget(null)}>

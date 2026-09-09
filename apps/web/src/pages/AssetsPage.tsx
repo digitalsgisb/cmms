@@ -70,6 +70,8 @@ export function AssetsPage() {
       if (selectedAsset) {
         setSelectedAsset(next.assets.find((asset) => asset.id === selectedAsset.id) || null);
       }
+      setError("");
+    } catch (error) { setError(error instanceof Error ? error.message : "Couldn’t load assets. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -133,9 +135,9 @@ export function AssetsPage() {
     <section className="page-stack assets-page">
       <div className="asset-hero">
         <div className="asset-hero-copy">
-          <p><span /> Asset intelligence · Production register 2026</p>
-          <h1>Your machines, finally in focus.</h1>
-          <p>One live register for lifecycle risk, supplier traceability and maintenance decisions—not another flat machine list.</p>
+          <p><span /> Equipment register</p>
+          <h1>Assets</h1>
+          <p>Find machines, review their condition and plan maintenance.</p>
           <div className="asset-hero-actions">
             <a href="#asset-register" className="primary-action"><Database size={16} /> Explore register</a>
             <Link to="/work-orders/new" className="secondary-action"><Plus size={16} /> Raise work order</Link>
@@ -256,7 +258,7 @@ export function AssetsPage() {
               </div>
               <label><MapPin size={14} /> Location<input name="location" defaultValue={selectedAsset.location} disabled={!canManage} /></label>
               <label>Lifecycle notes<textarea name="notes" rows={3} defaultValue={selectedAsset.notes} placeholder="Decision, disposition or condition note…" disabled={!canManage} /></label>
-              {error ? <p className="error-line">{error}</p> : null}
+              {error ? <p className="error-line" role="alert">{error}</p> : null}
               {canManage ? <button className="primary-action" type="submit" disabled={saving}>{saving ? "Saving…" : "Save asset decision"}</button> : <p className="asset-readonly-note">Executive or admin access is required to update lifecycle decisions.</p>}
             </form>
             <Link className="asset-work-order-link" to={`/work-orders/new?asset=${encodeURIComponent(selectedAsset.name)}`}><Wrench size={16} /><span><strong>Raise work order</strong><small>Carry this machine into a new request</small></span><ArrowRight size={16} /></Link>

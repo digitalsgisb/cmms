@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, useLocation } from "react-router-dom";
 import { selectedPlant } from "./api/client";
+import { AppErrorBoundary, ConnectionStatus } from "./components/AppFeedback";
 import { App } from "./App";
 import { UserProvider } from "./state/UserContext";
 import { initInstallPromptListener } from "./pwa/installPrompt";
@@ -20,9 +21,12 @@ function PlantScopedApp() {
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
+    <AppErrorBoundary>
+      <ConnectionStatus />
     <BrowserRouter>
       <PlantScopedApp />
     </BrowserRouter>
+    </AppErrorBoundary>
   </React.StrictMode>
 );
 

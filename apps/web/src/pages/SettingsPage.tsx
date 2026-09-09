@@ -26,10 +26,14 @@ export function SettingsPage() {
   const [token, setToken] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [syncReady, setSyncReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const canAdmin = Boolean(currentUser && ["admin", "developer"].includes(currentUser.role));
 
-  async function loadSync() { setSync(await api.workOrderSyncSettings()); }
+  async function loadSync() {
+    try { setSync(await api.workOrderSyncSettings()); setSyncReady(true); setError(""); }
+    catch { setError("Couldn’t load integration settings. Reload before making changes."); }
+  }
   useEffect(() => { if (canAdmin) void loadSync().catch(console.error); }, [canAdmin]);
 
   async function saveSync(event: FormEvent) {
@@ -62,8 +66,8 @@ export function SettingsPage() {
   return (
     <section className="page-stack settings-page">
       <div className="page-title-row page-title-clean">
-        <div><p className="eyebrow">Developer mode</p><h1>CMMS Control Room</h1></div>
-        <span className="role-chip"><Settings2 size={17} aria-hidden="true" />Full access</span>
+        <div><p className="eyebrow">System preferences</p><h1>Settings</h1></div>
+        <span className="role-chip"><Settings2 size={17} aria-hidden="true" />{canAdmin ? "Administrator" : "Plant preferences"}</span>
       </div>
 
       <section className="section-panel plant-settings-card">
@@ -90,9 +94,9 @@ export function SettingsPage() {
           <span>{sync.pendingCount} pending</span><span>{sync.failedCount} failed</span>
           {sync.lastSyncAt ? <span>Last sync {new Date(sync.lastSyncAt).toLocaleString()}</span> : null}
         </div>
-        {sync.lastError ? <p className="error-line">Last error: {sync.lastError}</p> : null}
-        {error ? <p className="error-line">{error}</p> : null}
-        {message ? <p className="success-line">{message}</p> : null}
+        {sync.lastError ? <p className="error-line" role="alert">Last error: {sync.lastError}</p> : null}
+        {error ? <p className="error-line" role="alert">{error}</p> : null}
+        {message ? <p role="status" className="success-line">{message}</p> : null}
         <div className="form-actions">
           <button className="secondary-action" type="button" disabled={busy || !sync.configured} onClick={retrySync}><RefreshCw size={16} />Sync now</button>
           <button className="primary-action" type="submit" disabled={busy || !sync.scriptUrl.trim() || (!sync.hasToken && !token.trim())}><Save size={16} />Save integration</button>

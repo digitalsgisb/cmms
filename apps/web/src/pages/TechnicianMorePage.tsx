@@ -1,8 +1,9 @@
-import { ChevronRight, Package, ShieldCheck, UserRound } from "lucide-react";
+import { ChevronRight, History, Package, ShieldCheck, UserRound } from "lucide-react";
 import { Link, Navigate } from "react-router-dom";
 import { useCurrentUser } from "../state/UserContext";
 
 const moreItems = [
+  { to: "/technician/history", icon: History, title: "Work History", description: "Find completed repairs and review your team’s maintenance records.", tone: "history" },
   {
     to: "/preventive-maintenance",
     icon: ShieldCheck,

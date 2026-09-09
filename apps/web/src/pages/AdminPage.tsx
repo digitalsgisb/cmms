@@ -74,6 +74,8 @@ function parseMachinePaste(text: string) {
 export function AdminPage() {
   const [searchParams] = useSearchParams();
   const { users, currentUser, logout, refreshUsers } = useCurrentUser();
+  const [peopleSearch, setPeopleSearch] = useState("");
+  const visiblePeople = users.filter((user) => `${user.name} ${user.username} ${user.department} ${user.role}`.toLowerCase().includes(peopleSearch.trim().toLowerCase()));
   const [uploadingUserId, setUploadingUserId] = useState("");
   const [savingUser, setSavingUser] = useState(false);
   const [removingUserId, setRemovingUserId] = useState("");
@@ -130,7 +132,7 @@ export function AdminPage() {
   }
 
   useEffect(() => {
-    loadMasterData().catch(console.error);
+    loadMasterData().catch(() => setAdminError("Couldn’t load sections, machines and categories. Reload to try again."));
     api.publicConfig()
       .then((config) => {
         if (config.requesterUrl) {
@@ -431,7 +433,7 @@ export function AdminPage() {
         ))}
       </div>
 
-      {adminError ? <p className="error-line">{adminError}</p> : null}
+      {adminError ? <p className="error-line" role="alert">{adminError}</p> : null}
 
       {activeTab === "people" ? (
         <div className="admin-grid">
@@ -455,7 +457,7 @@ export function AdminPage() {
               <div className="admin-user-fields">
                 <label>Full name<input required value={newUser.name} onChange={(event) => setNewUser((current) => ({ ...current, name: event.target.value }))} disabled={!canAdmin || savingUser} /></label>
                 <label>Username<input required minLength={3} autoComplete="off" value={newUser.username} onChange={(event) => setNewUser((current) => ({ ...current, username: event.target.value }))} disabled={!canAdmin || savingUser} /></label>
-                <label>Password<input required minLength={12} type="password" autoComplete="new-password" value={newUser.password} onChange={(event) => setNewUser((current) => ({ ...current, password: event.target.value }))} disabled={!canAdmin || savingUser} /></label>
+                <label>Password (at least 12 characters)<input required minLength={12} type="password" autoComplete="new-password" value={newUser.password} onChange={(event) => setNewUser((current) => ({ ...current, password: event.target.value }))} disabled={!canAdmin || savingUser} /></label>
                 <label>Role<select value={newUser.role} onChange={(event) => setNewUser((current) => ({ ...current, role: event.target.value as User["role"], plantAccess: ["admin", "developer"].includes(event.target.value) ? "both" : current.plantAccess, department: event.target.value === "technician" && !["Maintenance", "Kaizen", "Maintenance & Kaizen"].includes(current.department) ? "Maintenance" : current.department }))} disabled={!canAdmin || savingUser}>
                   <option value="requester">Requester</option>
                   <option value="technician">Technician</option>
@@ -474,8 +476,10 @@ export function AdminPage() {
               </button>
             </form>
 
+            <label className="ux-people-search">Find a person<input type="search" value={peopleSearch} onChange={(event) => setPeopleSearch(event.target.value)} placeholder="Search name, username, department or role" /></label>
+            <p className="ux-form-help" role="status">{visiblePeople.length ? `${visiblePeople.length} of ${users.length} accounts` : "No matching people. Try another name, department or role."}</p>
             <div className="admin-user-list">
-              {users.map((user) => (
+              {visiblePeople.map((user) => (
                 <article className="admin-user-row" key={user.id}>
                   <span className="avatar-mark">{user.avatarUrl ? <img src={mediaUrl(user.avatarUrl)} alt={user.name} /> : user.name.slice(0, 1)}</span>
                   <div>
@@ -548,7 +552,7 @@ export function AdminPage() {
             <div className="section-header">
               <div>
                 <h2>Role Matrix</h2>
-                <span>Starter permissions model</span>
+                <span>Role permissions</span>
               </div>
               <UsersRound size={20} aria-hidden="true" />
             </div>

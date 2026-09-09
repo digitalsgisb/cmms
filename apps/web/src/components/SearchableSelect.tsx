@@ -33,6 +33,7 @@ export function SearchableSelect({
   const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
   const [query, setQuery] = useState("");
   const selectedOption = options.find((option) => option.value === value);
   const labelId = `${id}-label`;
@@ -75,6 +76,15 @@ export function SearchableSelect({
       };
     }
   }, [open]);
+
+  useEffect(() => { setActiveIndex(0); }, [query]);
+  useEffect(() => {
+    if (open) document.getElementById(listboxId + "-" + activeIndex)?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, open, listboxId]);
+
+  function closeMenu() {
+    setOpen(false); setQuery(""); triggerRef.current?.focus();
+  }
 
   function selectValue(nextValue: string) {
     onChange(nextValue);
@@ -122,11 +132,19 @@ export function SearchableSelect({
             type="button"
             aria-label={`Close ${label}`}
             onClick={() => {
-              setOpen(false);
-              setQuery("");
+              closeMenu();
             }}
           />
-          <div className="search-select-menu" ref={menuRef} role="dialog" aria-modal="true" aria-labelledby={labelId}>
+          <div className="search-select-menu" ref={menuRef} role="dialog" aria-modal="true" aria-labelledby={labelId}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") { event.preventDefault(); closeMenu(); }
+              if (event.key === "Tab") {
+                event.preventDefault();
+                const done = menuRef.current?.querySelector<HTMLButtonElement>(".ux-select-heading button");
+                if (document.activeElement === inputRef.current) done?.focus(); else inputRef.current?.focus();
+              }
+            }}>
+            <div className="ux-select-heading"><strong>{label}</strong><button type="button" onClick={closeMenu}>Done</button></div>
             <label className="search-select-search" htmlFor={`${id}-search`}>
               <Search size={16} aria-hidden="true" />
               <input
@@ -135,6 +153,11 @@ export function SearchableSelect({
                 value={query}
                 placeholder={`Search ${label.toLowerCase()}`}
                 autoComplete="off"
+                role="combobox"
+                aria-label={`Search ${label.toLowerCase()}`}
+                aria-expanded={open}
+                aria-controls={listboxId}
+                aria-activedescendant={filteredOptions[activeIndex] ? `${listboxId}-${activeIndex}` : undefined}
                 onChange={(event) => setQuery(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Escape") {
@@ -143,20 +166,26 @@ export function SearchableSelect({
                     setQuery("");
                     triggerRef.current?.focus();
                   }
-                  if (event.key === "Enter" && filteredOptions[0]) {
+                  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                     event.preventDefault();
-                    selectValue(filteredOptions[0].value);
+                    setActiveIndex((index) => Math.max(0, Math.min(filteredOptions.length - 1, index + (event.key === "ArrowDown" ? 1 : -1))));
+                  }
+                  if (event.key === "Enter" && filteredOptions[activeIndex]) {
+                    event.preventDefault();
+                    selectValue(filteredOptions[activeIndex].value);
                   }
                 }}
               />
             </label>
-            <div className="search-select-options" id={listboxId} role="listbox">
+            <div className="search-select-options" id={listboxId} role="listbox" aria-label={label}>
               {filteredOptions.length > 0 ? (
-                filteredOptions.map((option) => (
+                filteredOptions.map((option, index) => (
                   <button
                     type="button"
                     key={`${option.value}-${option.label}`}
-                    className={option.value === value ? "selected" : ""}
+                    id={`${listboxId}-${index}`}
+                    tabIndex={-1}
+                    className={`${option.value === value ? "selected" : ""} ${index === activeIndex ? "keyboard-active" : ""}`}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => selectValue(option.value)}
                     role="option"
@@ -170,7 +199,7 @@ export function SearchableSelect({
                   </button>
                 ))
               ) : (
-                <p>No matching option</p>
+                <p role="status">No matches for “{query}”. Try a different name.</p>
               )}
             </div>
           </div>

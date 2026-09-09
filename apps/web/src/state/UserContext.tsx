@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { User, WorkOrder } from "@sugi-cmms/shared";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
 interface UserContextValue {
@@ -21,6 +21,7 @@ const UserContext = createContext<UserContextValue | null>(null);
 const sessionUserKey = "sugi-cmms-auth-user-id-v2";
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
+  const [sessionError, setSessionError] = useState("");
   const [users, setUsers] = useState<User[]>([]);
   const [currentUserId, setCurrentUserIdState] = useState(() => localStorage.getItem(sessionUserKey) || "");
   const [loadingUsers, setLoadingUsers] = useState(true);
@@ -89,7 +90,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         setUsers([user]);
         await refreshUsers();
       })
-      .catch(() => {
+      .catch((error) => {
+        if (!(error instanceof ApiError) || error.status !== 401) {
+          setSessionError("Couldn’t connect to your account. Your session has been kept. Try again when the server is available.");
+          setLoadingUsers(false);
+          return;
+        }
         api.clearSession();
         localStorage.removeItem(sessionUserKey);
         setCurrentUserIdState("");
@@ -131,6 +137,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     () => ({ users, currentUser, loadingUsers, isAuthenticated, login, logout, setCurrentUserId, refreshUsers, workOrders, workOrdersReady, refreshWorkOrders }),
     [users, currentUser, loadingUsers, isAuthenticated, workOrders, workOrdersReady]
   );
+
+  if (sessionError) return <main className="ux-recovery" role="alert"><h1>Connection interrupted</h1><p>{sessionError}</p><button className="primary-action" type="button" onClick={() => window.location.reload()}>Try again</button></main>;
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
 }

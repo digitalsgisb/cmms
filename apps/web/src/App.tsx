@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { LockKeyhole } from "lucide-react";
 import { Layout } from "./components/Layout";
 import { AdminPage } from "./pages/AdminPage";
@@ -30,6 +30,8 @@ export function App() {
   const location = useLocation();
 
   useEffect(() => {
+    const publicTitle = location.pathname === "/login" ? "Sign in" : location.pathname.startsWith("/requester/track") ? "Track your request" : location.pathname === "/requester" ? "Report an issue" : "";
+    if (publicTitle) document.title = `${publicTitle} · SUGI CMMS`;
     const manifestLink = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
     if (manifestLink) {
       manifestLink.href = location.pathname.startsWith("/requester") ? "/requester.webmanifest" : "/manifest.webmanifest";
@@ -43,6 +45,7 @@ export function App() {
       <Route path="/requester/track/:id" element={<GuestTrackingPage />} />
       <Route path="/tv" element={<AuthenticatedTv />} />
       <Route element={<Layout />}>
+        <Route path="*" element={<section className="ux-recovery"><h1>Page not found</h1><p>This link may be outdated. Choose a page from the navigation or return home.</p><Link className="primary-action" to="/">Return home</Link></section>} />
         <Route index element={<HomePage />} />
         <Route path="/work-orders" element={<WorkOrdersPage />} />
         <Route path="/work-orders/new" element={<CreateWorkOrderPage />} />

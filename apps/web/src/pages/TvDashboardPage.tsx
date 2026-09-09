@@ -18,12 +18,14 @@ const workOrdersPerPage = 8;
 const rotationIntervalMs = 10_000;
 
 export function TvDashboardPage() {
+  const [loadError, setLoadError] = useState("");
   const [workOrders, setWorkOrders] = useState<TvWorkOrder[]>([]);
   const [now, setNow] = useState(new Date());
   const [rotationStep, setRotationStep] = useState(0);
 
   async function loadWorkOrders() {
-    setWorkOrders(await api.tvWorkOrders());
+    try { setWorkOrders(await api.tvWorkOrders()); setLoadError(""); }
+    catch { setLoadError("Live updates interrupted. Showing the last available work orders; reconnecting automatically."); }
   }
 
   useEffect(() => {
@@ -45,6 +47,7 @@ export function TvDashboardPage() {
 
   return (
     <main className="tv-dashboard">
+      {loadError ? <div className="ux-load-error" role="status">{loadError}</div> : null}
       <header className="tv-header">
         <div className="tv-brand-block">
           <img src="/brand/sugi_mark_white.png" alt="Sugihara Grand Industries" />

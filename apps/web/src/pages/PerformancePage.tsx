@@ -145,6 +145,7 @@ export function PerformancePage() {
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [inventory, setInventory] = useState<SpareInventoryResponse | null>(null);
   const [pm, setPm] = useState<PmDashboardResponse | null>(null);
+  const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -163,7 +164,9 @@ export function PerformancePage() {
     if (workResult.status === "fulfilled") setWorkOrders(workResult.value);
     if (inventoryResult.status === "fulfilled") setInventory(inventoryResult.value);
     if (pmResult.status === "fulfilled") setPm(pmResult.value);
-    setLastUpdated(new Date());
+    const failed = [workResult, inventoryResult, pmResult].some((result) => result.status === "rejected");
+    setLoadError(failed ? "Some performance data could not load. Figures may be incomplete or out of date." : "");
+    if (!failed) setLastUpdated(new Date());
     setLoading(false);
     setRefreshing(false);
   }, [currentUser]);
@@ -380,8 +383,11 @@ export function PerformancePage() {
   const showPm = focus === "all" || focus === "pm";
   const activePeriod = periodCopy[period];
 
+  if (loading && !lastUpdated) return <div className="ux-recovery" role="status"><h1>Performance</h1><p>Loading performance data…</p></div>;
+
   return (
     <section className="performance-page page-stack">
+      {loadError ? <div className="ux-load-error" role="alert"><span>{loadError}</span><button className="secondary-action" type="button" onClick={() => void loadPerformance(true)}>Try again</button></div> : null}
       <div className="analytics-plant-filter"><span>Viewing</span><PlantSelector allowCombined compact /></div>
       <header className="performance-hero">
         <div className="performance-hero-copy">
