@@ -4731,41 +4731,6 @@ tbody tr:hover {
   scroll-margin-top: 90px;
 }
 
-.technician-current-job-banner {
-  position: relative;
-  isolation: isolate;
-  display: grid;
-  min-width: 0;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  overflow: hidden;
-  border: 1px solid rgba(127, 17, 27, .14);
-  border-radius: 13px;
-  padding: 14px;
-  color: var(--ink);
-  background: linear-gradient(145deg, #fff, #fff8f8);
-  box-shadow: 0 12px 27px rgba(63, 7, 16, .08);
-}
-.technician-current-job-banner::after {
-  position: absolute;
-  inset: 0 0 auto;
-  height: 4px;
-  z-index: -1;
-  content: "";
-  background: linear-gradient(90deg, #0e6b72, #45b796, #d2a85b, #0e6b72);
-  background-size: 220% 100%;
-  animation: technicianStatusFlow 3.4s linear infinite;
-}
-.technician-current-job-icon { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 11px; color: #fff; background: linear-gradient(135deg, var(--maroon), var(--rose)); }
-.technician-current-job-banner > span:nth-child(2) { display: grid; min-width: 0; gap: 3px; }
-.technician-current-job-banner small { color: var(--maroon); font-size: 9px; font-style: normal; font-weight: 950; letter-spacing: .06em; text-transform: uppercase; }
-.technician-current-job-banner strong,
-.technician-current-job-banner em { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.technician-current-job-banner strong { font-size: 14px; }
-.technician-current-job-banner em { color: var(--muted); font-size: 10px; font-style: normal; }
-.technician-current-job-banner > span:last-child { display: flex; align-items: center; gap: 7px; color: var(--maroon); }
-
 .technician-queue-tabs {
   position: relative;
   isolation: isolate;
@@ -4841,26 +4806,6 @@ tbody tr:hover {
 .technician-more-card.tone-history .technician-more-icon { background: linear-gradient(135deg, #237956, #58ae83); }
 .technician-more-card.tone-profile .technician-more-icon { background: linear-gradient(135deg, #5c4774, #8b6ba8); }
 
-.technician-detail-status {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) minmax(170px, auto);
-  align-items: center;
-  gap: 12px;
-  overflow: hidden;
-  border: 1px solid rgba(14, 107, 114, .14);
-  border-radius: 12px;
-  padding: 13px 15px;
-  background: linear-gradient(125deg, #fff 5%, #e3f6f4 36%, #fff5df 56%, #fff 78%);
-  background-size: 230% 230%;
-  box-shadow: 0 10px 24px rgba(40, 68, 67, .07);
-  animation: technicianCardGradient 9s ease-in-out infinite;
-}
-.technician-detail-status > span { display: grid; width: 40px; height: 40px; place-items: center; border-radius: 10px; color: #fff; background: linear-gradient(135deg, #0e6b72, #45a98d); }
-.technician-detail-status > div { display: grid; min-width: 0; gap: 3px; }
-.technician-detail-status > div:last-child { justify-items: end; text-align: right; }
-.technician-detail-status small { color: var(--muted); font-size: 9px; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
-.technician-detail-status strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-
 .technician-detail-tools-panel { display: contents; }
 .technician-detail-tools-toggle {
   display: grid;
@@ -4881,13 +4826,51 @@ tbody tr:hover {
 
 .technician-detail-page .detail-layout { display: flex; flex-direction: column; align-items: stretch; }
 .technician-detail-page .detail-side { grid-template-columns: 1fr; }
-.technician-detail-page .detail-layout.technician-actions-first .detail-side { order: -1; }
-.technician-detail-page .timer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.technician-detail-page .technician-secondary-timer,
 .technician-detail-page .technician-secondary-detail { display: none; }
+.technician-detail-page .detail-main { display: flex; flex-direction: column; }
+.technician-detail-page .detail-summary-panel { order: 1; }
+.technician-detail-page .detail-images-panel { order: 2; }
+.technician-detail-page .detail-activity-panel { order: 3; }
 .technician-detail-page .timeline-item:nth-child(n + 4) { display: none; }
 .technician-detail-page .technician-detail-tools-panel { display: grid; gap: 12px; animation: technicianQueueSwap 280ms ease both; }
 .technician-detail-page .detail-summary-panel { background: linear-gradient(145deg, #fff, #fffafa); }
+
+.work-order-command-copy { min-width: 0; flex: 1 1 auto; }
+.technician-work-order-command {
+  border-color: rgba(255, 255, 255, .2);
+  background-size: 220% 220%;
+  box-shadow: 0 18px 44px rgba(30, 23, 29, .22);
+  animation: technicianCardGradient 5.2s ease-in-out infinite;
+  transition: background-image 100ms linear, box-shadow 180ms ease;
+}
+.technician-work-order-command.technician-status-open { background-image: linear-gradient(125deg, #073b4c, #087486 42%, #0b9398 66%, #06475a); }
+.technician-work-order-command.technician-status-acknowledged { background-image: linear-gradient(125deg, #5d3600, #a46612 42%, #d29b32 66%, #744309); }
+.technician-work-order-command.technician-status-in_progress { background-image: linear-gradient(125deg, #064e3b, #087f6b 40%, #0b8390 67%, #075a55); }
+.technician-work-order-command.technician-status-pending_material { background-image: linear-gradient(125deg, #70260e, #bd3c0a 42%, #b56808 68%, #70310b); }
+.technician-work-order-command.technician-status-returned { background-image: linear-gradient(125deg, #641024, #b41638 43%, #8e1230 68%, #55101f); }
+.technician-work-order-command.technician-status-resolved,
+.technician-work-order-command.technician-status-closed { background-image: linear-gradient(125deg, #124827, #147a3d 42%, #218d55 68%, #13552e); }
+.technician-work-order-command.technician-status-cancelled { background-image: linear-gradient(125deg, #312e35, #5d3540 46%, #783342 70%, #2f2930); }
+
+.technician-command-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 17px;
+}
+.technician-command-summary > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-radius: 9px;
+  padding: 10px 11px;
+  background: rgba(255, 255, 255, .12);
+  backdrop-filter: blur(8px);
+}
+.technician-command-summary small { color: rgba(255, 255, 255, .7); font-size: 9px; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
+.technician-command-summary strong { overflow: hidden; color: #fff; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.detail-images-empty { grid-column: 1 / -1; margin: 0; border: 1px dashed rgba(127, 17, 27, .16); border-radius: 9px; padding: 18px; color: var(--muted); text-align: center; }
 
 .technician-section-heading {
   display: flex;
@@ -4950,16 +4933,35 @@ tbody tr:hover {
 
 .technician-card[class*="technician-status-"] {
   overflow: hidden;
-  background-size: 240% 240%;
-  animation: technicianCardGradient 8s ease-in-out infinite;
+  border-color: rgba(255, 255, 255, .2);
+  color: #fff;
+  background-color: #073b4c;
+  background-size: 230% 230%;
+  box-shadow: 0 15px 34px rgba(23, 35, 41, .2);
+  animation: technicianCardGradient 4.8s ease-in-out infinite;
+  transition: color 120ms linear, border-color 120ms linear, box-shadow 180ms ease, transform 360ms cubic-bezier(.22, 1, .36, 1);
 }
-.technician-card.technician-status-open { background-image: linear-gradient(125deg, #fff 8%, #eaf8fa 43%, #fff 70%, #edf9f7); }
-.technician-card.technician-status-acknowledged { background-image: linear-gradient(125deg, #fff 8%, #fff4d9 42%, #fff 70%, #f8f0dc); }
-.technician-card.technician-status-in_progress { background-image: linear-gradient(125deg, #fff 5%, #dff7f1 34%, #fff4d7 55%, #fff 73%, #e3f6f4); }
-.technician-card.technician-status-pending_material { background-image: linear-gradient(125deg, #fff 7%, #fff0d8 39%, #fff 68%, #fae5c7); }
-.technician-card.technician-status-returned { background-image: linear-gradient(125deg, #fff 7%, #fde8eb 40%, #fff 68%, #f7dfe2); }
+.technician-card.technician-status-open { background-image: linear-gradient(125deg, #073b4c, #087486 40%, #0b9398 66%, #06475a); }
+.technician-card.technician-status-acknowledged { background-image: linear-gradient(125deg, #5d3600, #a46612 40%, #d29b32 66%, #744309); }
+.technician-card.technician-status-in_progress { background-image: linear-gradient(125deg, #064e3b, #087f6b 39%, #0b8390 66%, #075a55); }
+.technician-card.technician-status-pending_material { background-image: linear-gradient(125deg, #70260e, #bd3c0a 41%, #b56808 68%, #70310b); }
+.technician-card.technician-status-returned { background-image: linear-gradient(125deg, #641024, #b41638 42%, #8e1230 68%, #55101f); }
 .technician-card.technician-status-resolved,
-.technician-card.technician-status-closed { background-image: linear-gradient(125deg, #fff 7%, #e1f5e9 42%, #fff 70%, #e9f7ef); }
+.technician-card.technician-status-closed { background-image: linear-gradient(125deg, #124827, #147a3d 41%, #218d55 68%, #13552e); }
+.technician-card.technician-status-cancelled { background-image: linear-gradient(125deg, #312e35, #5d3540 45%, #783342 70%, #2f2930); }
+.technician-card[class*="technician-status-"] h2,
+.technician-card[class*="technician-status-"] p,
+.technician-card[class*="technician-status-"] .card-topline > strong,
+.technician-card[class*="technician-status-"] .card-footer,
+.technician-card[class*="technician-status-"] > a { color: #fff; }
+.technician-card[class*="technician-status-"] .card-footer { color: rgba(255, 255, 255, .78); }
+.technician-card[class*="technician-status-"] .technician-card-context { color: rgba(255, 255, 255, .78); background: rgba(255, 255, 255, .13); }
+.technician-card[class*="technician-status-"] .technician-card-context strong { color: #fff; }
+.technician-card[class*="technician-status-"] .technician-readonly-note { color: rgba(255, 255, 255, .88); background: rgba(255, 255, 255, .12); }
+.technician-card[class*="technician-status-"] .technician-owner-chip { color: #114c2c; background: rgba(235, 255, 241, .94); }
+.technician-card[class*="technician-status-"].is-status-changing {
+  animation: technicianStatusCommit 420ms cubic-bezier(.22, 1, .36, 1) both, technicianCardGradient 4.8s ease-in-out infinite;
+}
 
 .technician-history-list { display: grid; gap: 7px; }
 .technician-history-list > a {
@@ -5050,6 +5052,12 @@ tbody tr:hover {
   50% { background-position: 100% 55%; }
 }
 
+@keyframes technicianStatusCommit {
+  0% { filter: saturate(.82); transform: scale(.992); }
+  55% { filter: saturate(1.22); transform: scale(1.006); }
+  100% { filter: saturate(1); transform: scale(1); }
+}
+
 @keyframes technicianQueueSwap {
   from { opacity: 0; transform: translateY(7px); }
   to { opacity: 1; transform: translateY(0); }
@@ -5115,10 +5123,8 @@ tbody tr:hover {
   .technician-project-summary span { font-size: 9px; }
   .technician-history-table > a { grid-template-columns: auto minmax(0, 1fr); }
   .technician-history-meta { grid-column: 2; grid-row: auto; justify-items: start; }
-  .technician-detail-status { grid-template-columns: auto minmax(0, 1fr); }
-  .technician-detail-status > div:last-child { grid-column: 2; justify-items: start; text-align: left; }
-  .technician-current-job-banner { grid-template-columns: auto minmax(0, 1fr); }
-  .technician-current-job-banner > span:last-child { grid-column: 2; justify-content: space-between; }
+  .technician-command-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .technician-command-summary strong { font-size: 12px; }
 }
 
 .technician-profile-page {

@@ -131,11 +131,6 @@ export function TechnicianPage() {
     () => jobs.filter((workOrder) => Boolean(workOrder.assignedToId) && workOrder.assignedToId !== currentUser?.id && !["resolved", "closed", "cancelled"].includes(workOrder.status)),
     [currentUser?.id, jobs]
   );
-  const currentJob = useMemo(
-    () => [...myActiveJobs].sort((a, b) => Number(b.status === "in_progress") - Number(a.status === "in_progress") || b.updatedAt.localeCompare(a.updatedAt))[0],
-    [myActiveJobs]
-  );
-
   useEffect(() => {
     if (!workOrdersReady || hasSelectedInitialQueueTabRef.current) return;
     const hasAssignedWork = liveWorkOrders.some((workOrder) =>
@@ -240,7 +235,6 @@ export function TechnicianPage() {
         assignedToId
       });
       setSubmitting(false);
-      await waitForActionMotion();
       const scrollX = window.scrollX;
       const scrollY = window.scrollY;
       if (document.activeElement instanceof HTMLElement && document.activeElement.classList.contains("motion-button")) {
@@ -345,14 +339,23 @@ export function TechnicianPage() {
     const isMine = mode === "mine";
     const isClaimable = mode === "available" && currentUser?.role === "technician";
     const canStart = isMine && (["acknowledged", "returned", "pending_material"].includes(workOrder.status) || workOrder.status === "open");
+    const pendingVisualStatus = busyId === workOrder.id
+      ? busyAction === "claim"
+        ? "acknowledged"
+        : ["acknowledged", "in_progress", "pending_material", "returned", "resolved", "closed", "cancelled"].includes(busyAction)
+          ? busyAction as WorkOrderStatus
+          : null
+      : null;
+    const visualStatus = pendingVisualStatus || workOrder.status;
     const cardClasses = [
       "technician-card",
-      `technician-status-${workOrder.status}`,
+      `technician-status-${visualStatus}`,
       isClaimable ? "is-claimable" : "",
       mode === "team" ? "is-team-readonly" : "",
       recentlyUpdatedId === workOrder.id ? "is-updated" : "",
       liveArrival?.id === workOrder.id ? "is-new-live" : "",
-      recentlyClaimedId === workOrder.id ? "is-claimed" : ""
+      recentlyClaimedId === workOrder.id ? "is-claimed" : "",
+      pendingVisualStatus ? "is-status-changing" : ""
     ].filter(Boolean).join(" ");
 
     const openFromCard = (event: ReactMouseEvent<HTMLElement>) => {
@@ -366,6 +369,7 @@ export function TechnicianPage() {
         key={workOrder.id}
         role="link"
         tabIndex={0}
+        aria-busy={Boolean(pendingVisualStatus)}
         aria-label={`Open ${workOrder.number} details`}
         onClick={openFromCard}
         onKeyDown={(event) => {
@@ -379,14 +383,14 @@ export function TechnicianPage() {
           <strong>{workOrder.number}</strong>
           <span className="technician-card-badges">
             {isMine ? <span className="technician-owner-chip">Mine</span> : null}
-            <StatusBadge status={workOrder.status} />
+        <StatusBadge status={visualStatus} />
           </span>
         </div>
         <h2>{workOrder.title}</h2>
         <p>{workOrder.location} - {workOrder.machineName || workOrder.assetName}</p>
         <div className="technician-card-context">
           <span>{workOrderTypeLabels[workOrder.type]}</span>
-          {workOrder.assignedToId ? <strong>{workOrder.status === "in_progress" ? "In progress by" : "Accepted by"} {technicianName(workOrder.assignedToId)}</strong> : <strong>Waiting for technician</strong>}
+          {workOrder.assignedToId ? <strong>{visualStatus === "in_progress" ? "In progress by" : "Accepted by"} {technicianName(workOrder.assignedToId)}</strong> : <strong>Waiting for technician</strong>}
         </div>
         <div className="card-footer">
           <PriorityBadge priority={workOrder.priority} />
@@ -439,14 +443,6 @@ export function TechnicianPage() {
       </div>
 
       {queueError ? <p className="error-line">{queueError}</p> : null}
-
-      {currentJob ? (
-        <Link className={`technician-current-job-banner technician-status-${currentJob.status}`} to={`/work-orders/${currentJob.id}`}>
-          <span className="technician-current-job-icon"><Wrench size={21} /></span>
-          <span><small>My current responsibility</small><strong>{currentJob.number} · {currentJob.title}</strong><em>{currentJob.location} · {currentJob.machineName || currentJob.assetName}</em></span>
-          <span><StatusBadge status={currentJob.status} /><ChevronRight size={18} /></span>
-        </Link>
-      ) : null}
 
       <div className={`technician-queue-tabs active-${activeQueueTab}`} role="tablist" aria-label="Job queues">
         <button type="button" role="tab" aria-selected={activeQueueTab === "new"} className={activeQueueTab === "new" ? "active" : ""} onClick={() => setActiveQueueTab("new")}><span>New Jobs</span><strong>{availableJobs.length}</strong></button>

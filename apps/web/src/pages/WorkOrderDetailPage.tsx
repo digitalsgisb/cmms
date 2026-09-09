@@ -166,7 +166,6 @@ export function WorkOrderDetailPage() {
       }
       setNote("");
       setBusy(false);
-      await waitForActionMotion();
       mergeWorkOrder(updatedWorkOrder);
       void refreshDetailQuietly().catch(console.error);
     } finally {
@@ -333,6 +332,9 @@ export function WorkOrderDetailPage() {
     ["acknowledged", "returned", "pending_material"].includes(detail.status) ||
     (detail.status === "open" && (currentUser?.role !== "technician" || isAssignedToCurrentUser));
   const guestTrackingUrl = guestTrackingPath ? `${window.location.origin}${guestTrackingPath}` : "";
+  const visualStatus = ["open", "acknowledged", "in_progress", "pending_material", "returned", "resolved", "closed", "cancelled"].includes(busyAction)
+    ? busyAction as WorkOrderStatus
+    : detail.status;
 
   async function copyGuestTrackingLink() {
     if (!guestTrackingUrl) return;
@@ -343,16 +345,24 @@ export function WorkOrderDetailPage() {
 
   return (
     <section className={`page-stack ${isTechnician ? "technician-detail-page" : ""}`}>
-      <div className="work-order-command">
-        <div>
+      <div className={`work-order-command ${isTechnician ? `technician-work-order-command technician-status-${visualStatus}` : ""}`}>
+        <div className="work-order-command-copy">
           <p className="eyebrow">{detail.number}</p>
           <h1>{detail.title}</h1>
           <p>{detail.location} - {detail.area} - {detail.machineName || detail.assetName}</p>
           <div className="command-badges">
-            <StatusBadge status={detail.status} />
+            <StatusBadge status={visualStatus} />
             <PriorityBadge priority={detail.priority} />
             <span>{workOrderTypeLabels[detail.type]}</span>
           </div>
+          {isTechnician ? (
+            <div className="technician-command-summary" aria-label="Current job summary">
+              <div><small>Current status</small><strong>{workOrderStatusLabels[visualStatus]}</strong></div>
+              <div><small>Assigned technician</small><strong>{detail.assignedTo?.name || "Waiting for acceptance"}</strong></div>
+              <div><small>Total open time</small><strong>{formatDuration(createdAt, terminalAt || timerNow)}</strong></div>
+              <div><small>Repair duration</small><strong>{startedAt ? formatDuration(startedAt, resolvedAt || terminalAt || timerNow) : "Not started"}</strong></div>
+            </div>
+          ) : null}
         </div>
         <div className="work-order-command-actions">
           <Link className="secondary-action" to={isTechnician ? "/technician" : "/work-orders"}>
@@ -374,13 +384,7 @@ export function WorkOrderDetailPage() {
         </div>
       </div>
 
-      {isTechnician ? (
-        <div className={`technician-detail-status technician-status-${detail.status}`}>
-          <span><Wrench size={19} /></span>
-          <div><small>Current job status</small><strong>{workOrderStatusLabels[detail.status]}</strong></div>
-          <div><small>Assigned technician</small><strong>{detail.assignedTo?.name || "Waiting for acceptance"}</strong></div>
-        </div>
-      ) : (
+      {!isTechnician ? (
         <div className="workflow-strip">
           {displayWorkflow.map((step, index) => (
             <div key={step} className={`workflow-step ${index <= workflowIndex ? "done" : ""} ${step === detail.status ? "current" : ""}`}>
@@ -388,9 +392,9 @@ export function WorkOrderDetailPage() {
             </div>
           ))}
         </div>
-      )}
+      ) : null}
 
-      <div className="timer-grid">
+      {!isTechnician ? <div className="timer-grid">
         <article className="timer-card primary">
           <TimerReset size={18} aria-hidden="true" />
           <span>Total open time</span>
@@ -411,9 +415,9 @@ export function WorkOrderDetailPage() {
           <span>Verification wait</span>
           <strong>{resolvedAt ? formatDuration(resolvedAt, closedAt || timerNow) : "Not ready"}</strong>
         </article>
-      </div>
+      </div> : null}
 
-      <div className={`detail-layout ${isTechnician && canUseMaintenanceActions ? "technician-actions-first" : ""}`}>
+      <div className="detail-layout">
         <div className="detail-main">
           <div className="section-panel detail-summary-panel">
             <div className="detail-heading">
@@ -463,7 +467,7 @@ export function WorkOrderDetailPage() {
                   <dt>Issue category</dt>
                   <dd>{detail.issueCategory?.name || "Other"}</dd>
                 </div>
-                <div>
+                <div className="technician-secondary-detail">
                   <dt>Assigned</dt>
                   <dd>{detail.assignedTo?.name || "Unassigned"}</dd>
                 </div>
@@ -471,14 +475,14 @@ export function WorkOrderDetailPage() {
                   <dt>Requester account</dt>
                   <dd>{detail.requester.name}</dd>
                 </div>
-                <div>
+                <div className="technician-secondary-detail">
                   <dt>Updated</dt>
                   <dd>{formatDateTime(detail.updatedAt)}</dd>
                 </div>
               </dl>
           </div>
 
-          <div className="section-panel">
+          <div className="section-panel detail-activity-panel">
             <div className="section-header">
               <div>
                 <h2>{isTechnician ? "Recent Activity" : "Timeline"}</h2>
@@ -500,7 +504,7 @@ export function WorkOrderDetailPage() {
             </div>
           </div>
 
-          <div className="section-panel">
+          <div className="section-panel detail-images-panel">
             <div className="section-header">
               <div>
                 <h2>Images</h2>
@@ -514,6 +518,7 @@ export function WorkOrderDetailPage() {
                   <span>{attachment.kind.replace("_", " ")}</span>
                 </a>
               ))}
+              {detail.attachments.length === 0 ? <p className="detail-images-empty">No images uploaded for this job.</p> : null}
             </div>
           </div>
         </div>
