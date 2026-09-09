@@ -85,7 +85,7 @@ export function DashboardPage() {
 
   const dashboardWorkOrders = useMemo(
     () => technicianMode && currentUser
-      ? workOrders.filter((workOrder) => workOrder.assignedToId === currentUser.id)
+      ? workOrders.filter((workOrder) => workOrder.assignedToId === currentUser.id || (workOrder.status === "open" && !workOrder.assignedToId))
       : workOrders,
     [currentUser, technicianMode, workOrders]
   );
@@ -110,7 +110,7 @@ export function DashboardPage() {
     const today = new Date().toISOString().slice(0, 10);
     return {
       totalOpen: dashboardWorkOrders.filter((item) => !["closed", "cancelled"].includes(item.status)).length,
-      newWorkOrders: dashboardWorkOrders.filter((item) => item.status === "open").length,
+      newWorkOrders: dashboardWorkOrders.filter((item) => item.status === "open" && !item.assignedToId).length,
       inProgress: dashboardWorkOrders.filter((item) => ["acknowledged", "in_progress", "returned"].includes(item.status)).length,
       pendingMaterial: dashboardWorkOrders.filter((item) => item.status === "pending_material").length,
       resolvedWaitingVerification: dashboardWorkOrders.filter((item) => item.status === "resolved").length,
@@ -156,7 +156,7 @@ export function DashboardPage() {
         <div className="dashboard-hero-main">
           <p className="hero-eyebrow"><span aria-hidden="true" /> Live maintenance command · {formatLongDisplayDate()}</p>
           <h1>Good day, {currentUser?.name.split(" ")[0] ?? "team"}.</h1>
-          <p>{technicianMode ? "Everything assigned to you, kept in one clear working view." : "Everything that needs attention across work orders and spare parts—kept in one readable view."}</p>
+          <p>{technicianMode ? "Your current work and new eligible jobs, kept in one clear working view." : "Everything that needs attention across work orders and spare parts—kept in one readable view."}</p>
           <div className="hero-actions">
             {technicianMode ? <Link className="primary-action" to="/technician"><ClipboardList size={17} /> Open My Jobs</Link> : <Link className="primary-action" to="/work-orders/new"><Plus size={17} /> New Work Order</Link>}
             {canUseInProgressModules ? <Link className="secondary-action" to="/performance"><BarChart3 size={17} /> Open Performance</Link> : <Link className="secondary-action" to="/spare-parts"><Package size={17} /> Open Spare Parts</Link>}
@@ -170,8 +170,8 @@ export function DashboardPage() {
       </div>
 
       <div className="dashboard-kpi-grid metric-grid" aria-busy={loading}>
-        <MetricTile icon={ClipboardList} label={technicianMode ? "My active jobs" : "Total active"} value={effectiveSummary?.totalOpen ?? 0} />
-        <MetricTile icon={AlertTriangle} label={technicianMode ? "My new jobs" : "New requests"} value={effectiveSummary?.newWorkOrders ?? 0} tone="danger" />
+        <MetricTile icon={ClipboardList} label={technicianMode ? "My queue" : "Total active"} value={effectiveSummary?.totalOpen ?? 0} />
+        <MetricTile icon={AlertTriangle} label={technicianMode ? "Available jobs" : "New requests"} value={effectiveSummary?.newWorkOrders ?? 0} tone="danger" />
         <MetricTile icon={Wrench} label="In progress" value={effectiveSummary?.inProgress ?? 0} />
         <MetricTile icon={CheckCircle2} label="Closed today" value={effectiveSummary?.closedToday ?? 0} tone="success" />
         <MetricTile icon={ShieldCheck} label="PM compliance" value={canUseInProgressModules ? `${pmCompliance}%` : "Locked"} tone={canUseInProgressModules && pmCompliance >= 95 ? "success" : undefined} />

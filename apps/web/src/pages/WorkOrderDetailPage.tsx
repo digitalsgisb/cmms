@@ -3,7 +3,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { User, WorkOrder, WorkOrderAttachment, WorkOrderActivity, WorkOrderDetail, WorkOrderStatus } from "@sugi-cmms/shared";
-import { workOrderStatusLabels, workOrderTypeLabels } from "@sugi-cmms/shared";
+import { technicianCanAccessWorkOrder, workOrderStatusLabels, workOrderTypeLabels } from "@sugi-cmms/shared";
 import { api, mediaUrl } from "../api/client";
 import { PriorityBadge, StatusBadge } from "../components/Badges";
 import { ActionButton } from "../components/ActionButton";
@@ -128,7 +128,10 @@ export function WorkOrderDetailPage() {
 
   useLiveRefresh(["work-orders"], refreshDetailQuietly, { enabled: Boolean(id) });
 
-  const technicians = useMemo(() => users.filter((user) => user.role === "technician"), [users]);
+  const technicians = useMemo(
+    () => users.filter((user) => user.role === "technician" && (!detail || technicianCanAccessWorkOrder(user, detail))),
+    [detail?.type, users]
+  );
   const canMaintain = currentUser ? ["technician", "executive", "admin", "developer"].includes(currentUser.role) : false;
   const canManageWorkOrder = currentUser ? ["executive", "admin"].includes(currentUser.role) : false;
   const canVerify =
@@ -319,6 +322,9 @@ export function WorkOrderDetailPage() {
   const closedAt = findActivityTime(detail.activities, "closed");
   const terminalAt = closedAt || (detail.status === "cancelled" ? detail.updatedAt : null);
   const isAssignedToCurrentUser = currentUser ? detail.assignedToId === currentUser.id : false;
+  const isTechnician = currentUser?.role === "technician";
+  const canClaimOpen = detail.status === "open" && !detail.assignedToId && detail.type !== "project";
+  const canUseMaintenanceActions = canMaintain && (!isTechnician || isAssignedToCurrentUser || canClaimOpen);
   const canStartRepair =
     ["acknowledged", "returned", "pending_material"].includes(detail.status) ||
     (detail.status === "open" && (currentUser?.role !== "technician" || isAssignedToCurrentUser));
@@ -556,13 +562,13 @@ export function WorkOrderDetailPage() {
             </div>
           ) : null}
 
-          {canMaintain ? (
+          {canUseMaintenanceActions ? (
             <div className="section-panel action-panel">
               <h2>Maintenance Actions</h2>
               <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={4} placeholder="Update note" />
 
               <div className="button-stack">
-                {detail.status === "open" ? (
+                {detail.status === "open" && (!isTechnician || canClaimOpen) ? (
                   <ActionButton
                     type="button"
                     icon={ShieldCheck}
@@ -585,7 +591,7 @@ export function WorkOrderDetailPage() {
                     disabled={actionLocked}
                     onClick={() => updateStatus("in_progress", "Repair started.")}
                   >
-                    Start Repair
+                    {detail.type === "project" ? "Start Work" : "Start Repair"}
                   </ActionButton>
                 ) : null}
                 {["acknowledged", "in_progress", "returned"].includes(detail.status) ? (

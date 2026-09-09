@@ -27,14 +27,14 @@ inPlant(() => m.db.prepare(`
 `).run());
 const developer = inPlant(() => m.getUser("wo-developer"));
 
-function createUser(role, suffix) {
+function createUser(role, suffix, department = role === "technician" ? "Maintenance" : "Production") {
   return inPlant(() => m.createUser({
     actorId: admin.id,
     username: `wo-${suffix}`,
     password,
     name: `WO ${suffix}`,
     role,
-    department: role === "technician" ? "Maintenance" : "Production",
+    department,
     title: role,
     plantAccess: "port-klang"
   }));
@@ -42,6 +42,7 @@ function createUser(role, suffix) {
 
 const executive = createUser("executive", "executive");
 const technician = createUser("technician", "technician");
+const kaizenTechnician = createUser("technician", "kaizen-technician", "Kaizen");
 const requester = createUser("requester", "requester");
 const masterData = inPlant(() => m.listMasterData());
 const section = masterData.sections[0];
@@ -49,10 +50,10 @@ const issueCategory = masterData.issueCategories[0];
 assert(section);
 assert(issueCategory);
 
-function createOrder(label) {
+function createOrder(label, type = "maintenance") {
   return inPlant(() => m.createWorkOrder(m.validateCreateWorkOrderInput({
     requesterId: requester.id,
-    type: "maintenance",
+    type,
     workDate: "2026-09-08",
     shiftGroup: "A",
     sectionId: section.id,
@@ -103,6 +104,22 @@ assert.equal(updated.responsibleDepartment, "SHE");
 assert.equal(updated.shiftGroup, "N/A");
 assert.equal(inPlant(() => m.getWorkOrderDetail(workOrder.id)).activities[0].action, "edited");
 
+const maintenanceOrder = createOrder("Maintenance routing");
+const kaizenOrder = createOrder("Kaizen routing", "kaizen");
+const projectOrder = createOrder("Shared project", "project");
+const maintenanceVisible = inPlant(() => m.listWorkOrders(technician));
+const kaizenVisible = inPlant(() => m.listWorkOrders(kaizenTechnician));
+assert(maintenanceVisible.some((order) => order.id === maintenanceOrder.id));
+assert(!maintenanceVisible.some((order) => order.id === kaizenOrder.id));
+assert(maintenanceVisible.some((order) => order.id === projectOrder.id));
+assert(!kaizenVisible.some((order) => order.id === maintenanceOrder.id));
+assert(kaizenVisible.some((order) => order.id === kaizenOrder.id));
+assert(kaizenVisible.some((order) => order.id === projectOrder.id));
+assert.throws(() => inPlant(() => m.claimWorkOrder(projectOrder.id, technician.id)), /assigned by a coordinator/i);
+assert.throws(() => inPlant(() => m.claimWorkOrder(maintenanceOrder.id, kaizenTechnician.id)), /another technician team/i);
+assert.throws(() => inPlant(() => m.assignWorkOrder(maintenanceOrder.id, kaizenTechnician.id, executive.id)), /team responsible/i);
+assert.equal(inPlant(() => m.claimWorkOrder(kaizenOrder.id, kaizenTechnician.id)).assignedToId, kaizenTechnician.id);
+
 const disposable = createOrder("Delete permission check");
 await assert.rejects(inPlant(() => m.deleteWorkOrder(disposable.id, technician.id)), /Executive or admin/i);
 await assert.rejects(inPlant(() => m.deleteWorkOrder(disposable.id, developer.id)), /Executive or admin/i);
@@ -110,4 +127,4 @@ await inPlant(() => m.deleteWorkOrder(disposable.id, executive.id));
 assert.throws(() => inPlant(() => m.getWorkOrder(disposable.id)), /not found/i);
 
 m.db.close();
-console.log("PASS: executive/admin-only work-order management, stable identifiers, and edit history.");
+console.log("PASS: work-order management, technician-team routing, project assignment rules, stable identifiers, and edit history.");

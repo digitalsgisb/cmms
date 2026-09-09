@@ -73,7 +73,7 @@ import type {
   UpdateWorkOrderSyncSettingsInput,
   WorkOrderType
 } from "@sugi-cmms/shared";
-import { workOrderStatusLabels } from "@sugi-cmms/shared";
+import { technicianCanAccessWorkOrder, workOrderStatusLabels } from "@sugi-cmms/shared";
 import { productionAssets2026 } from "./production-assets-2026.js";
 import { emitNotificationCreated } from "./notification-events.js";
 
@@ -3386,8 +3386,17 @@ async function runWorkOrderSyncQueue(actorId?: string): Promise<WorkOrderSyncRes
   };
 }
 
-export function listWorkOrders(): WorkOrder[] {
-  return rows<WorkOrder>(db.prepare("SELECT * FROM scoped_work_orders ORDER BY updatedAt DESC").all());
+export function listWorkOrders(actor?: User): WorkOrder[] {
+  const workOrders = rows<WorkOrder>(db.prepare("SELECT * FROM scoped_work_orders ORDER BY updatedAt DESC").all());
+  if (!actor) return workOrders;
+  if (actor.role === "requester") return workOrders.filter((workOrder) => workOrder.requesterId === actor.id);
+  if (actor.role === "technician") return workOrders.filter((workOrder) => technicianCanAccessWorkOrder(actor, workOrder));
+  return workOrders;
+}
+
+export function userCanAccessWorkOrder(actor: User, workOrder: WorkOrder) {
+  if (actor.role === "requester") return workOrder.requesterId === actor.id;
+  return actor.role !== "technician" || technicianCanAccessWorkOrder(actor, workOrder);
 }
 
 export function listTvWorkOrders(): TvWorkOrder[] {
@@ -3481,7 +3490,9 @@ export function createWorkOrder(input: CreateWorkOrderInput): WorkOrder {
 
   addActivity(id, input.requesterId, "created", "open", "Work order issued.");
   notifyUsers(
-    listMaintenanceUsers().map((user) => user.id),
+    listMaintenanceUsers()
+      .filter((user) => user.role !== "technician" || technicianCanAccessWorkOrder(user, { type: input.type }))
+      .map((user) => user.id),
     id,
     `New work order ${number}`,
     `${title} at ${sectionName}`
@@ -3627,6 +3638,12 @@ export function claimWorkOrder(id: string, actorId: string, note?: string): Work
   }
 
   const current = getWorkOrder(id);
+  if (!technicianCanAccessWorkOrder(actor, current)) {
+    throw new Error("This work order belongs to another technician team.");
+  }
+  if (current.type === "project") {
+    throw new Error("Projects must be assigned by a coordinator before work starts.");
+  }
   if (current.status !== "open") {
     if (current.status === "acknowledged" && current.assignedToId === actorId) {
       return current;
@@ -3641,7 +3658,15 @@ export function claimWorkOrder(id: string, actorId: string, note?: string): Work
   }
 
   const updatedAt = now();
-  db.prepare("UPDATE work_orders SET status = ?, assignedToId = ?, updatedAt = ? WHERE id = ?").run("acknowledged", actorId, updatedAt, id);
+  const claimed = db.prepare(`
+    UPDATE work_orders SET status = ?, assignedToId = ?, updatedAt = ?
+    WHERE id = ? AND status = 'open' AND (assignedToId IS NULL OR assignedToId = ?)
+  `).run("acknowledged", actorId, updatedAt, id, actorId);
+  if (claimed.changes !== 1) {
+    const latest = getWorkOrder(id);
+    const owner = latest.assignedToId ? getUser(latest.assignedToId).name : "another technician";
+    throw new Error(`${latest.number} was already accepted by ${owner}.`);
+  }
   addActivity(id, actorId, "acknowledged", "acknowledged", note?.trim() || `Accepted by ${actor.name}.`);
 
   const workOrder = getWorkOrder(id);
@@ -3658,11 +3683,15 @@ export function assignWorkOrder(id: string, assignedToId: string, actorId: strin
   if (!["executive", "admin", "developer"].includes(actor.role)) {
     throw new Error("Executive, admin, or developer access is required to assign work orders.");
   }
-  const workOrderPlant = getWorkOrder(id).plantId;
-  if (!userPlants(getUser(assignedToId)).includes(workOrderPlant)) throw new Error("Assignee must have access to this plant.");
+  const currentWorkOrder = getWorkOrder(id);
+  const workOrderPlant = currentWorkOrder.plantId;
+  const assignedUser = getUser(assignedToId);
+  if (!userPlants(assignedUser).includes(workOrderPlant)) throw new Error("Assignee must have access to this plant.");
+  if (assignedUser.role === "technician" && !technicianCanAccessWorkOrder(assignedUser, currentWorkOrder)) {
+    throw new Error("Select a technician from the team responsible for this work-order type.");
+  }
   const updatedAt = now();
   db.prepare("UPDATE work_orders SET assignedToId = ?, updatedAt = ? WHERE id = ?").run(assignedToId, updatedAt, id);
-  const assignedUser = getUser(assignedToId);
   addActivity(id, actorId, "assigned", null, note?.trim() || `Assigned to ${assignedUser.name}.`);
 
   const workOrder = getWorkOrder(id);

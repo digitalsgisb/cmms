@@ -6,6 +6,8 @@ import {
   ChevronRight,
   ClipboardCheck,
   Factory,
+  FolderKanban,
+  History,
   LayoutDashboard,
   LogOut,
   LockKeyhole,
@@ -35,9 +37,11 @@ const navItems = [
 const technicianTabs = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/technician", label: "Jobs", icon: ClipboardCheck },
+  { to: "/technician/projects", label: "Projects", icon: FolderKanban },
   { to: "/spare-parts/scanner", label: "Parts", icon: Package },
   { to: "/preventive-maintenance", label: "PM", icon: ShieldCheck, locked: false },
-  { to: "/profile", label: "Profile", icon: Settings }
+  { to: "/technician/history", label: "History", icon: History, desktopOnly: true },
+  { to: "/profile", label: "Profile", icon: Settings, desktopOnly: true }
 ];
 
 function isTechnicianTabActive(tabPath: string, pathname: string) {
@@ -45,7 +49,7 @@ function isTechnicianTabActive(tabPath: string, pathname: string) {
     return pathname === "/";
   }
   if (tabPath === "/technician") {
-    return pathname.startsWith("/technician") || pathname.startsWith("/work-orders");
+    return pathname === "/technician" || pathname.startsWith("/work-orders");
   }
 
   return pathname.startsWith(tabPath);
@@ -105,6 +109,8 @@ export function Layout() {
     }
     const current = [
       { match: "/work-orders", label: "Work Orders" },
+      { match: "/technician/projects", label: "Projects" },
+      { match: "/technician/history", label: "History" },
       { match: "/technician", label: "Technician" },
       { match: "/assets", label: "Assets" },
       { match: "/spare-parts/setup", label: "Sheet Setup" },
@@ -223,9 +229,9 @@ export function Layout() {
           </div>
 
           <div className="technician-topbar-actions">
-            <button className="profile-chip" type="button" aria-label="Current technician">
+            <NavLink className="profile-chip" to="/profile" aria-label="Open technician profile">
               {avatarSrc ? <img src={avatarSrc} alt={currentUser.name} /> : initials}
-            </button>
+            </NavLink>
             <div className="notification-wrap">
               <button className="icon-button" type="button" onClick={() => setPanelOpen((open) => !open)} aria-label="Notifications">
                 <Bell size={19} aria-hidden="true" />
@@ -269,7 +275,7 @@ export function Layout() {
             const active = isTechnicianTabActive(item.to, location.pathname);
             if (item.locked) {
               return (
-                <span key={item.to} className="technician-tab locked" aria-disabled="true" title="Feature in development">
+                <span key={item.to} className={`technician-tab locked ${item.desktopOnly ? "desktop-only" : ""}`} aria-disabled="true" title="Feature in development">
                   <item.icon size={20} aria-hidden="true" />
                   <span>{item.label}</span>
                   <LockKeyhole className="nav-lock" size={11} aria-hidden="true" />
@@ -277,7 +283,7 @@ export function Layout() {
               );
             }
             return (
-              <NavLink key={item.to} to={item.to} className={`technician-tab ${active ? "active" : ""}`}>
+              <NavLink key={item.to} to={item.to} className={`technician-tab ${active ? "active" : ""} ${item.desktopOnly ? "desktop-only" : ""}`}>
                 <item.icon size={20} aria-hidden="true" />
                 <span>{item.label}</span>
               </NavLink>

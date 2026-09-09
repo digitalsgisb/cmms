@@ -14,6 +14,8 @@ import { GuestTrackingPage } from "./pages/GuestTrackingPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SparePartsPage } from "./pages/SparePartsPage";
 import { TechnicianPage } from "./pages/TechnicianPage";
+import { TechnicianHistoryPage } from "./pages/TechnicianHistoryPage";
+import { TechnicianProjectsPage } from "./pages/TechnicianProjectsPage";
 import { TechnicianProfilePage } from "./pages/TechnicianProfilePage";
 import { TvDashboardPage } from "./pages/TvDashboardPage";
 import { WorkOrderDetailPage } from "./pages/WorkOrderDetailPage";
@@ -46,6 +48,8 @@ export function App() {
         <Route path="/work-orders/:id/edit" element={<EditWorkOrderPage />} />
         <Route path="/work-orders/:id" element={<WorkOrderDetailPage />} />
         <Route path="/technician" element={<TechnicianPage />} />
+        <Route path="/technician/projects" element={<TechnicianProjectsPage />} />
+        <Route path="/technician/history" element={<TechnicianHistoryPage />} />
         <Route path="/assets" element={<RestrictedFeature name="Assets"><AssetsPage /></RestrictedFeature>} />
         <Route path="/spare-parts" element={<SparePartsPage />} />
         <Route path="/spare-parts/inventory" element={<SparePartsPage />} />

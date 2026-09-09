@@ -2,6 +2,7 @@ export type PlantId = "port-klang" | "sendayan";
 export type PlantAccess = PlantId | "both";
 export const plantLabels: Record<PlantId, string> = { "port-klang": "Port Klang", sendayan: "Sendayan" };
 export type UserRole = "requester" | "technician" | "executive" | "admin" | "developer";
+export type TechnicianTeam = "maintenance" | "kaizen" | "both";
 
 export type WorkOrderType = "office" | "maintenance" | "project" | "kaizen";
 
@@ -116,6 +117,26 @@ export interface User {
   department: string;
   title: string;
   avatarUrl: string | null;
+}
+
+export function technicianTeamForUser(user: Pick<User, "role" | "department">): TechnicianTeam | null {
+  if (user.role !== "technician") return null;
+  const department = user.department.trim().toLowerCase();
+  const isKaizen = department.includes("kaizen");
+  const isMaintenance = department.includes("maintenance");
+  if (isKaizen && isMaintenance) return "both";
+  return isKaizen ? "kaizen" : "maintenance";
+}
+
+export function technicianCanAccessWorkOrder(
+  user: Pick<User, "role" | "department">,
+  workOrder: Pick<WorkOrder, "type">
+) {
+  if (user.role !== "technician") return true;
+  if (workOrder.type === "project") return true;
+  const team = technicianTeamForUser(user);
+  if (workOrder.type === "kaizen") return team === "kaizen" || team === "both";
+  return team === "maintenance" || team === "both";
 }
 
 export interface CreateUserInput {

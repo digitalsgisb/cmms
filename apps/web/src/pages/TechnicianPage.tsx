@@ -1,8 +1,9 @@
-import { AlertTriangle, BellRing, CheckCircle2, ChevronRight, ImagePlus, PackageOpen, ShieldCheck, Wrench } from "lucide-react";
+import { AlertTriangle, BellRing, CheckCircle2, ChevronRight, Clock3, History, ImagePlus, PackageOpen, ShieldCheck, UsersRound, Wrench } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent, PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { Link, Navigate } from "react-router-dom";
+import { technicianTeamForUser, workOrderTypeLabels } from "@sugi-cmms/shared";
 import type { User, WorkOrder, WorkOrderStatus } from "@sugi-cmms/shared";
 import { api } from "../api/client";
 import { PriorityBadge, StatusBadge } from "../components/Badges";
@@ -34,15 +35,17 @@ function vibrateAccepted() {
 }
 
 function appearsInTechnicianQueue(workOrder: WorkOrder, currentUser: User | null) {
-  if (["resolved", "closed", "cancelled"].includes(workOrder.status)) return false;
-  if (currentUser?.role !== "technician") return true;
+  return workOrder.type !== "project" && !["resolved", "closed", "cancelled"].includes(workOrder.status);
+}
 
-  const available = workOrder.status === "open" && (!workOrder.assignedToId || workOrder.assignedToId === currentUser.id);
-  return available || workOrder.assignedToId === currentUser.id;
+const priorityRank: Record<WorkOrder["priority"], number> = { critical: 0, high: 1, medium: 2, low: 3 };
+
+function sortAvailableJobs(a: WorkOrder, b: WorkOrder) {
+  return priorityRank[a.priority] - priorityRank[b.priority] || a.createdAt.localeCompare(b.createdAt);
 }
 
 export function TechnicianPage() {
-  const { currentUser, workOrders: liveWorkOrders, workOrdersReady, refreshWorkOrders } = useCurrentUser();
+  const { users, currentUser, workOrders: liveWorkOrders, workOrdersReady, refreshWorkOrders } = useCurrentUser();
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [busyId, setBusyId] = useState("");
   const [busyAction, setBusyAction] = useState("");
@@ -112,17 +115,31 @@ export function TechnicianPage() {
     };
   }, [resolveTarget]);
 
-  const queue = useMemo(() => {
-    return workOrders.filter((workOrder) => appearsInTechnicianQueue(workOrder, currentUser));
-  }, [workOrders, currentUser]);
+  const jobs = useMemo(() => workOrders.filter((workOrder) => workOrder.type !== "project"), [workOrders]);
+  const availableJobs = useMemo(
+    () => jobs.filter((workOrder) => workOrder.status === "open" && !workOrder.assignedToId).sort(sortAvailableJobs),
+    [jobs]
+  );
+  const myActiveJobs = useMemo(
+    () => jobs.filter((workOrder) => workOrder.assignedToId === currentUser?.id && !["resolved", "closed", "cancelled"].includes(workOrder.status)),
+    [currentUser?.id, jobs]
+  );
+  const teamActiveJobs = useMemo(
+    () => jobs.filter((workOrder) => Boolean(workOrder.assignedToId) && workOrder.assignedToId !== currentUser?.id && !["resolved", "closed", "cancelled"].includes(workOrder.status)),
+    [currentUser?.id, jobs]
+  );
+  const recentHistory = useMemo(
+    () => workOrders.filter((workOrder) => ["resolved", "closed"].includes(workOrder.status)).slice(0, 4),
+    [workOrders]
+  );
   const queueCounts = useMemo(() => {
     return {
-      newJobs: queue.filter((workOrder) => workOrder.status === "open").length,
-      assigned: currentUser ? queue.filter((workOrder) => workOrder.assignedToId === currentUser.id).length : 0,
-      repairing: queue.filter((workOrder) => workOrder.status === "in_progress").length,
-      waitingParts: queue.filter((workOrder) => workOrder.status === "pending_material").length
+      newJobs: availableJobs.length,
+      assigned: myActiveJobs.length,
+      repairing: [...myActiveJobs, ...teamActiveJobs].filter((workOrder) => workOrder.status === "in_progress").length,
+      waitingParts: [...myActiveJobs, ...teamActiveJobs].filter((workOrder) => workOrder.status === "pending_material").length
     };
-  }, [queue, currentUser?.id]);
+  }, [availableJobs, myActiveJobs, teamActiveJobs]);
 
   if (currentUser?.role === "requester") {
     return <Navigate to="/work-orders" replace />;
@@ -307,6 +324,69 @@ export function TechnicianPage() {
     }
   }
 
+  function technicianName(id: string | null) {
+    return users.find((user) => user.id === id)?.name || "Technician";
+  }
+
+  function renderJobCard(workOrder: WorkOrder, mode: "mine" | "available" | "team") {
+    const isMine = mode === "mine";
+    const isClaimable = mode === "available" && currentUser?.role === "technician";
+    const canStart = isMine && (["acknowledged", "returned", "pending_material"].includes(workOrder.status) || workOrder.status === "open");
+    const cardClasses = [
+      "technician-card",
+      `technician-status-${workOrder.status}`,
+      isClaimable ? "is-claimable" : "",
+      mode === "team" ? "is-team-readonly" : "",
+      recentlyUpdatedId === workOrder.id ? "is-updated" : "",
+      liveArrival?.id === workOrder.id ? "is-new-live" : "",
+      recentlyClaimedId === workOrder.id ? "is-claimed" : ""
+    ].filter(Boolean).join(" ");
+
+    return (
+      <article className={cardClasses} key={workOrder.id}>
+        <div className="card-topline">
+          <strong>{workOrder.number}</strong>
+          <span className="technician-card-badges">
+            {isMine ? <span className="technician-owner-chip">Mine</span> : null}
+            <StatusBadge status={workOrder.status} />
+          </span>
+        </div>
+        <h2>{workOrder.title}</h2>
+        <p>{workOrder.location} - {workOrder.machineName || workOrder.assetName}</p>
+        <div className="technician-card-context">
+          <span>{workOrderTypeLabels[workOrder.type]}</span>
+          {workOrder.assignedToId ? <strong>{workOrder.status === "in_progress" ? "In progress by" : "Accepted by"} {technicianName(workOrder.assignedToId)}</strong> : <strong>Waiting for technician</strong>}
+        </div>
+        <div className="card-footer">
+          <PriorityBadge priority={workOrder.priority} />
+          <time>{formatDateTime(workOrder.updatedAt)}</time>
+        </div>
+        {isClaimable ? (
+          <SwipeToAccept
+            busy={submitting && busyId === workOrder.id && busyAction === "claim"}
+            disabled={Boolean(busyId) && busyId !== workOrder.id}
+            onAccept={() => claimWorkOrder(workOrder)}
+          />
+        ) : isMine ? (
+          <div className="quick-actions">
+            {canStart ? (
+              <ActionButton type="button" icon={Wrench} tone="start" busy={submitting && busyId === workOrder.id && busyAction === "in_progress"} busyLabel="Starting..." disabled={Boolean(busyId)} onClick={() => quickAction(workOrder, "in_progress", "Work started from technician queue.")}>Start</ActionButton>
+            ) : null}
+            {["acknowledged", "in_progress", "returned"].includes(workOrder.status) ? (
+              <ActionButton type="button" icon={PackageOpen} tone="material" busy={submitting && busyId === workOrder.id && busyAction === "pending_material"} busyLabel="Waiting..." disabled={Boolean(busyId)} onClick={() => quickAction(workOrder, "pending_material", "Waiting for parts or material.")}>Pending</ActionButton>
+            ) : null}
+            {["acknowledged", "in_progress", "pending_material", "returned"].includes(workOrder.status) ? (
+              <ActionButton type="button" icon={CheckCircle2} tone="resolve" busy={submitting && busyId === workOrder.id && busyAction === "resolved"} busyLabel="Resolving..." disabled={Boolean(busyId)} onClick={() => openResolveDialog(workOrder)}>Resolve</ActionButton>
+            ) : null}
+          </div>
+        ) : (
+          <p className="technician-readonly-note"><UsersRound size={15} /> Live team status · view only</p>
+        )}
+        <Link to={`/work-orders/${workOrder.id}`}>Open details</Link>
+      </article>
+    );
+  }
+
   return (
     <section className="page-stack technician-page">
       {liveArrival ? (
@@ -322,7 +402,7 @@ export function TechnicianPage() {
       <div className="page-title-row">
         <div>
           <p className="eyebrow">Mobile-first</p>
-          <h1>Technician Queue</h1>
+          <h1>{technicianTeamForUser(currentUser || { role: "technician", department: "Maintenance" }) === "kaizen" ? "Kaizen Jobs" : "Maintenance Jobs"}</h1>
         </div>
         <span className="technician-live-version"><i />Live Sync R5</span>
       </div>
@@ -352,94 +432,27 @@ export function TechnicianPage() {
 
       {queueError ? <p className="error-line">{queueError}</p> : null}
 
-      {queue.length === 0 ? (
-        <EmptyState icon={Wrench} title="No active jobs" text="New work orders and assigned jobs will appear here." />
-      ) : (
-        <div className="technician-list">
-          {queue.map((workOrder) => {
-            const isMine = currentUser ? workOrder.assignedToId === currentUser.id : false;
-            const isClaimable = currentUser?.role === "technician" && workOrder.status === "open" && !workOrder.assignedToId;
-            const canStart = ["acknowledged", "returned", "pending_material"].includes(workOrder.status) || (workOrder.status === "open" && isMine);
-            const cardClasses = [
-              "technician-card",
-              isClaimable ? "is-claimable" : "",
-              recentlyUpdatedId === workOrder.id ? "is-updated" : "",
-              liveArrival?.id === workOrder.id ? "is-new-live" : "",
-              recentlyClaimedId === workOrder.id ? "is-claimed" : ""
-            ]
-              .filter(Boolean)
-              .join(" ");
+      {myActiveJobs.length > 0 ? (
+        <section className="technician-job-section technician-current-section">
+          <div className="technician-section-heading"><div><p className="eyebrow">Do not lose focus</p><h2>My Current Work</h2></div><span>{myActiveJobs.length} active</span></div>
+          <div className="technician-list">{myActiveJobs.map((workOrder) => renderJobCard(workOrder, "mine"))}</div>
+        </section>
+      ) : null}
 
-            return (
-              <article className={cardClasses} key={workOrder.id}>
-                <div className="card-topline">
-                  <strong>{workOrder.number}</strong>
-                  <span className="technician-card-badges">
-                    {isMine ? <span className="technician-owner-chip">Mine</span> : null}
-                    <StatusBadge status={workOrder.status} />
-                  </span>
-                </div>
-                <h2>{workOrder.title}</h2>
-                <p>{workOrder.location} - {workOrder.machineName || workOrder.assetName}</p>
-                <div className="card-footer">
-                  <PriorityBadge priority={workOrder.priority} />
-                  <time>{formatDateTime(workOrder.updatedAt)}</time>
-                </div>
-                {isClaimable ? (
-                  <SwipeToAccept
-                    busy={submitting && busyId === workOrder.id && busyAction === "claim"}
-                    disabled={Boolean(busyId) && busyId !== workOrder.id}
-                    onAccept={() => claimWorkOrder(workOrder)}
-                  />
-                ) : (
-                  <div className="quick-actions">
-                    {canStart ? (
-                      <ActionButton
-                        type="button"
-                        icon={Wrench}
-                        tone="start"
-                        busy={submitting && busyId === workOrder.id && busyAction === "in_progress"}
-                        busyLabel="Starting..."
-                        disabled={Boolean(busyId)}
-                        onClick={() => quickAction(workOrder, "in_progress", "Repair started from technician queue.")}
-                      >
-                        Start
-                      </ActionButton>
-                    ) : null}
-                    {["acknowledged", "in_progress", "returned"].includes(workOrder.status) ? (
-                      <ActionButton
-                        type="button"
-                        icon={PackageOpen}
-                        tone="material"
-                        busy={submitting && busyId === workOrder.id && busyAction === "pending_material"}
-                        busyLabel="Waiting..."
-                        disabled={Boolean(busyId)}
-                        onClick={() => quickAction(workOrder, "pending_material", "Waiting for parts or material.")}
-                      >
-                        Pending
-                      </ActionButton>
-                    ) : null}
-                    {["acknowledged", "in_progress", "pending_material", "returned"].includes(workOrder.status) ? (
-                      <ActionButton
-                        type="button"
-                        icon={CheckCircle2}
-                        tone="resolve"
-                        busy={submitting && busyId === workOrder.id && busyAction === "resolved"}
-                        busyLabel="Resolving..."
-                        disabled={Boolean(busyId)}
-                        onClick={() => openResolveDialog(workOrder)}
-                      >
-                        Resolve
-                      </ActionButton>
-                    ) : null}
-                  </div>
-                )}
-                <Link to={`/work-orders/${workOrder.id}`}>Open details</Link>
-              </article>
-            );
-          })}
-        </div>
-      )}
+      <section className="technician-job-section technician-open-section">
+        <div className="technician-section-heading"><div><p className="eyebrow">Priority queue</p><h2>New Work Orders</h2></div><span>{availableJobs.length} available</span></div>
+        {availableJobs.length > 0 ? <div className="technician-list">{availableJobs.map((workOrder) => renderJobCard(workOrder, "available"))}</div> : <EmptyState icon={Wrench} title="No new jobs" text="New eligible work orders will appear here." />}
+      </section>
+
+      <section className="technician-job-section">
+        <div className="technician-section-heading"><div><p className="eyebrow">Live visibility</p><h2>Team Activity</h2></div><span>{teamActiveJobs.length} active</span></div>
+        {teamActiveJobs.length > 0 ? <div className="technician-list">{teamActiveJobs.map((workOrder) => renderJobCard(workOrder, "team"))}</div> : <p className="quiet-panel">No other technician is working on an active job.</p>}
+      </section>
+
+      <section className="technician-job-section technician-history-preview">
+        <div className="technician-section-heading"><div><p className="eyebrow">Shared record</p><h2>Recently Completed</h2></div><Link to="/technician/history"><History size={16} /> View all</Link></div>
+        {recentHistory.length > 0 ? <div className="technician-history-list">{recentHistory.map((workOrder) => <Link key={workOrder.id} to={`/work-orders/${workOrder.id}`}><span><strong>{workOrder.number}</strong><small>{workOrder.title}</small></span><span><StatusBadge status={workOrder.status} /><time><Clock3 size={12} />{formatDateTime(workOrder.updatedAt)}</time></span></Link>)}</div> : <p className="quiet-panel">Completed work from the team will appear here.</p>}
+      </section>
 
       {resolveTarget ? createPortal(
         <div className="modal-backdrop">

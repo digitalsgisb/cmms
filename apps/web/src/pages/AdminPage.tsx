@@ -456,7 +456,7 @@ export function AdminPage() {
                 <label>Full name<input required value={newUser.name} onChange={(event) => setNewUser((current) => ({ ...current, name: event.target.value }))} disabled={!canAdmin || savingUser} /></label>
                 <label>Username<input required minLength={3} autoComplete="off" value={newUser.username} onChange={(event) => setNewUser((current) => ({ ...current, username: event.target.value }))} disabled={!canAdmin || savingUser} /></label>
                 <label>Password<input required minLength={12} type="password" autoComplete="new-password" value={newUser.password} onChange={(event) => setNewUser((current) => ({ ...current, password: event.target.value }))} disabled={!canAdmin || savingUser} /></label>
-                <label>Role<select value={newUser.role} onChange={(event) => setNewUser((current) => ({ ...current, role: event.target.value as User["role"], plantAccess: ["admin", "developer"].includes(event.target.value) ? "both" : current.plantAccess }))} disabled={!canAdmin || savingUser}>
+                <label>Role<select value={newUser.role} onChange={(event) => setNewUser((current) => ({ ...current, role: event.target.value as User["role"], plantAccess: ["admin", "developer"].includes(event.target.value) ? "both" : current.plantAccess, department: event.target.value === "technician" && !["Maintenance", "Kaizen", "Maintenance & Kaizen"].includes(current.department) ? "Maintenance" : current.department }))} disabled={!canAdmin || savingUser}>
                   <option value="requester">Requester</option>
                   <option value="technician">Technician</option>
                   <option value="executive">Executive</option>
@@ -466,7 +466,7 @@ export function AdminPage() {
                 <label>Plant access<select value={newUser.plantAccess} onChange={(event) => setNewUser((current) => ({ ...current, plantAccess: event.target.value as User["plantAccess"] }))}>
     <option value="port-klang">Port Klang</option><option value="sendayan">Sendayan</option><option value="both">Both plants</option>
   </select></label>
-                <label>Department<input list="company-departments" required value={newUser.department} onChange={(event) => setNewUser((current) => ({ ...current, department: event.target.value }))} disabled={!canAdmin || savingUser} /></label>
+                <label>Department{newUser.role === "technician" ? <select required value={newUser.department} onChange={(event) => setNewUser((current) => ({ ...current, department: event.target.value }))} disabled={!canAdmin || savingUser}><option value="Maintenance">Maintenance</option><option value="Kaizen">Kaizen</option><option value="Maintenance & Kaizen">Maintenance & Kaizen</option></select> : <input list="company-departments" required value={newUser.department} onChange={(event) => setNewUser((current) => ({ ...current, department: event.target.value }))} disabled={!canAdmin || savingUser} />}</label>
                 <label>Job title<input required value={newUser.title} onChange={(event) => setNewUser((current) => ({ ...current, title: event.target.value }))} disabled={!canAdmin || savingUser} /></label>
               </div>
               <button className="admin-add-user-button" type="submit" disabled={!canAdmin || savingUser}>
@@ -519,7 +519,7 @@ export function AdminPage() {
                         <label>Full name<input required value={editUser.name} onChange={(event) => setEditUser((current) => ({ ...current, name: event.target.value }))} disabled={updatingUser} /></label>
                         <label>Username<input required minLength={3} autoComplete="off" value={editUser.username} onChange={(event) => setEditUser((current) => ({ ...current, username: event.target.value }))} disabled={updatingUser} /></label>
                         <label>New password (optional)<input minLength={12} type="password" autoComplete="new-password" value={editUser.password} onChange={(event) => setEditUser((current) => ({ ...current, password: event.target.value }))} placeholder="Leave blank to keep current" disabled={updatingUser} /></label>
-                        <label>Role<select value={editUser.role} onChange={(event) => setEditUser((current) => ({ ...current, role: event.target.value as User["role"] }))} disabled={updatingUser || user.id === "u-requester-public"}>
+                        <label>Role<select value={editUser.role} onChange={(event) => setEditUser((current) => ({ ...current, role: event.target.value as User["role"], department: event.target.value === "technician" && !["Maintenance", "Kaizen", "Maintenance & Kaizen"].includes(current.department) ? "Maintenance" : current.department }))} disabled={updatingUser || user.id === "u-requester-public"}>
                           <option value="requester">Requester</option>
                           <option value="technician">Technician</option>
                           <option value="executive">Executive</option>
@@ -529,7 +529,7 @@ export function AdminPage() {
                         <label>Plant access<select value={editUser.plantAccess} onChange={(event) => setEditUser((current) => ({ ...current, plantAccess: event.target.value as User["plantAccess"] }))}>
     <option value="port-klang">Port Klang</option><option value="sendayan">Sendayan</option><option value="both">Both plants</option>
   </select></label>
-                <label>Department<input list="company-departments" required value={editUser.department} onChange={(event) => setEditUser((current) => ({ ...current, department: event.target.value }))} disabled={updatingUser} /></label>
+                <label>Department{editUser.role === "technician" ? <select required value={editUser.department} onChange={(event) => setEditUser((current) => ({ ...current, department: event.target.value }))} disabled={updatingUser}><option value="Maintenance">Maintenance</option><option value="Kaizen">Kaizen</option><option value="Maintenance & Kaizen">Maintenance & Kaizen</option></select> : <input list="company-departments" required value={editUser.department} onChange={(event) => setEditUser((current) => ({ ...current, department: event.target.value }))} disabled={updatingUser} />}</label>
                         <label>Job title<input required value={editUser.title} onChange={(event) => setEditUser((current) => ({ ...current, title: event.target.value }))} disabled={updatingUser} /></label>
                       </div>
                       <div className="admin-user-edit-actions">

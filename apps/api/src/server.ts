@@ -55,6 +55,7 @@ import {
   listTvWorkOrders,
   listUsers,
   listWorkOrders,
+  userCanAccessWorkOrder,
   lookupSpareQr,
   markAllNotificationsRead,
   markNotificationRead,
@@ -254,6 +255,18 @@ function authorizeRequest(request: Request, response: Response, next: NextFuncti
     return;
   }
   const scopedWorkOrderMatch = request.path.match(/^\/work-orders\/([^/]+)/);
+  if (scopedWorkOrderMatch && !["sync"].includes(scopedWorkOrderMatch[1])) {
+    try {
+      const workOrder = getWorkOrderDetail(decodeURIComponent(scopedWorkOrderMatch[1]));
+      if (!userCanAccessWorkOrder(request.cmmsUser!, workOrder)) {
+        response.status(403).json({ error: "You do not have access to this work order." });
+        return;
+      }
+    } catch {
+      response.status(404).json({ error: "Work order not found." });
+      return;
+    }
+  }
   if (request.cmmsUser!.role === "requester" && scopedWorkOrderMatch && request.method !== "GET") {
     try {
       const workOrder = getWorkOrderDetail(decodeURIComponent(scopedWorkOrderMatch[1]));
@@ -775,7 +788,7 @@ app.post("/api/requester/work-orders/:id/verification", (request, response) => {
 });
 
 app.get("/api/work-orders", (request, response) => {
-  const workOrders = listWorkOrders();
+  const workOrders = listWorkOrders(request.cmmsUser);
   response.json(workOrders);
 });
 
