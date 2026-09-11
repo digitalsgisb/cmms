@@ -2,6 +2,7 @@ import { api } from "../api/client";
 
 export type PushAvailability =
   | "checking"
+  | "insecure-origin"
   | "unsupported"
   | "install-required"
   | "server-disabled"
@@ -43,6 +44,7 @@ export async function getPushAvailability(): Promise<{
   state: PushAvailability;
   publicKey: string | null;
 }> {
+  if (!window.isSecureContext) return { state: "insecure-origin", publicKey: null };
   if (!browserSupportsPush()) return { state: "unsupported", publicKey: null };
   if (isIos() && !isStandalone()) return { state: "install-required", publicKey: null };
 

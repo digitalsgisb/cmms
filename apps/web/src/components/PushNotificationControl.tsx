@@ -11,6 +11,7 @@ import { useCurrentUser } from "../state/UserContext";
 
 const statusText: Record<PushAvailability, string> = {
   checking: "Checking push support…",
+  "insecure-origin": "Push requires HTTPS. A raw http://IP address cannot receive browser notifications.",
   unsupported: "Push alerts are not supported by this browser.",
   "install-required": "On iPhone or iPad, add this PWA to the Home Screen first.",
   "server-disabled": "Push alerts need VAPID keys on the server.",
@@ -90,6 +91,7 @@ export function PushNotificationControl({ compact = false }: { compact?: boolean
   }
 
   const actionable = state === "enabled" || state === "disabled" || state === "refresh-required";
+  const canSendAdminTest = currentUser?.role === "admin";
 
   return (
     <div className={`push-control ${compact ? "compact" : ""}`}>
@@ -97,26 +99,24 @@ export function PushNotificationControl({ compact = false }: { compact?: boolean
         {state === "enabled" ? <BellRing size={18} aria-hidden="true" /> : <BellOff size={18} aria-hidden="true" />}
         <span>{message || statusText[state]}</span>
       </div>
-      {actionable ? (
+      {actionable || canSendAdminTest ? (
         <div className="push-control-actions">
           {state === "disabled" || state === "refresh-required" ? (
             <button type="button" onClick={enable} disabled={busy}>
               <BellRing size={16} aria-hidden="true" />
               {busy ? "Enabling…" : state === "refresh-required" ? "Re-enable push alerts" : "Enable push alerts"}
             </button>
-          ) : (
-            <>
-              {currentUser?.role === "admin" ? (
-                <button type="button" onClick={sendTest} disabled={busy}>
-                  <Send size={15} aria-hidden="true" />
-                  {busy ? "Sending…" : "Send test to all"}
-                </button>
-              ) : null}
-              <button className="push-control-disable" type="button" onClick={disable} disabled={busy}>
-                Turn off
-              </button>
-            </>
-          )}
+          ) : state === "enabled" ? (
+            <button className="push-control-disable" type="button" onClick={disable} disabled={busy}>
+              Turn off on this device
+            </button>
+          ) : null}
+          {canSendAdminTest ? (
+            <button className="push-control-test" type="button" onClick={sendTest} disabled={busy}>
+              <Send size={15} aria-hidden="true" />
+              {busy ? "Sending…" : "Send test notification"}
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>
