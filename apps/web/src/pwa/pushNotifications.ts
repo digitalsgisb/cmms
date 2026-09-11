@@ -6,6 +6,7 @@ export type PushAvailability =
   | "install-required"
   | "server-disabled"
   | "denied"
+  | "refresh-required"
   | "disabled"
   | "enabled";
 
@@ -30,6 +31,14 @@ function browserSupportsPush() {
   return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
 
+function subscriptionUsesPublicKey(subscription: PushSubscription, publicKey: string) {
+  const currentKey = subscription.options.applicationServerKey;
+  if (!currentKey) return false;
+  const currentBytes = new Uint8Array(currentKey);
+  const expectedBytes = urlBase64ToUint8Array(publicKey);
+  return currentBytes.length === expectedBytes.length && currentBytes.every((byte, index) => byte === expectedBytes[index]);
+}
+
 export async function getPushAvailability(): Promise<{
   state: PushAvailability;
   publicKey: string | null;
@@ -43,6 +52,10 @@ export async function getPushAvailability(): Promise<{
 
   const registration = await navigator.serviceWorker.ready;
   const subscription = await registration.pushManager.getSubscription();
+  if (subscription && !subscriptionUsesPublicKey(subscription, config.publicKey)) {
+    return { state: "refresh-required", publicKey: config.publicKey };
+  }
+  if (subscription) await api.savePushSubscription(subscription.toJSON());
   return { state: subscription ? "enabled" : "disabled", publicKey: config.publicKey };
 }
 
@@ -55,7 +68,13 @@ export async function enablePushNotifications(publicKey: string) {
   }
 
   const registration = await navigator.serviceWorker.ready;
-  const existing = await registration.pushManager.getSubscription();
+  let existing = await registration.pushManager.getSubscription();
+  if (existing && !subscriptionUsesPublicKey(existing, publicKey)) {
+    try { await api.removePushSubscription(existing.endpoint); }
+    catch (error) { console.warn("Unable to remove the old server push subscription.", error); }
+    await existing.unsubscribe();
+    existing = null;
+  }
   const subscription = existing || await registration.pushManager.subscribe({
     userVisibleOnly: true,
     applicationServerKey: urlBase64ToUint8Array(publicKey)

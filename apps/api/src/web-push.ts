@@ -45,7 +45,7 @@ export async function sendPushToUser(
     title: notification.title,
     body: notification.body,
     url: user.role === "requester"
-      ? "/requester"
+      ? (notification.title.toLowerCase().includes("ready for verification") ? "/requester?view=verify" : "/requester")
       : notification.workOrderId ? `/work-orders/${encodeURIComponent(notification.workOrderId)}` : "/",
     tag: notification.workOrderId ? `work-order-${notification.workOrderId}` : "sugi-cmms",
     icon: "/icons/cmms-icon.svg",
@@ -61,7 +61,7 @@ export async function sendPushToUser(
       const statusCode = typeof error === "object" && error && "statusCode" in error
         ? Number(error.statusCode)
         : 0;
-      if (statusCode === 404 || statusCode === 410) {
+      if ([400, 401, 403, 404, 410].includes(statusCode)) {
         deletePushSubscription(subscription.endpoint, userId);
         return;
       }

@@ -5887,8 +5887,12 @@ tbody tr:hover {
 .tv-dashboard {
   position: relative;
   isolation: isolate;
+  display: grid;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
-  min-height: 100vh;
   background:
     linear-gradient(135deg, rgba(63, 7, 16, 0.96), rgba(127, 17, 27, 0.94) 36%, rgba(165, 42, 56, 0.86) 56%, rgba(24, 20, 28, 0.98)),
     #111827;
@@ -6019,15 +6023,19 @@ tbody tr:hover {
 
 .tv-columns {
   display: grid;
+  min-height: 0;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
+  overflow: hidden;
 }
 
 .tv-column {
   display: grid;
-  min-height: calc(100vh - 150px);
-  grid-template-rows: auto 1fr auto;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   align-content: start;
+  overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.07);
@@ -6057,8 +6065,10 @@ tbody tr:hover {
 
 .tv-card-list {
   display: grid;
-  align-content: start;
+  min-height: 0;
+  grid-template-rows: repeat(3, minmax(0, 1fr));
   gap: 10px;
+  overflow: hidden;
 }
 
 .tv-card-list.is-rotating {
@@ -6066,10 +6076,28 @@ tbody tr:hover {
 }
 
 .tv-card {
+  min-height: 0;
+  align-content: start;
+  gap: 8px;
+  overflow: hidden;
   border-color: rgba(255, 255, 255, 0.12);
   background: #fffafa;
   color: var(--ink);
+  padding: 13px;
   box-shadow: none;
+}
+
+.tv-card h3 {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.tv-card p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tv-card > div:first-child,

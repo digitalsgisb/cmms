@@ -1,4 +1,4 @@
-const CACHE_NAME = "sugi-cmms-shell-v10";
+const CACHE_NAME = "sugi-cmms-shell-v11";
 const APP_SHELL_URL = "/";
 const SHELL_ASSETS = [APP_SHELL_URL, "/manifest.webmanifest", "/requester.webmanifest", "/icons/cmms-icon.svg"];
 

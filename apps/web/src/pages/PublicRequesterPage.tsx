@@ -4,7 +4,7 @@ import {
   UserCircle2, UserRound, Wrench, X, type LucideIcon
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import type { MasterData, NotificationRecord, ShiftGroup, User, WorkOrder, WorkOrderDepartment, WorkOrderDetail, WorkOrderStatus, WorkOrderType } from "@sugi-cmms/shared";
 import { workOrderDepartmentForUser, workOrderDepartments, workOrderFormRulesForDepartment, workOrderTypeLabels } from "@sugi-cmms/shared";
 import { api, mediaUrl } from "../api/client";
@@ -55,6 +55,7 @@ const filterLabels: Record<RequesterStatusFilter, string> = {
 
 export function PublicRequesterPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { currentUser, loadingUsers, login, logout } = useCurrentUser();
   const signedRequester = currentUser?.role === "requester";
   const [masterData, setMasterData] = useState<MasterData>({ sections: [], machines: [], issueCategories: [] });
@@ -114,6 +115,10 @@ export function PublicRequesterPage() {
       setWorkOrders([]); setNotifications([]); setNotificationsOpen(false); setView("new"); setSelectedDepartment(null); setSelectedType(null);
     }
   }, [currentUser?.id]);
+  const requestedView = searchParams.get("view");
+  useEffect(() => {
+    if (signedRequester && requestedView === "verify") setView("verify");
+  }, [requestedView, signedRequester]);
   useLiveRefresh(["work-orders", "master-data", "notifications"], async () => {
     await loadMasterData();
     if (signedRequester) await Promise.all([loadAccountWorkOrders(), loadRequesterNotifications()]);

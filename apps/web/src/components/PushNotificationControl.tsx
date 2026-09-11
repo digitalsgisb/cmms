@@ -15,6 +15,7 @@ const statusText: Record<PushAvailability, string> = {
   "install-required": "On iPhone or iPad, add this PWA to the Home Screen first.",
   "server-disabled": "Push alerts need VAPID keys on the server.",
   denied: "Push alerts are blocked in this device's notification settings.",
+  "refresh-required": "The notification security key changed. Re-enable alerts on this device.",
   disabled: "Receive work-order alerts when the app is closed.",
   enabled: "Push alerts are enabled on this device."
 };
@@ -77,8 +78,10 @@ export function PushNotificationControl({ compact = false }: { compact?: boolean
     try {
       const result = await api.testPushNotification();
       setMessage(result.sent > 0
-        ? `Test alert sent to ${result.sent} registered ${result.sent === 1 ? "device" : "devices"}.`
-        : "No registered device received the test alert.");
+        ? `Test alert sent to ${result.sent} registered ${result.sent === 1 ? "device" : "devices"}${result.failed ? `; ${result.failed} failed and must re-enable alerts` : ""}.`
+        : result.failed > 0
+          ? `Test failed for ${result.failed} registered ${result.failed === 1 ? "device" : "devices"}. Re-enable push alerts on those devices.`
+          : "No device is registered yet. Enable push alerts on a device first.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to send a test alert.");
     } finally {
@@ -86,7 +89,7 @@ export function PushNotificationControl({ compact = false }: { compact?: boolean
     }
   }
 
-  const actionable = state === "enabled" || state === "disabled";
+  const actionable = state === "enabled" || state === "disabled" || state === "refresh-required";
 
   return (
     <div className={`push-control ${compact ? "compact" : ""}`}>
@@ -96,10 +99,10 @@ export function PushNotificationControl({ compact = false }: { compact?: boolean
       </div>
       {actionable ? (
         <div className="push-control-actions">
-          {state === "disabled" ? (
+          {state === "disabled" || state === "refresh-required" ? (
             <button type="button" onClick={enable} disabled={busy}>
               <BellRing size={16} aria-hidden="true" />
-              {busy ? "Enabling…" : "Enable push alerts"}
+              {busy ? "Enabling…" : state === "refresh-required" ? "Re-enable push alerts" : "Enable push alerts"}
             </button>
           ) : (
             <>

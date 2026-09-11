@@ -15,37 +15,48 @@ const columns: Array<{ title: string; statuses: WorkOrderStatus[]; tone: string 
 ];
 
 const rotationIntervalMs = 10_000;
+const workOrdersPerPage = 3;
 
-function cardsPerPageForViewport() {
-  return Math.max(3, Math.floor((window.innerHeight - 235) / 112));
-}
-
-function playWhistle(context: AudioContext) {
+function playUrgentHorn(context: AudioContext) {
   const startedAt = context.currentTime;
-  const gain = context.createGain();
-  const primary = context.createOscillator();
-  const overtone = context.createOscillator();
+  const masterGain = context.createGain();
+  const filter = context.createBiquadFilter();
+  const compressor = context.createDynamicsCompressor();
+  const frequencies = [392, 523];
 
-  primary.type = "sine";
-  overtone.type = "sine";
-  primary.frequency.setValueAtTime(920, startedAt);
-  primary.frequency.exponentialRampToValueAtTime(1480, startedAt + 0.18);
-  primary.frequency.exponentialRampToValueAtTime(1120, startedAt + 0.52);
-  overtone.frequency.setValueAtTime(1840, startedAt);
-  overtone.frequency.exponentialRampToValueAtTime(2960, startedAt + 0.18);
-  overtone.frequency.exponentialRampToValueAtTime(2240, startedAt + 0.52);
-  gain.gain.setValueAtTime(0.0001, startedAt);
-  gain.gain.exponentialRampToValueAtTime(0.22, startedAt + 0.035);
-  gain.gain.setValueAtTime(0.22, startedAt + 0.34);
-  gain.gain.exponentialRampToValueAtTime(0.0001, startedAt + 0.62);
+  filter.type = "lowpass";
+  filter.frequency.setValueAtTime(1500, startedAt);
+  filter.Q.setValueAtTime(1.2, startedAt);
+  compressor.threshold.setValueAtTime(-18, startedAt);
+  compressor.knee.setValueAtTime(10, startedAt);
+  compressor.ratio.setValueAtTime(5, startedAt);
+  masterGain.gain.setValueAtTime(0.0001, startedAt);
 
-  primary.connect(gain);
-  overtone.connect(gain);
-  gain.connect(context.destination);
-  primary.start(startedAt);
-  overtone.start(startedAt);
-  primary.stop(startedAt + 0.64);
-  overtone.stop(startedAt + 0.64);
+  frequencies.forEach((frequency, burstIndex) => {
+    const burstStart = startedAt + burstIndex * 0.47;
+    const burstEnd = burstStart + 0.34;
+    masterGain.gain.setValueAtTime(0.0001, burstStart);
+    masterGain.gain.exponentialRampToValueAtTime(0.24, burstStart + 0.025);
+    masterGain.gain.setValueAtTime(0.24, burstEnd - 0.05);
+    masterGain.gain.exponentialRampToValueAtTime(0.0001, burstEnd);
+
+    [1, 1.5].forEach((harmonic, harmonicIndex) => {
+      const oscillator = context.createOscillator();
+      const voiceGain = context.createGain();
+      oscillator.type = harmonicIndex === 0 ? "sawtooth" : "square";
+      oscillator.frequency.setValueAtTime(frequency * harmonic, burstStart);
+      oscillator.frequency.linearRampToValueAtTime(frequency * harmonic * 0.97, burstEnd);
+      voiceGain.gain.setValueAtTime(harmonicIndex === 0 ? 0.7 : 0.16, burstStart);
+      oscillator.connect(voiceGain);
+      voiceGain.connect(filter);
+      oscillator.start(burstStart);
+      oscillator.stop(burstEnd + 0.02);
+    });
+  });
+
+  filter.connect(masterGain);
+  masterGain.connect(compressor);
+  compressor.connect(context.destination);
 }
 
 export function TvDashboardPage() {
@@ -53,7 +64,6 @@ export function TvDashboardPage() {
   const [workOrders, setWorkOrders] = useState<TvWorkOrder[]>([]);
   const [now, setNow] = useState(new Date());
   const [rotationStep, setRotationStep] = useState(0);
-  const [cardsPerPage, setCardsPerPage] = useState(cardsPerPageForViewport);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [arrivalNotice, setArrivalNotice] = useState("");
   const knownWorkOrderIdsRef = useRef<Set<string> | null>(null);
@@ -74,7 +84,7 @@ export function TvDashboardPage() {
         if (arrivalTimerRef.current) window.clearTimeout(arrivalTimerRef.current);
         arrivalTimerRef.current = window.setTimeout(() => setArrivalNotice(""), 9000);
         const context = audioContextRef.current;
-        if (soundEnabledRef.current && context?.state === "running") playWhistle(context);
+        if (soundEnabledRef.current && context?.state === "running") playUrgentHorn(context);
       }
     }
     catch { setLoadError("Live updates interrupted. Showing the last available work orders; reconnecting automatically."); }
@@ -92,19 +102,16 @@ export function TvDashboardPage() {
     await context.resume();
     soundEnabledRef.current = true;
     setSoundEnabled(true);
-    playWhistle(context);
+    playUrgentHorn(context);
   }
 
   useEffect(() => {
     loadWorkOrders().catch(console.error);
     const clock = window.setInterval(() => setNow(new Date()), 1000);
     const rotation = window.setInterval(() => setRotationStep((step) => step + 1), rotationIntervalMs);
-    const resize = () => setCardsPerPage(cardsPerPageForViewport());
-    window.addEventListener("resize", resize);
     return () => {
       window.clearInterval(clock);
       window.clearInterval(rotation);
-      window.removeEventListener("resize", resize);
       if (arrivalTimerRef.current) window.clearTimeout(arrivalTimerRef.current);
       void audioContextRef.current?.close();
     };
@@ -132,7 +139,7 @@ export function TvDashboardPage() {
         <div className="tv-status">
           <button className={`tv-sound-toggle${soundEnabled ? " is-enabled" : ""}`} type="button" onClick={() => void toggleSound()} aria-pressed={soundEnabled}>
             {soundEnabled ? <Volume2 size={22} aria-hidden="true" /> : <VolumeX size={22} aria-hidden="true" />}
-            {soundEnabled ? "Whistle alerts on" : "Enable whistle alerts"}
+            {soundEnabled ? "Horn alerts on" : "Enable horn alerts"}
           </button>
           <span>
             <MonitorCheck size={22} aria-hidden="true" />
@@ -148,11 +155,11 @@ export function TvDashboardPage() {
       <section className="tv-columns">
         {columns.map((column) => {
           const columnWorkOrders = workOrders.filter((workOrder) => column.statuses.includes(workOrder.status));
-          const pageCount = Math.max(1, Math.ceil(columnWorkOrders.length / cardsPerPage));
+          const pageCount = Math.max(1, Math.ceil(columnWorkOrders.length / workOrdersPerPage));
           const currentPage = rotationStep % pageCount;
-          const pageStart = currentPage * cardsPerPage;
-          const visibleWorkOrders = columnWorkOrders.slice(pageStart, pageStart + cardsPerPage);
-          const pageEnd = Math.min(pageStart + cardsPerPage, columnWorkOrders.length);
+          const pageStart = currentPage * workOrdersPerPage;
+          const visibleWorkOrders = columnWorkOrders.slice(pageStart, pageStart + workOrdersPerPage);
+          const pageEnd = Math.min(pageStart + workOrdersPerPage, columnWorkOrders.length);
 
           return (
             <div key={column.title} className={`tv-column tv-${column.tone}`}>
