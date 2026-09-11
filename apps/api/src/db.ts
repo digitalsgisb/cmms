@@ -180,6 +180,7 @@ export function migrate() {
       reportedByDepartment TEXT NOT NULL,
       responsibleDepartment TEXT NOT NULL DEFAULT 'Production',
       issueCategoryId TEXT,
+      issueCategoryName TEXT NOT NULL DEFAULT '',
       issueDescription TEXT NOT NULL,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL,
@@ -542,6 +543,7 @@ export function migrate() {
   addWorkOrderColumnIfMissing(workOrderColumns, "reportedByDepartment", "TEXT");
   addWorkOrderColumnIfMissing(workOrderColumns, "responsibleDepartment", "TEXT NOT NULL DEFAULT 'Production'");
   addWorkOrderColumnIfMissing(workOrderColumns, "issueCategoryId", "TEXT");
+  addWorkOrderColumnIfMissing(workOrderColumns, "issueCategoryName", "TEXT NOT NULL DEFAULT ''");
   addWorkOrderColumnIfMissing(workOrderColumns, "issueDescription", "TEXT");
 
   db.prepare("UPDATE work_orders SET workDate = COALESCE(workDate, substr(createdAt, 1, 10)) WHERE workDate IS NULL").run();
@@ -566,6 +568,11 @@ export function migrate() {
   db.prepare("UPDATE work_orders SET responsibleDepartment = 'Logistic' WHERE responsibleDepartment = 'Logistics'").run();
   db.prepare("UPDATE work_orders SET shiftGroup = 'N/A' WHERE responsibleDepartment <> 'Production'").run();
   db.prepare("UPDATE work_orders SET issueDescription = COALESCE(issueDescription, description, title) WHERE issueDescription IS NULL").run();
+  db.prepare(`UPDATE work_orders SET issueCategoryName = COALESCE(
+    NULLIF(issueCategoryName, ''),
+    (SELECT name FROM issue_categories WHERE issue_categories.id = work_orders.issueCategoryId),
+    'Other'
+  ) WHERE issueCategoryName IS NULL OR issueCategoryName = ''`).run();
   db.prepare("UPDATE work_orders SET area = COALESCE(NULLIF(area, ''), location, '') WHERE area IS NULL OR area = ''").run();
   db.prepare("UPDATE work_orders SET type = 'maintenance' WHERE type = 'standard_maintenance'").run();
 
@@ -3250,7 +3257,7 @@ function workOrderSheetRow(workOrderId: string) {
     Area: detail.area,
     "Machine Name": detail.machineName,
     MachineID: detail.machineId || "",
-    IssueCategory: detail.issueCategory?.name || "Other",
+    IssueCategory: detail.issueCategoryName || detail.issueCategory?.name || "Other",
     ReportedBy: detail.reportedByName,
     Department: detail.reportedByDepartment,
     ResponsibleDepartment: detail.responsibleDepartment,
@@ -3389,13 +3396,13 @@ async function runWorkOrderSyncQueue(actorId?: string): Promise<WorkOrderSyncRes
 export function listWorkOrders(actor?: User): WorkOrder[] {
   const workOrders = rows<WorkOrder>(db.prepare("SELECT * FROM scoped_work_orders ORDER BY updatedAt DESC").all());
   if (!actor) return workOrders;
-  if (actor.role === "requester") return workOrders.filter((workOrder) => workOrder.requesterId === actor.id);
+  if (actor.role === "requester") return workOrders;
   if (actor.role === "technician") return workOrders.filter((workOrder) => technicianCanAccessWorkOrder(actor, workOrder));
   return workOrders;
 }
 
 export function userCanAccessWorkOrder(actor: User, workOrder: WorkOrder) {
-  if (actor.role === "requester") return workOrder.requesterId === actor.id;
+  if (actor.role === "requester") return true;
   return actor.role !== "technician" || technicianCanAccessWorkOrder(actor, workOrder);
 }
 
@@ -3439,11 +3446,12 @@ export function createWorkOrder(input: CreateWorkOrderInput): WorkOrder {
   const section = input.sectionId ? getSection(input.sectionId) : null;
   const machine = input.machineId ? getMachine(input.machineId) : null;
   const issueCategory = input.issueCategoryId ? getIssueCategory(input.issueCategoryId) : null;
+  const issueCategoryName = issueCategory?.name || input.issueCategoryName?.trim() || "Other";
   const machineName = input.machineName?.trim() || machine?.name || input.assetName?.trim() || "Others";
   const area = input.area?.trim() || machine?.area || "General";
   const sectionName = section?.name || input.location?.trim() || "Unassigned";
   const issueDescription = input.issueDescription?.trim() || input.description?.trim() || input.title?.trim() || "No issue description provided.";
-  const title = input.title?.trim() || `${machineName} - ${issueCategory?.name || "Issue"}`;
+  const title = input.title?.trim() || `${machineName} - ${issueCategoryName}`;
   const description = input.description?.trim() || issueDescription;
   const workDate = input.workDate || createdAt.slice(0, 10);
   const reportedByName = input.reportedByName?.trim() || requester.name;
@@ -3457,8 +3465,8 @@ export function createWorkOrder(input: CreateWorkOrderInput): WorkOrder {
       id, number, type, title, description, assetName, location, priority, status,
       requesterId, assignedToId, dueDate, completionNote, workDate, shiftGroup, sectionId,
       machineId, area, machineName, reportedByName, reportedByDepartment, responsibleDepartment,
-      issueCategoryId, issueDescription, createdAt, updatedAt
-    ) VALUES (cmms_write_plant(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      issueCategoryId, issueCategoryName, issueDescription, createdAt, updatedAt
+    ) VALUES (cmms_write_plant(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     number,
@@ -3483,6 +3491,7 @@ export function createWorkOrder(input: CreateWorkOrderInput): WorkOrder {
     reportedByDepartment,
     responsibleDepartment,
     issueCategory?.id || null,
+    issueCategoryName,
     issueDescription,
     createdAt,
     createdAt
@@ -3513,6 +3522,7 @@ export function updateWorkOrder(id: string, input: UpdateWorkOrderInput): WorkOr
   }
 
   const issueCategory = input.issueCategoryId ? getIssueCategory(input.issueCategoryId) : null;
+  const issueCategoryName = issueCategory?.name || input.issueCategoryName?.trim() || "Other";
   const issueDescription = input.issueDescription.trim();
   if (!issueDescription) {
     throw new Error("Issue description is required.");
@@ -3528,11 +3538,11 @@ export function updateWorkOrder(id: string, input: UpdateWorkOrderInput): WorkOr
   db.prepare(
     "UPDATE work_orders SET type = ?, title = ?, description = ?, assetName = ?, location = ?, priority = ?, " +
     "dueDate = ?, workDate = ?, shiftGroup = ?, sectionId = ?, machineId = ?, area = ?, machineName = ?, " +
-    "reportedByName = ?, reportedByDepartment = ?, responsibleDepartment = ?, issueCategoryId = ?, " +
+    "reportedByName = ?, reportedByDepartment = ?, responsibleDepartment = ?, issueCategoryId = ?, issueCategoryName = ?, " +
     "issueDescription = ?, updatedAt = ? WHERE id = ?"
   ).run(
     input.type,
-    machineName + " - " + (issueCategory?.name || "Issue"),
+    machineName + " - " + issueCategoryName,
     issueDescription,
     machineName,
     location,
@@ -3548,6 +3558,7 @@ export function updateWorkOrder(id: string, input: UpdateWorkOrderInput): WorkOr
     input.reportedByDepartment.trim(),
     responsibleDepartment,
     issueCategory?.id || null,
+    issueCategoryName,
     issueDescription,
     updatedAt,
     id
@@ -3762,7 +3773,7 @@ export function listRequesterWorkOrders(): PublicRequesterWorkOrder[] {
         COALESCE(s.name, wo.location) as sectionName,
         wo.area,
         wo.machineName,
-        COALESCE(ic.name, 'Other') as issueCategoryName,
+        COALESCE(NULLIF(wo.issueCategoryName, ''), ic.name, 'Other') as issueCategoryName,
         wo.issueDescription,
         wo.reportedByName,
         wo.reportedByDepartment,
@@ -3853,7 +3864,7 @@ export function getGuestWorkOrderTracking(workOrderId: string, token: string): G
       sectionName: detail.section?.name || detail.location,
       area: detail.area,
       machineName: detail.machineName,
-      issueCategoryName: detail.issueCategory?.name || "Other",
+      issueCategoryName: detail.issueCategoryName || detail.issueCategory?.name || "Other",
       issueDescription: detail.issueDescription,
       reportedByName: detail.reportedByName,
       reportedByDepartment: detail.reportedByDepartment,
@@ -4215,6 +4226,7 @@ export function validateCreateWorkOrderInput(body: Partial<CreateWorkOrderInput>
     reportedByDepartment: body.reportedByDepartment ? String(body.reportedByDepartment) : undefined,
     responsibleDepartment,
     issueCategoryId: body.issueCategoryId ? String(body.issueCategoryId) : null,
+    issueCategoryName: body.issueCategoryName ? String(body.issueCategoryName).trim() : undefined,
     issueDescription: String(issueDescription)
   };
 }
@@ -4258,6 +4270,7 @@ export function validateUpdateWorkOrderInput(body: Partial<UpdateWorkOrderInput>
     reportedByDepartment,
     responsibleDepartment,
     issueCategoryId: body.issueCategoryId ? String(body.issueCategoryId) : null,
+    issueCategoryName: body.issueCategoryName ? String(body.issueCategoryName).trim() : undefined,
     issueDescription
   };
 }

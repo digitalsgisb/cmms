@@ -6,7 +6,7 @@ import {
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { MasterData, NotificationRecord, ShiftGroup, User, WorkOrder, WorkOrderDepartment, WorkOrderDetail, WorkOrderStatus, WorkOrderType } from "@sugi-cmms/shared";
-import { workOrderDepartmentForUser, workOrderDepartments, workOrderTypeLabels } from "@sugi-cmms/shared";
+import { workOrderDepartmentForUser, workOrderDepartments, workOrderFormRulesForDepartment, workOrderTypeLabels } from "@sugi-cmms/shared";
 import { api, mediaUrl } from "../api/client";
 import { MultiPhotoPicker } from "../components/MultiPhotoPicker";
 import { ImageLightbox } from "../components/ImageLightbox";
@@ -20,11 +20,11 @@ import { useCurrentUser } from "../state/UserContext";
 
 function todayDate() { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`; }
 
-const otherMachineValue = "__other__";
+const otherOptionValue = "__other__";
 const initialRequesterForm = {
   type: "maintenance" as WorkOrderType, workDate: todayDate(), shiftGroup: "A" as ShiftGroup,
-  sectionId: "", machineId: "", placeOrEquipment: "", reportedByName: "",
-  reportedByDepartment: "", issueCategoryId: "", issueDescription: ""
+  sectionId: "", customSection: "", area: "", customArea: "", machineId: "", placeOrEquipment: "", reportedByName: "",
+  reportedByDepartment: "", customReportedByDepartment: "", issueCategoryId: "", customIssueCategory: "", issueDescription: ""
 };
 
 const requestTypes: Array<{ type: WorkOrderType; Icon: LucideIcon; title: string; description: string }> = [
@@ -36,7 +36,7 @@ const requestTypes: Array<{ type: WorkOrderType; Icon: LucideIcon; title: string
 const otherDepartments = workOrderDepartments.filter((department) => !["Production", "SHE"].includes(department));
 
 function reporterDepartmentOptions(current: string) {
-  return current && !workOrderDepartments.some((department) => department === current)
+  return current && current !== otherOptionValue && !workOrderDepartments.some((department) => department === current)
     ? [current, ...workOrderDepartments]
     : workOrderDepartments;
 }
@@ -122,10 +122,17 @@ export function PublicRequesterPage() {
   const isOffice = selectedType === "office";
   const activeSections = useMemo(() => masterData.sections.filter((section) => section.active), [masterData.sections]);
   const activeIssues = useMemo(() => masterData.issueCategories.filter((category) => category.active), [masterData.issueCategories]);
-  const filteredMachines = useMemo(() => masterData.machines.filter((machine) => machine.active && machine.sectionId === form.sectionId), [masterData.machines, form.sectionId]);
-  const sectionOptions = useMemo(() => activeSections.map((section) => ({ value: section.id, label: section.name })), [activeSections]);
-  const machineOptions = useMemo(() => [...filteredMachines.map((machine) => ({ value: machine.id, label: machine.name, meta: machine.area })), { value: otherMachineValue, label: "Other place / equipment", meta: "Not listed above" }], [filteredMachines]);
-  const issueOptions = useMemo(() => activeIssues.map((category) => ({ value: category.id, label: category.name })), [activeIssues]);
+  const rules = selectedDepartment ? workOrderFormRulesForDepartment(selectedDepartment) : null;
+  const sectionOptions = useMemo(() => [...activeSections.map((section) => ({ value: section.id, label: section.name })), { value: otherOptionValue, label: "Others", meta: "Specify a section" }], [activeSections]);
+  const areaOptions = useMemo(() => {
+    const areas = [...new Set(masterData.machines
+      .filter((machine) => machine.active && (!form.sectionId || form.sectionId === otherOptionValue || machine.sectionId === form.sectionId))
+      .map((machine) => machine.area).filter(Boolean))];
+    return [...areas.map((area) => ({ value: area, label: area })), { value: otherOptionValue, label: "Others", meta: "Specify an area" }];
+  }, [form.sectionId, masterData.machines]);
+  const filteredMachines = useMemo(() => masterData.machines.filter((machine) => machine.active && machine.sectionId === form.sectionId && (!form.area || form.area === otherOptionValue || machine.area === form.area)), [form.area, masterData.machines, form.sectionId]);
+  const machineOptions = useMemo(() => [...filteredMachines.map((machine) => ({ value: machine.id, label: machine.name, meta: machine.area })), { value: otherOptionValue, label: "Others", meta: "Specify a machine or equipment" }], [filteredMachines]);
+  const issueOptions = useMemo(() => [...activeIssues.map((category) => ({ value: category.id, label: category.name })), { value: otherOptionValue, label: "Others", meta: "Specify an issue category" }], [activeIssues]);
   const accountDepartment = workOrderDepartmentForUser(currentUser?.department || "");
   const prioritizedWorkOrders = useMemo(() => accountDepartment
     ? [...workOrders].sort((a, b) => Number(b.responsibleDepartment === accountDepartment) - Number(a.responsibleDepartment === accountDepartment))
@@ -210,22 +217,32 @@ export function PublicRequesterPage() {
     if (!selectedType || !selectedDepartment || submitting) return;
     const selectedMachine = filteredMachines.find((machine) => machine.id === form.machineId);
     const place = form.placeOrEquipment.trim();
-    if (!isOffice && !form.machineId) { setError("Choose a machine or select Other place / equipment."); return; }
-    if (!isOffice && form.machineId === otherMachineValue && !place) { setError("Enter the place or equipment involved."); return; }
-    if (!isOffice && !form.issueCategoryId) { setError("Choose an issue category."); return; }
+    const activeRules = workOrderFormRulesForDepartment(selectedDepartment);
+    if (activeRules.section === "required" && !form.sectionId) { setError("Choose a section or select Others."); return; }
+    if (activeRules.section !== "hidden" && form.sectionId === otherOptionValue && !form.customSection.trim()) { setError("Specify the section."); return; }
+    if (activeRules.area === "required" && !form.area) { setError("Choose an area or select Others."); return; }
+    if (activeRules.area !== "hidden" && form.area === otherOptionValue && !form.customArea.trim()) { setError("Specify the area."); return; }
+    if (activeRules.machine === "required" && !form.machineId) { setError("Choose a machine or select Others."); return; }
+    if (activeRules.machine !== "hidden" && form.machineId === otherOptionValue && !place) { setError("Specify the machine or equipment."); return; }
+    if (activeRules.issueCategory === "required" && !form.issueCategoryId) { setError("Choose an issue category or select Others."); return; }
+    if (activeRules.issueCategory !== "hidden" && form.issueCategoryId === otherOptionValue && !form.customIssueCategory.trim()) { setError("Specify the issue category."); return; }
     if (!form.reportedByDepartment) { setError("Choose your department."); return; }
+    if (form.reportedByDepartment === otherOptionValue && !form.customReportedByDepartment.trim()) { setError("Specify your department."); return; }
     setSubmitting(true); setError(""); setSuccess("");
     try {
       const payload = {
         type: selectedType, workDate: form.workDate || todayDate(), shiftGroup: selectedDepartment === "Production" ? form.shiftGroup : "N/A",
-        sectionId: isOffice ? null : form.sectionId || null, machineId: isOffice ? null : selectedMachine?.id || null,
-        location: isOffice ? place : selectedMachine?.area || place || "General",
-        area: isOffice ? "Office" : selectedMachine?.area || "Other",
-        machineName: isOffice ? place : selectedMachine?.name || place,
+        sectionId: isOffice || activeRules.section === "hidden" || form.sectionId === otherOptionValue ? null : form.sectionId || null,
+        machineId: isOffice || activeRules.machine === "hidden" || form.machineId === otherOptionValue ? null : selectedMachine?.id || null,
+        location: isOffice ? place : form.sectionId === otherOptionValue ? form.customSection.trim() : activeSections.find((section) => section.id === form.sectionId)?.name || `${selectedDepartment} request`,
+        area: isOffice ? "Office" : activeRules.area === "hidden" ? "Not applicable" : form.area === otherOptionValue ? form.customArea.trim() : form.area || selectedMachine?.area || "General",
+        machineName: isOffice ? place : activeRules.machine === "hidden" ? "Not applicable" : selectedMachine?.name || place || "Not specified",
         reportedByName: signedRequester ? currentUser.name : form.reportedByName,
-        reportedByDepartment: signedRequester ? currentUser.department : form.reportedByDepartment.trim() || "Not specified",
+        reportedByDepartment: signedRequester ? currentUser.department : form.reportedByDepartment === otherOptionValue ? form.customReportedByDepartment.trim() : form.reportedByDepartment.trim() || "Not specified",
         responsibleDepartment: selectedDepartment,
-        issueCategoryId: isOffice ? null : form.issueCategoryId, issueDescription: form.issueDescription
+        issueCategoryId: isOffice || activeRules.issueCategory === "hidden" || form.issueCategoryId === otherOptionValue ? null : form.issueCategoryId,
+        issueCategoryName: isOffice || activeRules.issueCategory === "hidden" ? "General" : form.issueCategoryId === otherOptionValue ? form.customIssueCategory.trim() : activeIssues.find((category) => category.id === form.issueCategoryId)?.name,
+        issueDescription: form.issueDescription
       };
       if (!signedRequester) {
         const submission = await api.createRequesterWorkOrder(payload);
@@ -283,7 +300,7 @@ export function PublicRequesterPage() {
       {signedRequester && view === "dashboard" ? <RequesterDashboard user={currentUser} workOrders={departmentWorkOrders} stats={stats} pendingVerification={pendingVerification} onStatus={showStatus} onView={openView} onDetail={openDetail} /> : null}
       {view === "new" ? <section className={`requester-new-view ${selectedType ? "" : "requester-new-view-locked"}`} aria-hidden={!selectedType}>
         <div className="requester-new-heading"><div><p>{signedRequester ? "Account request" : "Guest request"}</p><h1>New Work Order</h1><span>{signedRequester ? "This request will be saved under your account." : "No account needed. Submit an issue in a few simple steps."}</span></div>{!signedRequester ? <button type="button" onClick={() => setLoginOpen(true)}><ShieldCheck size={16} />Sign in to track</button> : null}</div>
-        {selectedType && selectedDepartment ? <RequesterForm selectedType={selectedType} selectedDepartment={selectedDepartment} form={form} setForm={setForm} isOffice={isOffice} sectionOptions={sectionOptions} machineOptions={machineOptions} issueCategoryOptions={issueOptions} issueFiles={issueFiles} setIssueFiles={setIssueFiles} submitting={submitting} signedRequester={signedRequester} onChangeType={() => setSelectedType(null)} onSubmit={submit} /> : <section className="requester-form-panel requester-form-locked"><div className="requester-panel-heading"><span className="requester-panel-icon"><ShieldCheck size={18} /></span><div><h2>Choose a department and category</h2><span>The request form opens after your selections.</span></div></div></section>}
+        {selectedType && selectedDepartment && rules ? <RequesterForm selectedType={selectedType} selectedDepartment={selectedDepartment} rules={rules} form={form} setForm={setForm} isOffice={isOffice} sectionOptions={sectionOptions} areaOptions={areaOptions} machineOptions={machineOptions} issueCategoryOptions={issueOptions} issueFiles={issueFiles} setIssueFiles={setIssueFiles} submitting={submitting} signedRequester={signedRequester} onChangeType={() => setSelectedType(null)} onSubmit={submit} /> : <section className="requester-form-panel requester-form-locked"><div className="requester-panel-heading"><span className="requester-panel-icon"><ShieldCheck size={18} /></span><div><h2>Choose a department and category</h2><span>The request form opens after your selections.</span></div></div></section>}
       </section> : null}
       {signedRequester && view === "tracking" ? <RequesterTracking workOrders={visibleWorkOrders} departmentLabel={accountDepartment || "My requests"} scope={trackingScope} statusFilter={statusFilter} search={search} detailLoading={detailLoading} onScope={setTrackingScope} onFilter={setStatusFilter} onSearch={setSearch} onDetail={openDetail} onNew={() => openView("new")} /> : null}
       {signedRequester && view === "verify" ? <RequesterVerification workOrders={pendingVerification} notes={verificationNotes} actionId={actionId} detailLoading={detailLoading} onNote={(id, note) => setVerificationNotes((current) => ({ ...current, [id]: note }))} onVerify={verifyWorkOrder} onDetail={openDetail} /> : null}
@@ -299,9 +316,9 @@ export function PublicRequesterPage() {
   </div>;
 }
 
-function RequesterForm({ selectedType, selectedDepartment, form, setForm, isOffice, sectionOptions, machineOptions, issueCategoryOptions, issueFiles, setIssueFiles, submitting, signedRequester, onChangeType, onSubmit }: {
-  selectedType: WorkOrderType; selectedDepartment: WorkOrderDepartment; form: typeof initialRequesterForm; setForm: React.Dispatch<React.SetStateAction<typeof initialRequesterForm>>; isOffice: boolean;
-  sectionOptions: Array<{ value: string; label: string }>; machineOptions: Array<{ value: string; label: string; meta: string }>; issueCategoryOptions: Array<{ value: string; label: string }>;
+function RequesterForm({ selectedType, selectedDepartment, rules, form, setForm, isOffice, sectionOptions, areaOptions, machineOptions, issueCategoryOptions, issueFiles, setIssueFiles, submitting, signedRequester, onChangeType, onSubmit }: {
+  selectedType: WorkOrderType; selectedDepartment: WorkOrderDepartment; rules: ReturnType<typeof workOrderFormRulesForDepartment>; form: typeof initialRequesterForm; setForm: React.Dispatch<React.SetStateAction<typeof initialRequesterForm>>; isOffice: boolean;
+  sectionOptions: Array<{ value: string; label: string; meta?: string }>; areaOptions: Array<{ value: string; label: string; meta?: string }>; machineOptions: Array<{ value: string; label: string; meta?: string }>; issueCategoryOptions: Array<{ value: string; label: string; meta?: string }>;
   issueFiles: File[]; setIssueFiles: (files: File[]) => void; submitting: boolean; signedRequester: boolean; onChangeType: () => void; onSubmit: (event: FormEvent) => void;
 }) {
   return (
@@ -315,7 +332,7 @@ function RequesterForm({ selectedType, selectedDepartment, form, setForm, isOffi
       <div className="requester-step-label"><span>1</span>Request details</div>
       <div className={`form-grid ${selectedDepartment === "Production" ? "two-columns" : ""}`}>
         <label><CalendarDays size={15} />Date<input type="date" value={form.workDate} onChange={(event) => setForm({ ...form, workDate: event.target.value })} required /></label>
-        {selectedDepartment === "Production" ? (
+        {rules.shiftGroup !== "hidden" ? (
           <label>Shift group<select value={form.shiftGroup} onChange={(event) => setForm({ ...form, shiftGroup: event.target.value as ShiftGroup })}><option value="A">A</option><option value="B">B</option></select></label>
         ) : null}
       </div>
@@ -324,18 +341,19 @@ function RequesterForm({ selectedType, selectedDepartment, form, setForm, isOffi
         <label><MapPin size={15} />Place / location<input value={form.placeOrEquipment} onChange={(event) => setForm({ ...form, placeOrEquipment: event.target.value })} placeholder="Example: Finance office, meeting room, pantry" required /></label>
       ) : (
         <>
-          <SearchableSelect label="Section" icon={<Factory size={15} />} value={form.sectionId} options={sectionOptions} placeholder="Choose section" onChange={(sectionId) => setForm({ ...form, sectionId, machineId: "", placeOrEquipment: "" })} />
-          <SearchableSelect label="Machine / equipment" value={form.machineId} options={machineOptions} placeholder="Choose or search machine" onChange={(machineId) => setForm({ ...form, machineId, placeOrEquipment: "" })} />
-          {form.machineId === otherMachineValue ? <label><MapPin size={15} />Place or equipment<input value={form.placeOrEquipment} onChange={(event) => setForm({ ...form, placeOrEquipment: event.target.value })} placeholder="Enter the exact place or equipment" required /></label> : null}
-          <SearchableSelect label="Issue category" value={form.issueCategoryId} options={issueCategoryOptions} placeholder="Choose or search issue" onChange={(issueCategoryId) => setForm({ ...form, issueCategoryId })} />
+          {rules.section !== "hidden" ? <><SearchableSelect label={`Section${rules.section === "optional" ? " (optional)" : ""}`} icon={<Factory size={15} />} value={form.sectionId} options={sectionOptions} placeholder="Choose section" onChange={(sectionId) => setForm({ ...form, sectionId, customSection: "", area: "", customArea: "", machineId: "", placeOrEquipment: "" })} />{form.sectionId === otherOptionValue ? <label><Factory size={15} />Specify section<input value={form.customSection} onChange={(event) => setForm({ ...form, customSection: event.target.value })} placeholder="Enter the section name" required /></label> : null}</> : null}
+          {rules.area !== "hidden" ? <><SearchableSelect label={`Area${rules.area === "optional" ? " (optional)" : ""}`} value={form.area} options={areaOptions} placeholder="Choose area" onChange={(area) => setForm({ ...form, area, customArea: "", machineId: "", placeOrEquipment: "" })} />{form.area === otherOptionValue ? <label><MapPin size={15} />Specify area<input value={form.customArea} onChange={(event) => setForm({ ...form, customArea: event.target.value })} placeholder="Enter the exact area" required /></label> : null}</> : null}
+          {rules.machine !== "hidden" ? <><SearchableSelect label={`Machine / equipment${rules.machine === "optional" ? " (optional)" : ""}`} value={form.machineId} options={machineOptions} placeholder="Choose or search machine" onChange={(machineId) => setForm({ ...form, machineId, placeOrEquipment: "" })} />{form.machineId === otherOptionValue ? <label><MapPin size={15} />Specify machine or equipment<input value={form.placeOrEquipment} onChange={(event) => setForm({ ...form, placeOrEquipment: event.target.value })} placeholder="Enter the exact machine or equipment" required /></label> : null}</> : null}
+          {rules.issueCategory !== "hidden" ? <><SearchableSelect label={`Issue category${rules.issueCategory === "optional" ? " (optional)" : ""}`} value={form.issueCategoryId} options={issueCategoryOptions} placeholder="Choose or search issue" onChange={(issueCategoryId) => setForm({ ...form, issueCategoryId, customIssueCategory: "" })} />{form.issueCategoryId === otherOptionValue ? <label>Specify issue category<input value={form.customIssueCategory} onChange={(event) => setForm({ ...form, customIssueCategory: event.target.value })} placeholder="Enter the issue category" required /></label> : null}</> : null}
         </>
       )}
 
       <div className="requester-step-label"><span>2</span>Your details</div>
       <div className={`form-grid ${isOffice ? "requester-single-field" : "two-columns"}`}>
         <label><UserRound size={15} />Your name<input value={form.reportedByName} onChange={(event) => setForm({ ...form, reportedByName: event.target.value })} placeholder="Enter your name" readOnly={signedRequester} required /></label>
-        {!isOffice ? <label>Department <small>{signedRequester ? "From account" : "Required"}</small><select value={form.reportedByDepartment} onChange={(event) => setForm({ ...form, reportedByDepartment: event.target.value })} disabled={signedRequester} required><option value="">Choose department</option>{reporterDepartmentOptions(form.reportedByDepartment).map((department) => <option key={department} value={department}>{department}</option>)}</select></label> : null}
+        {!isOffice ? <label>Department <small>{signedRequester ? "From account" : "Required"}</small><select value={form.reportedByDepartment} onChange={(event) => setForm({ ...form, reportedByDepartment: event.target.value, customReportedByDepartment: "" })} disabled={signedRequester} required><option value="">Choose department</option>{reporterDepartmentOptions(form.reportedByDepartment).map((department) => <option key={department} value={department}>{department}</option>)}{!signedRequester ? <option value={otherOptionValue}>Others</option> : null}</select></label> : null}
       </div>
+      {!signedRequester && form.reportedByDepartment === otherOptionValue ? <label>Specify your department<input value={form.customReportedByDepartment} onChange={(event) => setForm({ ...form, customReportedByDepartment: event.target.value })} placeholder="Enter your department" required /></label> : null}
 
       <div className="requester-step-label"><span>3</span>Describe the issue</div>
       <label>What happened?<textarea value={form.issueDescription} onChange={(event) => setForm({ ...form, issueDescription: event.target.value })} rows={5} placeholder="Describe what is wrong, when it started, and anything maintenance should know" required /></label>
@@ -368,7 +386,7 @@ function RequesterWorkOrderCard({ workOrder, onDetail, busy = false }: { workOrd
 function RequesterDetailDialog({ detail, canVerify, onClose, onVerify, actionId, note, onNote }: { detail: WorkOrderDetail; canVerify: boolean; onClose: () => void; onVerify: (workOrder: WorkOrder, status: "closed" | "returned") => void; actionId: string; note: string; onNote: (note: string) => void; }) {
   const [previewPhoto, setPreviewPhoto] = useState<{ src: string; alt: string; label: string } | null>(null);
 
-  return <><div className="requester-detail-backdrop"><section className="requester-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="requester-detail-title"><button className="requester-dialog-close" type="button" onClick={onClose} aria-label="Close details"><X size={18} /></button><div className="requester-detail-title"><p>{detail.number}</p><h2 id="requester-detail-title">{detail.machineName || detail.location}</h2><StatusBadge status={detail.status} /></div><p className="requester-detail-issue">{detail.issueDescription}</p><dl><div><dt>Responsible department</dt><dd>{detail.responsibleDepartment}</dd></div><div><dt>Area</dt><dd>{detail.area}</dd></div><div><dt>Category</dt><dd>{detail.issueCategory?.name || "Office / general"}</dd></div><div><dt>Assigned to</dt><dd>{detail.assignedTo?.name || "Waiting for assignment"}</dd></div><div><dt>Updated</dt><dd>{formatDateTime(detail.updatedAt)}</dd></div></dl>{detail.completionNote ? <div className="requester-completion-note"><strong>Maintenance completion note</strong><p>{detail.completionNote}</p></div> : null}<div className="requester-detail-photos"><h3>Photos</h3>{detail.attachments.length ? <div>{detail.attachments.map((attachment) => { const label = attachment.kind.replace("_", " "); return <button type="button" key={attachment.id} onClick={() => setPreviewPhoto({ src: mediaUrl(attachment.url), alt: attachment.originalName, label })}><img src={mediaUrl(attachment.url)} alt={attachment.originalName} /><span>{label}</span></button>; })}</div> : <p>No photos uploaded.</p>}</div><div className="requester-detail-timeline"><h3>Timeline</h3>{detail.activities.map((activity) => <article key={activity.id}><span /><div><strong>{activity.message}</strong><time>{formatDateTime(activity.createdAt)}</time></div></article>)}</div>{detail.status === "resolved" && canVerify ? <div className="requester-detail-verification"><label>Verification note<textarea rows={3} value={note} onChange={(event) => onNote(event.target.value)} placeholder="Required if returning to maintenance" /></label><div className="requester-verification-actions"><button type="button" className="verify" disabled={Boolean(actionId)} onClick={() => onVerify(detail, "closed")}><CheckCircle2 size={17} />Verify & Close</button><button type="button" className="return" disabled={Boolean(actionId)} onClick={() => onVerify(detail, "returned")}><RefreshCcw size={17} />Return</button></div></div> : null}</section></div>{previewPhoto ? <ImageLightbox {...previewPhoto} onClose={() => setPreviewPhoto(null)} /> : null}</>;
+  return <><div className="requester-detail-backdrop"><section className="requester-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="requester-detail-title"><button className="requester-dialog-close" type="button" onClick={onClose} aria-label="Close details"><X size={18} /></button><div className="requester-detail-title"><p>{detail.number}</p><h2 id="requester-detail-title">{detail.machineName || detail.location}</h2><StatusBadge status={detail.status} /></div><p className="requester-detail-issue">{detail.issueDescription}</p><dl><div><dt>Responsible department</dt><dd>{detail.responsibleDepartment}</dd></div><div><dt>Area</dt><dd>{detail.area}</dd></div><div><dt>Category</dt><dd>{detail.issueCategoryName || detail.issueCategory?.name || "General"}</dd></div><div><dt>Assigned to</dt><dd>{detail.assignedTo?.name || "Waiting for assignment"}</dd></div><div><dt>Updated</dt><dd>{formatDateTime(detail.updatedAt)}</dd></div></dl>{detail.completionNote ? <div className="requester-completion-note"><strong>Maintenance completion note</strong><p>{detail.completionNote}</p></div> : null}<div className="requester-detail-photos"><h3>Photos</h3>{detail.attachments.length ? <div>{detail.attachments.map((attachment) => { const label = attachment.kind.replace("_", " "); return <button type="button" key={attachment.id} onClick={() => setPreviewPhoto({ src: mediaUrl(attachment.url), alt: attachment.originalName, label })}><img src={mediaUrl(attachment.url)} alt={attachment.originalName} /><span>{label}</span></button>; })}</div> : <p>No photos uploaded.</p>}</div><div className="requester-detail-timeline"><h3>Timeline</h3>{detail.activities.map((activity) => <article key={activity.id}><span /><div><strong>{activity.message}</strong><time>{formatDateTime(activity.createdAt)}</time></div></article>)}</div>{detail.status === "resolved" && canVerify ? <div className="requester-detail-verification"><label>Verification note<textarea rows={3} value={note} onChange={(event) => onNote(event.target.value)} placeholder="Required if returning to maintenance" /></label><div className="requester-verification-actions"><button type="button" className="verify" disabled={Boolean(actionId)} onClick={() => onVerify(detail, "closed")}><CheckCircle2 size={17} />Verify & Close</button><button type="button" className="return" disabled={Boolean(actionId)} onClick={() => onVerify(detail, "returned")}><RefreshCcw size={17} />Return</button></div></div> : null}</section></div>{previewPhoto ? <ImageLightbox {...previewPhoto} onClose={() => setPreviewPhoto(null)} /> : null}</>;
 }
 
 function RequesterEmpty({ title, copy }: { title: string; copy: string }) { return <div className="requester-empty"><ClipboardList size={30} /><h2>{title}</h2><p>{copy}</p></div>; }

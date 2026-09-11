@@ -2,7 +2,7 @@ import { ArrowLeft, CalendarDays, Factory, Send, UserRound } from "lucide-react"
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import type { MasterData, ShiftGroup, WorkOrderDepartment, WorkOrderType } from "@sugi-cmms/shared";
-import { workOrderDepartmentForUser, workOrderDepartments, workOrderTypeLabels } from "@sugi-cmms/shared";
+import { workOrderDepartmentForUser, workOrderDepartments, workOrderFormRulesForDepartment, workOrderTypeLabels } from "@sugi-cmms/shared";
 import { api } from "../api/client";
 import { SearchableSelect } from "../components/SearchableSelect";
 import { MultiPhotoPicker } from "../components/MultiPhotoPicker";
@@ -18,17 +18,24 @@ const initialForm = {
   workDate: todayDate(),
   shiftGroup: "A" as ShiftGroup,
   sectionId: "",
+  customSection: "",
+  area: "",
+  customArea: "",
   machineId: "",
   customMachineName: "",
   reportedByName: "",
   reportedByDepartment: "",
+  customReportedByDepartment: "",
   responsibleDepartment: "Production" as WorkOrderDepartment,
   issueCategoryId: "",
+  customIssueCategory: "",
   issueDescription: ""
 };
 
+const otherOptionValue = "__other__";
+
 function reporterDepartmentOptions(current: string) {
-  return current && !workOrderDepartments.some((department) => department === current)
+  return current && current !== otherOptionValue && !workOrderDepartments.some((department) => department === current)
     ? [current, ...workOrderDepartments]
     : workOrderDepartments;
 }
@@ -66,19 +73,26 @@ export function CreateWorkOrderPage() {
 
   const activeSections = useMemo(() => masterData.sections.filter((section) => section.active), [masterData.sections]);
   const activeIssueCategories = useMemo(() => masterData.issueCategories.filter((category) => category.active), [masterData.issueCategories]);
+  const rules = workOrderFormRulesForDepartment(form.responsibleDepartment);
+  const areaOptions = useMemo(() => {
+    const areas = [...new Set(masterData.machines
+      .filter((machine) => machine.active && (!form.sectionId || form.sectionId === otherOptionValue || machine.sectionId === form.sectionId))
+      .map((machine) => machine.area).filter(Boolean))];
+    return [...areas.map((area) => ({ value: area, label: area })), { value: otherOptionValue, label: "Others", meta: "Specify an area" }];
+  }, [form.sectionId, masterData.machines]);
   const filteredMachines = useMemo(() => {
-    return masterData.machines.filter((machine) => machine.active && machine.sectionId === form.sectionId);
-  }, [masterData.machines, form.sectionId]);
-  const sectionOptions = useMemo(() => activeSections.map((section) => ({ value: section.id, label: section.name })), [activeSections]);
+    return masterData.machines.filter((machine) => machine.active && machine.sectionId === form.sectionId && (!form.area || form.area === otherOptionValue || machine.area === form.area));
+  }, [form.area, masterData.machines, form.sectionId]);
+  const sectionOptions = useMemo(() => [...activeSections.map((section) => ({ value: section.id, label: section.name })), { value: otherOptionValue, label: "Others", meta: "Specify a section" }], [activeSections]);
   const machineOptions = useMemo(
     () => [
-      { value: "", label: "Others", meta: "Unregistered machine" },
+      { value: otherOptionValue, label: "Others", meta: "Specify a machine" },
       ...filteredMachines.map((machine) => ({ value: machine.id, label: machine.name, meta: machine.area }))
     ],
     [filteredMachines]
   );
   const issueCategoryOptions = useMemo(
-    () => activeIssueCategories.map((category) => ({ value: category.id, label: category.name })),
+    () => [...activeIssueCategories.map((category) => ({ value: category.id, label: category.name })), { value: otherOptionValue, label: "Others", meta: "Specify an issue category" }],
     [activeIssueCategories]
   );
 
@@ -94,19 +108,30 @@ export function CreateWorkOrderPage() {
     try {
       const selectedMachine = filteredMachines.find((machine) => machine.id === form.machineId);
       const customMachineName = form.customMachineName.trim();
+      if (rules.section === "required" && !form.sectionId) throw new Error("Choose a section or select Others.");
+      if (rules.section !== "hidden" && form.sectionId === otherOptionValue && !form.customSection.trim()) throw new Error("Specify the section.");
+      if (rules.area === "required" && !form.area) throw new Error("Choose an area or select Others.");
+      if (rules.area !== "hidden" && form.area === otherOptionValue && !form.customArea.trim()) throw new Error("Specify the area.");
+      if (rules.machine === "required" && !form.machineId) throw new Error("Choose a machine or select Others.");
+      if (rules.machine !== "hidden" && form.machineId === otherOptionValue && !customMachineName) throw new Error("Specify the machine or equipment.");
+      if (rules.issueCategory === "required" && !form.issueCategoryId) throw new Error("Choose an issue category or select Others.");
+      if (rules.issueCategory !== "hidden" && form.issueCategoryId === otherOptionValue && !form.customIssueCategory.trim()) throw new Error("Specify the issue category.");
+      if (form.reportedByDepartment === otherOptionValue && !form.customReportedByDepartment.trim()) throw new Error("Specify the reporting department.");
       const workOrder = createdOrderId ? { id: createdOrderId } : await api.createWorkOrder({
         type: form.type,
         requesterId: currentUser.id,
         workDate: form.workDate || todayDate(),
         shiftGroup: form.responsibleDepartment === "Production" ? form.shiftGroup : "N/A",
-        sectionId: form.sectionId || null,
-        machineId: selectedMachine?.id || null,
-        area: selectedMachine?.area || "General",
-        machineName: selectedMachine?.name || customMachineName || "Others",
+        sectionId: rules.section === "hidden" || form.sectionId === otherOptionValue ? null : form.sectionId || null,
+        location: form.sectionId === otherOptionValue ? form.customSection.trim() : activeSections.find((section) => section.id === form.sectionId)?.name,
+        machineId: rules.machine === "hidden" || form.machineId === otherOptionValue ? null : selectedMachine?.id || null,
+        area: rules.area === "hidden" ? "Not applicable" : form.area === otherOptionValue ? form.customArea.trim() : form.area || selectedMachine?.area || "General",
+        machineName: rules.machine === "hidden" ? "Not applicable" : selectedMachine?.name || customMachineName || "Not specified",
         reportedByName: form.reportedByName,
-        reportedByDepartment: form.reportedByDepartment,
+        reportedByDepartment: form.reportedByDepartment === otherOptionValue ? form.customReportedByDepartment.trim() : form.reportedByDepartment,
         responsibleDepartment: form.responsibleDepartment,
-        issueCategoryId: form.issueCategoryId || null,
+        issueCategoryId: rules.issueCategory === "hidden" || form.issueCategoryId === otherOptionValue ? null : form.issueCategoryId || null,
+        issueCategoryName: rules.issueCategory === "hidden" ? "General" : form.issueCategoryId === otherOptionValue ? form.customIssueCategory.trim() : activeIssueCategories.find((category) => category.id === form.issueCategoryId)?.name,
         issueDescription: form.issueDescription
       });
       setCreatedOrderId(workOrder.id);
@@ -160,8 +185,8 @@ export function CreateWorkOrderPage() {
           </label>
         </div>
 
-        <div className={`form-grid ${form.responsibleDepartment === "Production" ? "three-columns" : "two-columns"}`}>
-          {form.responsibleDepartment === "Production" ? (
+        <div className={`form-grid ${rules.shiftGroup !== "hidden" ? "three-columns" : "two-columns"}`}>
+          {rules.shiftGroup !== "hidden" ? (
             <label>
               Shift group
               <select value={form.shiftGroup} onChange={(event) => setForm({ ...form, shiftGroup: event.target.value as ShiftGroup })}>
@@ -171,29 +196,52 @@ export function CreateWorkOrderPage() {
             </label>
           ) : null}
 
-          <SearchableSelect
+          {rules.section !== "hidden" ? <SearchableSelect
             label="Section"
             icon={<Factory size={15} aria-hidden="true" />}
             value={form.sectionId}
             options={sectionOptions}
             placeholder="Choose a section"
             disabled={submitting || Boolean(createdOrderId)}
-            onChange={(sectionId) => setForm({ ...form, sectionId, machineId: "", customMachineName: "" })}
-          />
+            onChange={(sectionId) => setForm({ ...form, sectionId, customSection: "", area: "", customArea: "", machineId: "", customMachineName: "" })}
+          /> : null}
 
-          <SearchableSelect
-            label="Machine"
-            value={form.machineId}
-            options={machineOptions}
-            placeholder="Choose a machine"
+          {rules.area !== "hidden" ? <SearchableSelect
+            label={`Area${rules.area === "optional" ? " (optional)" : ""}`}
+            value={form.area}
+            options={areaOptions}
+            placeholder="Choose an area"
             disabled={submitting || Boolean(createdOrderId)}
-            onChange={(machineId) => setForm({ ...form, machineId, customMachineName: "" })}
-          />
+            onChange={(area) => setForm({ ...form, area, customArea: "", machineId: "", customMachineName: "" })}
+          /> : null}
         </div>
 
-        {!form.machineId ? (
+        {rules.section !== "hidden" && form.sectionId === otherOptionValue ? (
           <label>
-            Machine name
+            Specify section
+            <input value={form.customSection} onChange={(event) => setForm({ ...form, customSection: event.target.value })} required />
+          </label>
+        ) : null}
+
+        {rules.area !== "hidden" && form.area === otherOptionValue ? (
+          <label>
+            Specify area
+            <input value={form.customArea} onChange={(event) => setForm({ ...form, customArea: event.target.value })} required />
+          </label>
+        ) : null}
+
+        {rules.machine !== "hidden" ? <SearchableSelect
+          label={`Machine / equipment${rules.machine === "optional" ? " (optional)" : ""}`}
+          value={form.machineId}
+          options={machineOptions}
+          placeholder="Choose a machine"
+          disabled={submitting || Boolean(createdOrderId)}
+          onChange={(machineId) => setForm({ ...form, machineId, customMachineName: "" })}
+        /> : null}
+
+        {rules.machine !== "hidden" && form.machineId === otherOptionValue ? (
+          <label>
+            Specify machine or equipment
             <input value={form.customMachineName} onChange={(event) => setForm({ ...form, customMachineName: event.target.value })} required />
           </label>
         ) : null}
@@ -201,7 +249,7 @@ export function CreateWorkOrderPage() {
         <div className="form-grid two-columns">
           <label>
             Responsible department
-            <select value={form.responsibleDepartment} onChange={(event) => setForm({ ...form, responsibleDepartment: event.target.value as WorkOrderDepartment })}>
+            <select value={form.responsibleDepartment} onChange={(event) => setForm({ ...form, responsibleDepartment: event.target.value as WorkOrderDepartment, area: "", customArea: "", machineId: "", customMachineName: "", issueCategoryId: "", customIssueCategory: "" })}>
               {workOrderDepartments.map((department) => <option key={department} value={department}>{department}</option>)}
             </select>
           </label>
@@ -214,21 +262,25 @@ export function CreateWorkOrderPage() {
 
           <label>
             Reported by department
-            <select value={form.reportedByDepartment} onChange={(event) => setForm({ ...form, reportedByDepartment: event.target.value })} required>
+            <select value={form.reportedByDepartment} onChange={(event) => setForm({ ...form, reportedByDepartment: event.target.value, customReportedByDepartment: "" })} required>
               <option value="">Choose department</option>
               {reporterDepartmentOptions(form.reportedByDepartment).map((department) => <option key={department} value={department}>{department}</option>)}
+              <option value={otherOptionValue}>Others</option>
             </select>
           </label>
         </div>
 
-        <SearchableSelect
+        {form.reportedByDepartment === otherOptionValue ? <label>Specify reporting department<input value={form.customReportedByDepartment} onChange={(event) => setForm({ ...form, customReportedByDepartment: event.target.value })} required /></label> : null}
+
+        {rules.issueCategory !== "hidden" ? <SearchableSelect
           label="Issue category"
           value={form.issueCategoryId}
           options={issueCategoryOptions}
           placeholder="Choose an issue category"
           disabled={submitting || Boolean(createdOrderId)}
-          onChange={(issueCategoryId) => setForm({ ...form, issueCategoryId })}
-        />
+          onChange={(issueCategoryId) => setForm({ ...form, issueCategoryId, customIssueCategory: "" })}
+        /> : null}
+        {rules.issueCategory !== "hidden" && form.issueCategoryId === otherOptionValue ? <label>Specify issue category<input value={form.customIssueCategory} onChange={(event) => setForm({ ...form, customIssueCategory: event.target.value })} required /></label> : null}
 
         <label>
           Issue description

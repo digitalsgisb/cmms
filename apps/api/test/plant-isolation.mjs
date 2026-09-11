@@ -63,6 +63,7 @@ assert(inPlant("port-klang", () => m.listNotifications(pkTech.id)).every((n) => 
 const sdSession = m.createAuthSession(sd.username, password);
 const pkSession = m.createAuthSession(pk.username, password);
 const adminSession = m.createAuthSession(admin.username, password);
+const sdTechSession = m.createAuthSession(sdTech.username, password);
 const port = 3397;
 const server = spawn(process.execPath, [path.resolve("apps/api/dist/server.js")], { env: { ...process.env, PORT: String(port) }, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
 let logs = "";
@@ -98,8 +99,30 @@ try {
   concurrent.forEach((orders, i) => assert(orders.every((order) => order.plantId === (i % 2 ? "port-klang" : "sendayan"))));
   const guest = await fetch(base + "/requester/work-orders", { method: "POST", headers: { "Content-Type": "application/json", "X-CMMS-Plant": "sendayan" }, body: JSON.stringify({ type: "maintenance", title: "Guest Sendayan", issueDescription: "Guest repair", responsibleDepartment: "Production" }) }).then((response) => response.json());
   assert.equal(guest.workOrder.plantId, "sendayan");
+  const requesterOrders = await (await get("/work-orders", sdSession, "sendayan")).json();
+  const technicianOrders = await (await get("/work-orders", sdTechSession, "sendayan")).json();
+  assert(requesterOrders.some((order) => order.id === guest.workOrder.id));
+  assert(technicianOrders.some((order) => order.id === guest.workOrder.id));
+  assert.equal((await get(`/work-orders/${guest.workOrder.id}`, sdSession, "sendayan")).status, 200);
+  const requesterMutation = await fetch(base + `/work-orders/${guest.workOrder.id}/status`, { method: "PATCH", headers: { Authorization: `Bearer ${sdSession.token}`, "Content-Type": "application/json", "X-CMMS-Plant": "sendayan" }, body: JSON.stringify({ actorId: sd.id, status: "closed", note: "Not my request" }) });
+  assert.equal(requesterMutation.status, 403);
   const guestToken = new URL(guest.tracking.path, "http://localhost").searchParams.get("token");
   assert.equal((await get(`/requester/work-orders/${guest.workOrder.id}/tracking?token=${guestToken}`)).status, 200);
+  const guestEvents = await get(`/requester/work-orders/${guest.workOrder.id}/events?token=${guestToken}`);
+  assert.equal(guestEvents.status, 200);
+  assert.match(guestEvents.headers.get("content-type") || "", /text\/event-stream/);
+  await guestEvents.body.cancel();
+  assert.equal((await get(`/requester/work-orders/${guest.workOrder.id}/events?token=invalid`)).status, 400);
+  const staffEvents = await get("/events", sdTechSession, "sendayan");
+  const staffEventReader = staffEvents.body.getReader();
+  await staffEventReader.read();
+  await fetch(base + "/requester/work-orders", { method: "POST", headers: { "Content-Type": "application/json", "X-CMMS-Plant": "sendayan" }, body: JSON.stringify({ type: "maintenance", title: "Live event test", issueDescription: "Instant technician refresh", responsibleDepartment: "Production" }) });
+  const liveChunk = await Promise.race([
+    staffEventReader.read(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("Timed out waiting for work-order live event")), 3000))
+  ]);
+  assert.match(new TextDecoder().decode(liveChunk.value), /"topic":"work-orders"/);
+  await staffEventReader.cancel();
   assert.equal((await get(`/requester/work-orders/${pkOrder.id}/tracking?token=${guestToken}`)).ok, false);
   const deniedWrite = await fetch(base + `/work-orders/${sdOrder.id}/comments`, { method: "POST", headers: { Authorization: `Bearer ${pkSession.token}`, "Content-Type": "application/json", "X-CMMS-Plant": "port-klang" }, body: JSON.stringify({ actorId: pk.id, message: "Forbidden comment" }) });
   assert.equal(deniedWrite.ok, false);

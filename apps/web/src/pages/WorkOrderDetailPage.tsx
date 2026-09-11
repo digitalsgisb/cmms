@@ -470,7 +470,7 @@ export function WorkOrderDetailPage() {
                 ) : null}
                 <div>
                   <dt>Issue category</dt>
-                  <dd>{detail.issueCategory?.name || "Other"}</dd>
+                  <dd>{detail.issueCategoryName || detail.issueCategory?.name || "Other"}</dd>
                 </div>
                 <div className="technician-secondary-detail">
                   <dt>Assigned</dt>

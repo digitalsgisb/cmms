@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import type { GuestWorkOrderTracking, WorkOrderStatus } from "@sugi-cmms/shared";
 import { workOrderStatusLabels } from "@sugi-cmms/shared";
-import { api, mediaUrl } from "../api/client";
+import { api, guestLiveEventsUrl, mediaUrl } from "../api/client";
 import { StatusBadge } from "../components/Badges";
 import { ImageLightbox } from "../components/ImageLightbox";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
@@ -68,7 +68,20 @@ export function GuestTrackingPage() {
   }
 
   useEffect(() => { void loadTracking(); }, [id, token]);
-  useLiveRefresh(["work-orders"], loadTracking, { enabled: Boolean(id && token), fallbackMs: 10000 });
+  useLiveRefresh(["work-orders"], loadTracking, { enabled: Boolean(id && token), fallbackMs: 5000, streamEnabled: false });
+  useEffect(() => {
+    if (!id || !token || typeof EventSource === "undefined") return;
+    const source = new EventSource(guestLiveEventsUrl(id, token));
+    source.onmessage = (event) => {
+      try {
+        const change = JSON.parse(event.data) as { topic?: string };
+        if (change.topic === "work-orders") void loadTracking();
+      } catch {
+        // Heartbeats and malformed events are ignored; EventSource reconnects.
+      }
+    };
+    return () => source.close();
+  }, [id, token]);
 
   const shareUrl = useMemo(() => {
     if (!id || !token) return "";

@@ -39,6 +39,41 @@ export const workOrderDepartments: WorkOrderDepartment[] = [
   "Business Development"
 ];
 
+export type WorkOrderFieldRequirement = "required" | "optional" | "hidden";
+
+export interface WorkOrderDepartmentFormRules {
+  shiftGroup: WorkOrderFieldRequirement;
+  section: WorkOrderFieldRequirement;
+  area: WorkOrderFieldRequirement;
+  machine: WorkOrderFieldRequirement;
+  issueCategory: WorkOrderFieldRequirement;
+}
+
+const standardWorkOrderFormRules: WorkOrderDepartmentFormRules = {
+  shiftGroup: "hidden",
+  section: "required",
+  area: "required",
+  machine: "required",
+  issueCategory: "required"
+};
+
+// One policy map controls every department form. As each department confirms
+// its workflow, a field can be changed to required, optional, or hidden here.
+export const workOrderDepartmentFormRules: Record<WorkOrderDepartment, WorkOrderDepartmentFormRules> = {
+  Logistic: { ...standardWorkOrderFormRules },
+  Production: { ...standardWorkOrderFormRules, shiftGroup: "required" },
+  SHE: { ...standardWorkOrderFormRules },
+  DTU: { ...standardWorkOrderFormRules },
+  "R&D": { ...standardWorkOrderFormRules },
+  Account: { ...standardWorkOrderFormRules },
+  Management: { ...standardWorkOrderFormRules },
+  "Business Development": { ...standardWorkOrderFormRules }
+};
+
+export function workOrderFormRulesForDepartment(department: WorkOrderDepartment) {
+  return workOrderDepartmentFormRules[department];
+}
+
 export function workOrderDepartmentForUser(department: string): WorkOrderDepartment | null {
   const value = department.trim().toLowerCase();
   const aliases: Record<string, WorkOrderDepartment> = {
@@ -192,6 +227,7 @@ export interface WorkOrder {
   reportedByDepartment: string;
   responsibleDepartment: WorkOrderDepartment;
   issueCategoryId: string | null;
+  issueCategoryName: string;
   issueDescription: string;
   createdAt: string;
   updatedAt: string;
@@ -341,6 +377,7 @@ export interface CreateWorkOrderInput {
   reportedByDepartment?: string;
   responsibleDepartment?: WorkOrderDepartment;
   issueCategoryId?: string | null;
+  issueCategoryName?: string;
   issueDescription?: string;
 }
 
@@ -366,6 +403,7 @@ export interface UpdateWorkOrderInput {
   reportedByDepartment: string;
   responsibleDepartment: WorkOrderDepartment;
   issueCategoryId?: string | null;
+  issueCategoryName?: string;
   issueDescription: string;
 }
 

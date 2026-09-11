@@ -8,6 +8,7 @@ import { SearchableSelect } from "../components/SearchableSelect";
 import { useCurrentUser } from "../state/UserContext";
 
 const priorityOptions: WorkOrderPriority[] = ["low", "medium", "high", "critical"];
+const otherOptionValue = "__other__";
 const initialForm = {
   number: "",
   type: "maintenance" as WorkOrderType,
@@ -23,6 +24,7 @@ const initialForm = {
   reportedByDepartment: "",
   responsibleDepartment: "Production" as WorkOrderDepartment,
   issueCategoryId: "",
+  customIssueCategory: "",
   issueDescription: ""
 };
 
@@ -64,7 +66,8 @@ export function EditWorkOrderPage() {
           reportedByName: workOrder.reportedByName,
           reportedByDepartment: workOrder.reportedByDepartment,
           responsibleDepartment: workOrder.responsibleDepartment,
-          issueCategoryId: workOrder.issueCategoryId || "",
+          issueCategoryId: workOrder.issueCategoryId || otherOptionValue,
+          customIssueCategory: workOrder.issueCategoryId ? "" : workOrder.issueCategoryName === "Other" ? "" : workOrder.issueCategoryName,
           issueDescription: workOrder.issueDescription
         });
       })
@@ -93,7 +96,7 @@ export function EditWorkOrderPage() {
     [filteredMachines]
   );
   const issueCategoryOptions = useMemo(
-    () => [{ value: "", label: "Office / general" }, ...issueCategories.map((category) => ({ value: category.id, label: category.name }))],
+    () => [...issueCategories.map((category) => ({ value: category.id, label: category.name })), { value: otherOptionValue, label: "Others" }],
     [issueCategories]
   );
 
@@ -125,7 +128,8 @@ export function EditWorkOrderPage() {
         reportedByName: form.reportedByName,
         reportedByDepartment: form.reportedByDepartment,
         responsibleDepartment: form.responsibleDepartment,
-        issueCategoryId: form.issueCategoryId || null,
+        issueCategoryId: form.issueCategoryId === otherOptionValue ? null : form.issueCategoryId || null,
+        issueCategoryName: form.issueCategoryId === otherOptionValue ? form.customIssueCategory.trim() || "Other" : issueCategories.find((category) => category.id === form.issueCategoryId)?.name,
         issueDescription: form.issueDescription
       });
       navigate(`/work-orders/${id}`, { replace: true });
@@ -259,8 +263,9 @@ export function EditWorkOrderPage() {
           value={form.issueCategoryId}
           options={issueCategoryOptions}
           placeholder="Search category"
-          onChange={(issueCategoryId) => setForm({ ...form, issueCategoryId })}
+          onChange={(issueCategoryId) => setForm({ ...form, issueCategoryId, customIssueCategory: "" })}
         />
+        {form.issueCategoryId === otherOptionValue ? <label>Specify issue category<input value={form.customIssueCategory} onChange={(event) => setForm({ ...form, customIssueCategory: event.target.value })} required /></label> : null}
 
         <label>
           Issue description

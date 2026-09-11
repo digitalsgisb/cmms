@@ -44,6 +44,7 @@ const executive = createUser("executive", "executive");
 const technician = createUser("technician", "technician");
 const kaizenTechnician = createUser("technician", "kaizen-technician", "Kaizen");
 const requester = createUser("requester", "requester");
+const secondRequester = createUser("requester", "requester-two", "SHE");
 const masterData = inPlant(() => m.listMasterData());
 const section = masterData.sections[0];
 const issueCategory = masterData.issueCategories[0];
@@ -107,6 +108,22 @@ assert.equal(inPlant(() => m.getWorkOrderDetail(workOrder.id)).activities[0].act
 const maintenanceOrder = createOrder("Maintenance routing");
 const kaizenOrder = createOrder("Kaizen routing", "kaizen");
 const projectOrder = createOrder("Shared project", "project");
+const customCategoryOrder = inPlant(() => m.createWorkOrder(m.validateCreateWorkOrderInput({
+  requesterId: secondRequester.id,
+  type: "maintenance",
+  workDate: "2026-09-08",
+  sectionId: section.id,
+  area: "Other area",
+  machineName: "Other equipment",
+  reportedByName: secondRequester.name,
+  reportedByDepartment: "SHE",
+  responsibleDepartment: "SHE",
+  issueCategoryName: "Access control",
+  issueDescription: "Custom category issue"
+})));
+assert.equal(customCategoryOrder.issueCategoryName, "Access control");
+assert(inPlant(() => m.listWorkOrders(requester)).some((order) => order.id === customCategoryOrder.id));
+assert.equal(inPlant(() => m.userCanAccessWorkOrder(requester, customCategoryOrder)), true);
 const maintenanceVisible = inPlant(() => m.listWorkOrders(technician));
 const kaizenVisible = inPlant(() => m.listWorkOrders(kaizenTechnician));
 assert(maintenanceVisible.some((order) => order.id === maintenanceOrder.id));

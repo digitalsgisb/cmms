@@ -201,7 +201,7 @@ app.use("/api", (request, response, next) => {
     request.method === "POST" &&
     (request.path === "/requester/work-orders" || /^\/requester\/work-orders\/[^/]+\/attachments$/.test(request.path));
   const publicGuestTracking =
-    (request.method === "GET" && /^\/requester\/work-orders\/[^/]+\/tracking$/.test(request.path)) ||
+    (request.method === "GET" && /^\/requester\/work-orders\/[^/]+\/(tracking|events)$/.test(request.path)) ||
     (request.method === "POST" && /^\/requester\/work-orders\/[^/]+\/verification$/.test(request.path));
   const publicRequest =
     request.path === "/health" ||
@@ -310,7 +310,7 @@ function publishLiveChange(topic: LiveTopic, request: Request) {
   }
 }
 
-app.get("/api/events", (request, response) => {
+function connectLiveClient(request: Request, response: Response) {
   response.set({
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
@@ -324,6 +324,15 @@ app.get("/api/events", (request, response) => {
   request.on("close", () => {
     liveClients.delete(response);
   });
+}
+
+app.get("/api/events", (request, response) => {
+  connectLiveClient(request, response);
+});
+
+app.get("/api/requester/work-orders/:id/events", (request, response) => {
+  getGuestWorkOrderTracking(request.params.id, String(request.query.token || ""));
+  connectLiveClient(request, response);
 });
 
 // Broadcast only after a successful write has fully completed. This covers every

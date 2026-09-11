@@ -4,6 +4,7 @@ import { liveEventsUrl } from "../api/client";
 type LiveRefreshOptions = {
   enabled?: boolean;
   fallbackMs?: number;
+  streamEnabled?: boolean;
 };
 
 type LiveChange = {
@@ -51,7 +52,7 @@ function subscribeToLiveChanges(listener: (change: LiveChange) => void) {
 export function useLiveRefresh(
   topics: string[],
   refresh: () => void | Promise<void>,
-  { enabled = true, fallbackMs = 15000 }: LiveRefreshOptions = {}
+  { enabled = true, fallbackMs = 15000, streamEnabled = true }: LiveRefreshOptions = {}
 ) {
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
@@ -90,9 +91,11 @@ export function useLiveRefresh(
       debounceTimer = window.setTimeout(() => void runRefresh(), 80);
     };
 
-    const unsubscribe = subscribeToLiveChanges((change) => {
-      if (change.topic && acceptedTopics.has(change.topic)) queueRefresh();
-    });
+    const unsubscribe = streamEnabled
+      ? subscribeToLiveChanges((change) => {
+          if (change.topic && acceptedTopics.has(change.topic)) queueRefresh();
+        })
+      : () => {};
 
     const fallback = window.setInterval(() => {
       if (document.visibilityState === "visible") void runRefresh();
@@ -112,5 +115,5 @@ export function useLiveRefresh(
       window.removeEventListener("online", refreshWhenVisible);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [enabled, fallbackMs, topicKey]);
+  }, [enabled, fallbackMs, streamEnabled, topicKey]);
 }

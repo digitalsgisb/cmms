@@ -58,7 +58,10 @@ const authTokenKey = "sugi-cmms-auth-token-v1";
 export function selectedPlant(): PlantId | "all" {
   const access = sessionStorage.getItem("cmms-user-plant-access");
   if (localStorage.getItem(authTokenKey) && (access === "port-klang" || access === "sendayan")) return access;
-  const guestPlant = window.location.pathname === "/requester" ? new URLSearchParams(window.location.search).get("plant") : null;
+  if (window.location.pathname === "/requester") {
+    return new URLSearchParams(window.location.search).get("plant") === "sendayan" ? "sendayan" : "port-klang";
+  }
+  const guestPlant = null;
   const stored = guestPlant || sessionStorage.getItem("cmms-selected-plant") || "port-klang";
   if (stored === "all") return ["/reports", "/performance"].includes(window.location.pathname) ? "all" : sessionStorage.getItem("cmms-operational-plant") === "sendayan" ? "sendayan" : "port-klang";
   return stored === "sendayan" ? "sendayan" : "port-klang";
@@ -69,6 +72,9 @@ export function setSelectedPlant(plant: PlantId | "all") {
 }
 
 export const liveEventsUrl = `${API_BASE}/api/events`;
+export function guestLiveEventsUrl(id: string, token: string) {
+  return `${API_BASE}/api/requester/work-orders/${encodeURIComponent(id)}/events?token=${encodeURIComponent(token)}`;
+}
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); this.name = "ApiError"; }
@@ -129,7 +135,7 @@ export const api = {
   },
   me: async () => { const user = await request<User>("/api/auth/me"); sessionStorage.setItem("cmms-user-plant-access", user.plantAccess); if (user.plantAccess !== "both") setSelectedPlant(user.plantAccess); return user; },
   hasSession: () => Boolean(localStorage.getItem(authTokenKey)),
-  clearSession: () => { void request<void>("/api/auth/logout", { method: "POST" }).catch(() => {}); localStorage.removeItem(authTokenKey); },
+  clearSession: () => { void request<void>("/api/auth/logout", { method: "POST" }).catch(() => {}); localStorage.removeItem(authTokenKey); sessionStorage.removeItem("cmms-user-plant-access"); },
   users: () => request<User[]>(window.location.pathname === "/users" ? "/api/users?manage=1" : "/api/users"),
   usersByRole: (role: User["role"]) => request<User[]>(`/api/users?role=${role}`),
   createUser: (input: { actorId: string; username: string; password: string; name: string; role: User["role"]; department: string; title: string; plantAccess?: User["plantAccess"] }) =>
