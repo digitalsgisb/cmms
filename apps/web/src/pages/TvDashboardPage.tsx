@@ -16,48 +16,7 @@ const columns: Array<{ title: string; statuses: WorkOrderStatus[]; tone: string 
 
 const rotationIntervalMs = 10_000;
 const workOrdersPerPage = 3;
-
-function playUrgentHorn(context: AudioContext) {
-  const startedAt = context.currentTime;
-  const masterGain = context.createGain();
-  const filter = context.createBiquadFilter();
-  const compressor = context.createDynamicsCompressor();
-  const frequencies = [392, 523];
-
-  filter.type = "lowpass";
-  filter.frequency.setValueAtTime(1500, startedAt);
-  filter.Q.setValueAtTime(1.2, startedAt);
-  compressor.threshold.setValueAtTime(-18, startedAt);
-  compressor.knee.setValueAtTime(10, startedAt);
-  compressor.ratio.setValueAtTime(5, startedAt);
-  masterGain.gain.setValueAtTime(0.0001, startedAt);
-
-  frequencies.forEach((frequency, burstIndex) => {
-    const burstStart = startedAt + burstIndex * 0.47;
-    const burstEnd = burstStart + 0.34;
-    masterGain.gain.setValueAtTime(0.0001, burstStart);
-    masterGain.gain.exponentialRampToValueAtTime(0.24, burstStart + 0.025);
-    masterGain.gain.setValueAtTime(0.24, burstEnd - 0.05);
-    masterGain.gain.exponentialRampToValueAtTime(0.0001, burstEnd);
-
-    [1, 1.5].forEach((harmonic, harmonicIndex) => {
-      const oscillator = context.createOscillator();
-      const voiceGain = context.createGain();
-      oscillator.type = harmonicIndex === 0 ? "sawtooth" : "square";
-      oscillator.frequency.setValueAtTime(frequency * harmonic, burstStart);
-      oscillator.frequency.linearRampToValueAtTime(frequency * harmonic * 0.97, burstEnd);
-      voiceGain.gain.setValueAtTime(harmonicIndex === 0 ? 0.7 : 0.16, burstStart);
-      oscillator.connect(voiceGain);
-      voiceGain.connect(filter);
-      oscillator.start(burstStart);
-      oscillator.stop(burstEnd + 0.02);
-    });
-  });
-
-  filter.connect(masterGain);
-  masterGain.connect(compressor);
-  compressor.connect(context.destination);
-}
+const workOrderAlertSound = "/sounds/tv-work-order-alert.mp3";
 
 export function TvDashboardPage() {
   const [loadError, setLoadError] = useState("");
@@ -67,7 +26,7 @@ export function TvDashboardPage() {
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [arrivalNotice, setArrivalNotice] = useState("");
   const knownWorkOrderIdsRef = useRef<Set<string> | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
+  const alertAudioRef = useRef<HTMLAudioElement | null>(null);
   const soundEnabledRef = useRef(false);
   const arrivalTimerRef = useRef<number | null>(null);
 
@@ -83,26 +42,42 @@ export function TvDashboardPage() {
         setArrivalNotice(arrivals.length === 1 ? `New work order: ${arrivals[0].number}` : `${arrivals.length} new work orders received`);
         if (arrivalTimerRef.current) window.clearTimeout(arrivalTimerRef.current);
         arrivalTimerRef.current = window.setTimeout(() => setArrivalNotice(""), 9000);
-        const context = audioContextRef.current;
-        if (soundEnabledRef.current && context?.state === "running") playUrgentHorn(context);
+        if (soundEnabledRef.current) playAlertSound();
       }
     }
     catch { setLoadError("Live updates interrupted. Showing the last available work orders; reconnecting automatically."); }
+  }
+
+  function playAlertSound() {
+    const audio = alertAudioRef.current;
+    if (!audio) return;
+    audio.pause();
+    audio.currentTime = 0;
+    void audio.play().catch(() => {
+      soundEnabledRef.current = false;
+      setSoundEnabled(false);
+      setLoadError("The browser blocked alert audio. Select Enable sound alerts again.");
+    });
   }
 
   async function toggleSound() {
     if (soundEnabledRef.current) {
       soundEnabledRef.current = false;
       setSoundEnabled(false);
-      await audioContextRef.current?.suspend();
+      alertAudioRef.current?.pause();
       return;
     }
-    const context = audioContextRef.current || new AudioContext();
-    audioContextRef.current = context;
-    await context.resume();
-    soundEnabledRef.current = true;
-    setSoundEnabled(true);
-    playUrgentHorn(context);
+    const audio = alertAudioRef.current;
+    if (!audio) return;
+    audio.currentTime = 0;
+    try {
+      await audio.play();
+      soundEnabledRef.current = true;
+      setSoundEnabled(true);
+      setLoadError("");
+    } catch {
+      setLoadError("The browser blocked alert audio. Check the TV volume and try again.");
+    }
   }
 
   useEffect(() => {
@@ -113,7 +88,7 @@ export function TvDashboardPage() {
       window.clearInterval(clock);
       window.clearInterval(rotation);
       if (arrivalTimerRef.current) window.clearTimeout(arrivalTimerRef.current);
-      void audioContextRef.current?.close();
+      alertAudioRef.current?.pause();
     };
   }, []);
 
@@ -126,6 +101,7 @@ export function TvDashboardPage() {
 
   return (
     <main className="tv-dashboard">
+      <audio ref={alertAudioRef} src={workOrderAlertSound} preload="auto" />
       {loadError ? <div className="ux-load-error" role="status">{loadError}</div> : null}
       {arrivalNotice ? <div className="tv-arrival-notice" role="status" aria-live="assertive"><Volume2 size={22} />{arrivalNotice}</div> : null}
       <header className="tv-header">
@@ -139,7 +115,7 @@ export function TvDashboardPage() {
         <div className="tv-status">
           <button className={`tv-sound-toggle${soundEnabled ? " is-enabled" : ""}`} type="button" onClick={() => void toggleSound()} aria-pressed={soundEnabled}>
             {soundEnabled ? <Volume2 size={22} aria-hidden="true" /> : <VolumeX size={22} aria-hidden="true" />}
-            {soundEnabled ? "Horn alerts on" : "Enable horn alerts"}
+            {soundEnabled ? "Sound alerts on" : "Enable sound alerts"}
           </button>
           <span>
             <MonitorCheck size={22} aria-hidden="true" />
