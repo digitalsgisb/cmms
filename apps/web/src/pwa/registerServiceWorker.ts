@@ -4,15 +4,11 @@ export function registerServiceWorker() {
   }
 
   window.addEventListener("load", () => {
-    let reloadingForUpdate = false;
-    navigator.serviceWorker.addEventListener("controllerchange", () => {
-      if (reloadingForUpdate) return;
-      reloadingForUpdate = true;
-      window.location.reload();
-    });
-
     navigator.serviceWorker.register("/sw.js")
       .then((registration) => {
+        // Install updates in the background without reloading an open page.
+        // The new version is picked up naturally the next time the PWA opens,
+        // so partially completed forms are never discarded by an update.
         void registration.update();
         window.setInterval(() => void registration.update(), 60 * 60 * 1000);
       })

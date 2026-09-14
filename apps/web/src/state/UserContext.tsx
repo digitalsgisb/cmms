@@ -30,13 +30,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const workOrdersRequestRef = useRef<Promise<WorkOrder[]> | null>(null);
 
   async function refreshUsers() {
-    setLoadingUsers(true);
-    try {
-      const nextUsers = await api.users();
-      setUsers(nextUsers);
-    } finally {
-      setLoadingUsers(false);
-    }
+    const nextUsers = await api.users();
+    setUsers(nextUsers);
   }
 
   function setCurrentUserId(id: string) {
@@ -101,6 +96,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         setCurrentUserId(user.id);
         setUsers([user]);
         await refreshUsers();
+        setLoadingUsers(false);
       })
       .catch((error) => {
         if (!(error instanceof ApiError) || error.status !== 401) {
