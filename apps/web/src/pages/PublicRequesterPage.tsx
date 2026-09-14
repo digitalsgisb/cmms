@@ -71,6 +71,7 @@ export function PublicRequesterPage() {
   const [issueFiles, setIssueFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [invalidField, setInvalidField] = useState("");
   const [success, setSuccess] = useState("");
   const [statusFilter, setStatusFilter] = useState<RequesterStatusFilter>("all");
   const [trackingScope, setTrackingScope] = useState<RequesterTrackingScope>("department");
@@ -113,7 +114,7 @@ export function PublicRequesterPage() {
       setView("dashboard");
       setTrackingScope("department");
       setSelectedDepartment(null); setSelectedType(null); setChoosingOtherDepartment(false);
-      setForm((current) => ({ ...current, reportedByName: currentUser.name, reportedByDepartment: currentUser.department }));
+      setForm((current) => ({ ...current, reportedByName: "", reportedByDepartment: currentUser.department }));
       loadAccountWorkOrders().catch(console.error);
       loadRequesterNotifications().catch(console.error);
     } else {
@@ -174,7 +175,7 @@ export function PublicRequesterPage() {
   function chooseType(type: WorkOrderType) {
     if (categoryClosing || !selectedDepartment) return;
     setCategoryClosing(true); setError(""); setSuccess("");
-    setForm((current) => ({ ...current, type, machineId: type === "office" ? "" : current.machineId, placeOrEquipment: "", issueCategoryId: type === "office" ? "" : current.issueCategoryId, reportedByName: signedRequester ? currentUser.name : current.reportedByName, reportedByDepartment: signedRequester ? currentUser.department : current.reportedByDepartment }));
+    setForm((current) => ({ ...current, type, machineId: type === "office" ? "" : current.machineId, placeOrEquipment: "", issueCategoryId: type === "office" ? "" : current.issueCategoryId, reportedByName: "", reportedByDepartment: signedRequester ? currentUser.department : current.reportedByDepartment }));
     window.setTimeout(() => { setSelectedType(type); setCategoryClosing(false); }, 260);
   }
 
@@ -222,23 +223,42 @@ export function PublicRequesterPage() {
     finally { setLoginBusy(false); }
   }
 
+  function showMissingField(message: string, field: string) {
+    setError(message);
+    setInvalidField(field);
+    window.requestAnimationFrame(() => {
+      const marker = document.querySelector<HTMLElement>(`[data-requester-field="${field}"]`);
+      if (!marker) return;
+      marker.scrollIntoView({ behavior: "smooth", block: "center" });
+      const control = marker.matches("input, select, textarea, button")
+        ? marker
+        : marker.querySelector<HTMLElement>("input, select, textarea, button");
+      window.setTimeout(() => control?.focus({ preventScroll: true }), 280);
+    });
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!selectedType || !selectedDepartment || submitting) return;
     const selectedMachine = filteredMachines.find((machine) => machine.id === form.machineId);
     const place = form.placeOrEquipment.trim();
     const activeRules = workOrderFormRulesForDepartment(selectedDepartment);
-    if (activeRules.section === "required" && !form.sectionId) { setError("Choose a section or select Others."); return; }
-    if (activeRules.section !== "hidden" && form.sectionId === otherOptionValue && !form.customSection.trim()) { setError("Specify the section."); return; }
-    if (activeRules.area === "required" && !form.area) { setError("Choose an area or select Others."); return; }
-    if (activeRules.area !== "hidden" && form.area === otherOptionValue && !form.customArea.trim()) { setError("Specify the area."); return; }
-    if (activeRules.machine === "required" && !form.machineId) { setError("Choose a machine or select Others."); return; }
-    if (activeRules.machine !== "hidden" && form.machineId === otherOptionValue && !place) { setError("Specify the machine or equipment."); return; }
-    if (activeRules.issueCategory === "required" && !form.issueCategoryId) { setError("Choose an issue category or select Others."); return; }
-    if (activeRules.issueCategory !== "hidden" && form.issueCategoryId === otherOptionValue && !form.customIssueCategory.trim()) { setError("Specify the issue category."); return; }
-    if (!form.reportedByDepartment) { setError("Choose your department."); return; }
-    if (form.reportedByDepartment === otherOptionValue && !form.customReportedByDepartment.trim()) { setError("Specify your department."); return; }
+    if (!form.workDate) { showMissingField("Choose the work order date.", "work-date"); return; }
+    if (isOffice && !place) { showMissingField("Enter the place or location.", "place"); return; }
+    if (activeRules.section === "required" && !form.sectionId) { showMissingField("Choose a section or select Others.", "section"); return; }
+    if (activeRules.section !== "hidden" && form.sectionId === otherOptionValue && !form.customSection.trim()) { showMissingField("Specify the section.", "custom-section"); return; }
+    if (activeRules.area === "required" && !form.area) { showMissingField("Choose an area or select Others.", "area"); return; }
+    if (activeRules.area !== "hidden" && form.area === otherOptionValue && !form.customArea.trim()) { showMissingField("Specify the area.", "custom-area"); return; }
+    if (activeRules.machine === "required" && !form.machineId) { showMissingField("Choose a machine or select Others.", "machine"); return; }
+    if (activeRules.machine !== "hidden" && form.machineId === otherOptionValue && !place) { showMissingField("Specify the machine or equipment.", "custom-machine"); return; }
+    if (activeRules.issueCategory === "required" && !form.issueCategoryId) { showMissingField("Choose an issue category or select Others.", "issue-category"); return; }
+    if (activeRules.issueCategory !== "hidden" && form.issueCategoryId === otherOptionValue && !form.customIssueCategory.trim()) { showMissingField("Specify the issue category.", "custom-issue-category"); return; }
+    if (!form.reportedByName.trim()) { showMissingField("Enter your name so maintenance knows who reported this.", "reporter-name"); return; }
+    if (!isOffice && !form.reportedByDepartment) { showMissingField("Choose your department.", "reporter-department"); return; }
+    if (!isOffice && form.reportedByDepartment === otherOptionValue && !form.customReportedByDepartment.trim()) { showMissingField("Specify your department.", "custom-reporter-department"); return; }
+    if (!form.issueDescription.trim()) { showMissingField("Describe what happened.", "issue-description"); return; }
     setSubmitting(true); setError(""); setSuccess("");
+    setInvalidField("");
     try {
       const payload = {
         type: selectedType, workDate: form.workDate || todayDate(), shiftGroup: selectedDepartment === "Production" ? form.shiftGroup : "N/A",
@@ -247,7 +267,7 @@ export function PublicRequesterPage() {
         location: isOffice ? place : form.sectionId === otherOptionValue ? form.customSection.trim() : activeSections.find((section) => section.id === form.sectionId)?.name || `${selectedDepartment} request`,
         area: isOffice ? "Office" : activeRules.area === "hidden" ? "Not applicable" : form.area === otherOptionValue ? form.customArea.trim() : form.area || selectedMachine?.area || "General",
         machineName: isOffice ? place : activeRules.machine === "hidden" ? "Not applicable" : selectedMachine?.name || place || "Not specified",
-        reportedByName: signedRequester ? currentUser.name : form.reportedByName,
+        reportedByName: form.reportedByName.trim(),
         reportedByDepartment: signedRequester ? currentUser.department : form.reportedByDepartment === otherOptionValue ? form.customReportedByDepartment.trim() : form.reportedByDepartment.trim() || "Not specified",
         responsibleDepartment: selectedDepartment,
         issueCategoryId: isOffice || activeRules.issueCategory === "hidden" || form.issueCategoryId === otherOptionValue ? null : form.issueCategoryId,
@@ -268,7 +288,7 @@ export function PublicRequesterPage() {
       try { if (issueFiles.length) await api.uploadAttachments(workOrder.id, currentUser.id, "issue", issueFiles); }
       catch { photosFailed = true; }
       setSuccess(`${workOrder.number} submitted successfully.${photosFailed ? " Photos could not be uploaded. Contact maintenance with this work order number; do not submit another request." : ""}`); setSelectedDepartment(null); setSelectedType(null);
-      setForm({ ...initialRequesterForm, workDate: todayDate(), sectionId: form.sectionId, reportedByName: signedRequester ? currentUser.name : "", reportedByDepartment: signedRequester ? currentUser.department : "" });
+      setForm({ ...initialRequesterForm, workDate: todayDate(), sectionId: form.sectionId, reportedByName: "", reportedByDepartment: signedRequester ? currentUser.department : "" });
       setIssueFiles([]);
       await loadAccountWorkOrders(); setStatusFilter("open"); setView("tracking");
     } catch (nextError) { setError(nextError instanceof Error ? nextError.message : "Unable to submit work order."); }
@@ -310,7 +330,7 @@ export function PublicRequesterPage() {
       {signedRequester && view === "dashboard" ? <RequesterDashboard user={currentUser} workOrders={departmentWorkOrders} stats={stats} pendingVerification={pendingVerification} timerNow={timerNow} onStatus={showStatus} onView={openView} onDetail={openDetail} /> : null}
       {view === "new" ? <section className={`requester-new-view ${selectedType ? "" : "requester-new-view-locked"}`} aria-hidden={!selectedType}>
         <div className="requester-new-heading"><div><p>{signedRequester ? "Account request" : "Guest request"}</p><h1>New Work Order</h1><span>{signedRequester ? "This request will be saved under your account." : "No account needed. Submit an issue in a few simple steps."}</span></div>{!signedRequester ? <button type="button" onClick={() => setLoginOpen(true)}><ShieldCheck size={16} />Sign in to track</button> : null}</div>
-        {selectedType && selectedDepartment && rules ? <RequesterForm selectedType={selectedType} selectedDepartment={selectedDepartment} rules={rules} form={form} setForm={setForm} isOffice={isOffice} sectionOptions={sectionOptions} areaOptions={areaOptions} machineOptions={machineOptions} issueCategoryOptions={issueOptions} issueFiles={issueFiles} setIssueFiles={setIssueFiles} submitting={submitting} signedRequester={signedRequester} onChangeType={() => setSelectedType(null)} onSubmit={submit} /> : <section className="requester-form-panel requester-form-locked"><div className="requester-panel-heading"><span className="requester-panel-icon"><ShieldCheck size={18} /></span><div><h2>Choose a department and category</h2><span>The request form opens after your selections.</span></div></div></section>}
+        {selectedType && selectedDepartment && rules ? <RequesterForm selectedType={selectedType} selectedDepartment={selectedDepartment} rules={rules} form={form} setForm={setForm} isOffice={isOffice} sectionOptions={sectionOptions} areaOptions={areaOptions} machineOptions={machineOptions} issueCategoryOptions={issueOptions} issueFiles={issueFiles} setIssueFiles={setIssueFiles} submitting={submitting} signedRequester={signedRequester} invalidField={invalidField} clearInvalidField={() => setInvalidField("")} onChangeType={() => setSelectedType(null)} onSubmit={submit} /> : <section className="requester-form-panel requester-form-locked"><div className="requester-panel-heading"><span className="requester-panel-icon"><ShieldCheck size={18} /></span><div><h2>Choose a department and category</h2><span>The request form opens after your selections.</span></div></div></section>}
       </section> : null}
       {signedRequester && view === "tracking" ? <RequesterTracking workOrders={visibleWorkOrders} departmentLabel={accountDepartment || "My requests"} scope={trackingScope} statusFilter={statusFilter} search={search} detailLoading={detailLoading} timerNow={timerNow} onScope={setTrackingScope} onFilter={setStatusFilter} onSearch={setSearch} onDetail={openDetail} onNew={() => openView("new")} /> : null}
       {signedRequester && view === "verify" ? <RequesterVerification workOrders={pendingVerification} notes={verificationNotes} actionId={actionId} detailLoading={detailLoading} timerNow={timerNow} onNote={(id, note) => setVerificationNotes((current) => ({ ...current, [id]: note }))} onVerify={verifyWorkOrder} onDetail={openDetail} /> : null}
@@ -326,13 +346,14 @@ export function PublicRequesterPage() {
   </div>;
 }
 
-function RequesterForm({ selectedType, selectedDepartment, rules, form, setForm, isOffice, sectionOptions, areaOptions, machineOptions, issueCategoryOptions, issueFiles, setIssueFiles, submitting, signedRequester, onChangeType, onSubmit }: {
+function RequesterForm({ selectedType, selectedDepartment, rules, form, setForm, isOffice, sectionOptions, areaOptions, machineOptions, issueCategoryOptions, issueFiles, setIssueFiles, submitting, signedRequester, invalidField, clearInvalidField, onChangeType, onSubmit }: {
   selectedType: WorkOrderType; selectedDepartment: WorkOrderDepartment; rules: ReturnType<typeof workOrderFormRulesForDepartment>; form: typeof initialRequesterForm; setForm: React.Dispatch<React.SetStateAction<typeof initialRequesterForm>>; isOffice: boolean;
   sectionOptions: Array<{ value: string; label: string; meta?: string }>; areaOptions: Array<{ value: string; label: string; meta?: string }>; machineOptions: Array<{ value: string; label: string; meta?: string }>; issueCategoryOptions: Array<{ value: string; label: string; meta?: string }>;
-  issueFiles: File[]; setIssueFiles: (files: File[]) => void; submitting: boolean; signedRequester: boolean; onChangeType: () => void; onSubmit: (event: FormEvent) => void;
+  issueFiles: File[]; setIssueFiles: (files: File[]) => void; submitting: boolean; signedRequester: boolean; invalidField: string; clearInvalidField: () => void; onChangeType: () => void; onSubmit: (event: FormEvent) => void;
 }) {
+  const fieldClass = (field: string) => invalidField === field ? "requester-invalid" : "";
   return (
-    <form className="requester-form-panel requester-account-form requester-form-enter" onSubmit={onSubmit}>
+    <form className="requester-form-panel requester-account-form requester-form-enter" noValidate onChange={clearInvalidField} onSubmit={onSubmit}>
       <div className="requester-panel-heading requester-form-heading">
         <span className="requester-panel-icon"><Send size={18} /></span>
         <div><h2>{workOrderTypeLabels[selectedType]} Request</h2><span>For {selectedDepartment} · tell us which machine and what happened</span></div>
@@ -341,32 +362,32 @@ function RequesterForm({ selectedType, selectedDepartment, rules, form, setForm,
 
       <div className="requester-step-label"><span>1</span>Request details</div>
       <div className={`form-grid ${selectedDepartment === "Production" ? "two-columns" : ""}`}>
-        <label><CalendarDays size={15} />Date<input type="date" value={form.workDate} onChange={(event) => setForm({ ...form, workDate: event.target.value })} required /></label>
+        <label className={fieldClass("work-date")} data-requester-field="work-date"><CalendarDays size={15} />Date<input type="date" value={form.workDate} onChange={(event) => setForm({ ...form, workDate: event.target.value })} required /></label>
         {rules.shiftGroup !== "hidden" ? (
           <label>Shift group<select value={form.shiftGroup} onChange={(event) => setForm({ ...form, shiftGroup: event.target.value as ShiftGroup })}><option value="A">A</option><option value="B">B</option></select></label>
         ) : null}
       </div>
 
       {isOffice ? (
-        <label><MapPin size={15} />Place / location<input value={form.placeOrEquipment} onChange={(event) => setForm({ ...form, placeOrEquipment: event.target.value })} placeholder="Example: Finance office, meeting room, pantry" required /></label>
+        <label className={fieldClass("place")} data-requester-field="place"><MapPin size={15} />Place / location<input value={form.placeOrEquipment} onChange={(event) => setForm({ ...form, placeOrEquipment: event.target.value })} placeholder="Example: Finance office, meeting room, pantry" required /></label>
       ) : (
         <>
-          {rules.section !== "hidden" ? <><SearchableSelect label={`Section${rules.section === "optional" ? " (optional)" : ""}`} icon={<Factory size={15} />} value={form.sectionId} options={sectionOptions} placeholder="Choose section" onChange={(sectionId) => setForm({ ...form, sectionId, customSection: "", area: "", customArea: "", machineId: "", placeOrEquipment: "" })} />{form.sectionId === otherOptionValue ? <label><Factory size={15} />Specify section<input value={form.customSection} onChange={(event) => setForm({ ...form, customSection: event.target.value })} placeholder="Enter the section name" required /></label> : null}</> : null}
-          {rules.area !== "hidden" ? <><SearchableSelect label={`Area${rules.area === "optional" ? " (optional)" : ""}`} value={form.area} options={areaOptions} placeholder="Choose area" onChange={(area) => setForm({ ...form, area, customArea: "", machineId: "", placeOrEquipment: "" })} />{form.area === otherOptionValue ? <label><MapPin size={15} />Specify area<input value={form.customArea} onChange={(event) => setForm({ ...form, customArea: event.target.value })} placeholder="Enter the exact area" required /></label> : null}</> : null}
-          {rules.machine !== "hidden" ? <><SearchableSelect label={`Machine / equipment${rules.machine === "optional" ? " (optional)" : ""}`} value={form.machineId} options={machineOptions} placeholder="Choose or search machine" onChange={(machineId) => setForm({ ...form, machineId, placeOrEquipment: "" })} />{form.machineId === otherOptionValue ? <label><MapPin size={15} />Specify machine or equipment<input value={form.placeOrEquipment} onChange={(event) => setForm({ ...form, placeOrEquipment: event.target.value })} placeholder="Enter the exact machine or equipment" required /></label> : null}</> : null}
-          {rules.issueCategory !== "hidden" ? <><SearchableSelect label={`Issue category${rules.issueCategory === "optional" ? " (optional)" : ""}`} value={form.issueCategoryId} options={issueCategoryOptions} placeholder="Choose or search issue" onChange={(issueCategoryId) => setForm({ ...form, issueCategoryId, customIssueCategory: "" })} />{form.issueCategoryId === otherOptionValue ? <label>Specify issue category<input value={form.customIssueCategory} onChange={(event) => setForm({ ...form, customIssueCategory: event.target.value })} placeholder="Enter the issue category" required /></label> : null}</> : null}
+          {rules.section !== "hidden" ? <><SearchableSelect label={`Section${rules.section === "optional" ? " (optional)" : ""}`} icon={<Factory size={15} />} value={form.sectionId} options={sectionOptions} placeholder="Choose section" validationField="section" invalid={invalidField === "section"} onChange={(sectionId) => { clearInvalidField(); setForm({ ...form, sectionId, customSection: "", area: "", customArea: "", machineId: "", placeOrEquipment: "" }); }} />{form.sectionId === otherOptionValue ? <label className={fieldClass("custom-section")} data-requester-field="custom-section"><Factory size={15} />Specify section<input value={form.customSection} onChange={(event) => setForm({ ...form, customSection: event.target.value })} placeholder="Enter the section name" required /></label> : null}</> : null}
+          {rules.area !== "hidden" ? <><SearchableSelect label={`Area${rules.area === "optional" ? " (optional)" : ""}`} value={form.area} options={areaOptions} placeholder="Choose area" validationField="area" invalid={invalidField === "area"} onChange={(area) => { clearInvalidField(); setForm({ ...form, area, customArea: "", machineId: "", placeOrEquipment: "" }); }} />{form.area === otherOptionValue ? <label className={fieldClass("custom-area")} data-requester-field="custom-area"><MapPin size={15} />Specify area<input value={form.customArea} onChange={(event) => setForm({ ...form, customArea: event.target.value })} placeholder="Enter the exact area" required /></label> : null}</> : null}
+          {rules.machine !== "hidden" ? <><SearchableSelect label={`Machine / equipment${rules.machine === "optional" ? " (optional)" : ""}`} value={form.machineId} options={machineOptions} placeholder="Choose or search machine" validationField="machine" invalid={invalidField === "machine"} onChange={(machineId) => { clearInvalidField(); setForm({ ...form, machineId, placeOrEquipment: "" }); }} />{form.machineId === otherOptionValue ? <label className={fieldClass("custom-machine")} data-requester-field="custom-machine"><MapPin size={15} />Specify machine or equipment<input value={form.placeOrEquipment} onChange={(event) => setForm({ ...form, placeOrEquipment: event.target.value })} placeholder="Enter the exact machine or equipment" required /></label> : null}</> : null}
+          {rules.issueCategory !== "hidden" ? <><SearchableSelect label={`Issue category${rules.issueCategory === "optional" ? " (optional)" : ""}`} value={form.issueCategoryId} options={issueCategoryOptions} placeholder="Choose or search issue" validationField="issue-category" invalid={invalidField === "issue-category"} onChange={(issueCategoryId) => { clearInvalidField(); setForm({ ...form, issueCategoryId, customIssueCategory: "" }); }} />{form.issueCategoryId === otherOptionValue ? <label className={fieldClass("custom-issue-category")} data-requester-field="custom-issue-category">Specify issue category<input value={form.customIssueCategory} onChange={(event) => setForm({ ...form, customIssueCategory: event.target.value })} placeholder="Enter the issue category" required /></label> : null}</> : null}
         </>
       )}
 
       <div className="requester-step-label"><span>2</span>Your details</div>
       <div className={`form-grid ${isOffice ? "requester-single-field" : "two-columns"}`}>
-        <label><UserRound size={15} />Your name<input value={form.reportedByName} onChange={(event) => setForm({ ...form, reportedByName: event.target.value })} placeholder="Enter your name" readOnly={signedRequester} required /></label>
-        {!isOffice ? <label>Department <small>{signedRequester ? "From account" : "Required"}</small><select value={form.reportedByDepartment} onChange={(event) => setForm({ ...form, reportedByDepartment: event.target.value, customReportedByDepartment: "" })} disabled={signedRequester} required><option value="">Choose department</option>{reporterDepartmentOptions(form.reportedByDepartment).map((department) => <option key={department} value={department}>{department}</option>)}{!signedRequester ? <option value={otherOptionValue}>Others</option> : null}</select></label> : null}
+        <label className={fieldClass("reporter-name")} data-requester-field="reporter-name"><UserRound size={15} />Your name <small>{signedRequester ? "Required for this request" : "Required"}</small><input value={form.reportedByName} onChange={(event) => setForm({ ...form, reportedByName: event.target.value })} placeholder="Enter your full name" autoComplete="name" required /></label>
+        {!isOffice ? <label className={fieldClass("reporter-department")} data-requester-field="reporter-department">Department <small>{signedRequester ? "From account" : "Required"}</small><select value={form.reportedByDepartment} onChange={(event) => setForm({ ...form, reportedByDepartment: event.target.value, customReportedByDepartment: "" })} disabled={signedRequester} required><option value="">Choose department</option>{reporterDepartmentOptions(form.reportedByDepartment).map((department) => <option key={department} value={department}>{department}</option>)}{!signedRequester ? <option value={otherOptionValue}>Others</option> : null}</select></label> : null}
       </div>
-      {!signedRequester && form.reportedByDepartment === otherOptionValue ? <label>Specify your department<input value={form.customReportedByDepartment} onChange={(event) => setForm({ ...form, customReportedByDepartment: event.target.value })} placeholder="Enter your department" required /></label> : null}
+      {!signedRequester && form.reportedByDepartment === otherOptionValue ? <label className={fieldClass("custom-reporter-department")} data-requester-field="custom-reporter-department">Specify your department<input value={form.customReportedByDepartment} onChange={(event) => setForm({ ...form, customReportedByDepartment: event.target.value })} placeholder="Enter your department" required /></label> : null}
 
       <div className="requester-step-label"><span>3</span>Describe the issue</div>
-      <label>What happened?<textarea value={form.issueDescription} onChange={(event) => setForm({ ...form, issueDescription: event.target.value })} rows={5} placeholder="Describe what is wrong, when it started, and anything maintenance should know" required /></label>
+      <label className={fieldClass("issue-description")} data-requester-field="issue-description">What happened?<textarea value={form.issueDescription} onChange={(event) => setForm({ ...form, issueDescription: event.target.value })} rows={5} placeholder="Describe what is wrong, when it started, and anything maintenance should know" required /></label>
       <MultiPhotoPicker files={issueFiles} onChange={setIssueFiles} disabled={submitting} />
       <button className="primary-action" type="submit" disabled={submitting}><Send size={17} />{submitting ? "Submitting..." : "Submit Work Order"}</button>
     </form>

@@ -16,6 +16,8 @@ interface SearchableSelectProps {
   icon?: ReactNode;
   placeholder?: string;
   disabled?: boolean;
+  validationField?: string;
+  invalid?: boolean;
 }
 
 export function SearchableSelect({
@@ -25,7 +27,9 @@ export function SearchableSelect({
   onChange,
   icon,
   placeholder = "Search",
-  disabled = false
+  disabled = false,
+  validationField,
+  invalid = false
 }: SearchableSelectProps) {
   const id = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -94,7 +98,7 @@ export function SearchableSelect({
   }
 
   return (
-    <div className={`search-select ${disabled ? "disabled" : ""}`} ref={rootRef}>
+    <div className={`search-select ${disabled ? "disabled" : ""} ${invalid ? "requester-invalid" : ""}`} ref={rootRef} data-requester-field={validationField}>
       <span className="search-select-label" id={labelId}>
         {icon}
         {label}
@@ -106,6 +110,7 @@ export function SearchableSelect({
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-invalid={invalid || undefined}
         aria-controls={listboxId}
         aria-labelledby={`${labelId} ${valueId}`}
         onClick={() => {

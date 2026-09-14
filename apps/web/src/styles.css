@@ -11315,6 +11315,13 @@ tbody tr:hover {
 .requester-view-heading button { display: inline-flex; min-height: 42px; align-items: center; justify-content: center; gap: 7px; border: 1px solid rgba(127,17,27,.2); border-radius: 9px; color: var(--maroon); background: #fff; padding: 9px 13px; font-size: 12px; font-weight: 900; }
 .requester-account-form { width: 100%; }
 .requester-account-form input[readonly] { color: #675b62; background: #f4f0f1; }
+.requester-account-form .requester-invalid :is(input, select, textarea),
+.requester-account-form .search-select.requester-invalid .search-select-control {
+  border-color: #ba2638;
+  background: #fff5f6;
+  box-shadow: 0 0 0 4px rgba(186, 38, 56, .12);
+}
+.requester-account-form .requester-invalid { color: #8f1928; }
 
 .requester-dashboard-hero { position: relative; isolation: isolate; display: flex; min-height: 190px; align-items: end; justify-content: space-between; gap: 18px; overflow: hidden; border-radius: 18px; color: #fff; background: linear-gradient(130deg,#4c0811,#871623 45%,#b34e3d 100%); padding: clamp(20px,4vw,34px); box-shadow: 0 18px 42px rgba(80,10,20,.2); }
 .requester-dashboard-hero::after { position: absolute; z-index: -1; width: 310px; height: 310px; right: -80px; bottom: -200px; border: 60px solid rgba(255,255,255,.06); border-radius: 50%; content: ""; }
