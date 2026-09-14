@@ -54,6 +54,7 @@ import type {
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
 const authTokenKey = "sugi-cmms-auth-token-v1";
+export const authSessionEndedEvent = "cmms:auth-session-ended";
 
 export function selectedPlant(): PlantId | "all" {
   const access = sessionStorage.getItem("cmms-user-plant-access");
@@ -102,6 +103,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!response.ok) {
     const body = await response.json().catch(() => null);
+    if (response.status === 401 && token) {
+      localStorage.removeItem(authTokenKey);
+      sessionStorage.removeItem("cmms-user-plant-access");
+      window.dispatchEvent(new Event(authSessionEndedEvent));
+    }
     throw new ApiError(body?.error || (response.status >= 500 ? "The server couldn’t complete this request. Please try again." : response.status === 401 ? "Your session has expired. Please sign in again." : response.status === 403 ? "You don’t have permission to perform this action." : response.status === 404 ? "This record is unavailable or may have been removed." : `Request failed (${response.status}). Please try again.`), response.status);
   }
 
@@ -150,6 +156,11 @@ export const api = {
     }),
   removeUser: (id: string, actorId: string) =>
     request<void>(`/api/users/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ actorId })
+    }),
+  endUserSessions: (id: string, actorId: string) =>
+    request<{ ended: number }>(`/api/users/${id}/sessions`, {
       method: "DELETE",
       body: JSON.stringify({ actorId })
     }),

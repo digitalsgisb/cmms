@@ -24,6 +24,7 @@ import {
   ensurePlantPmSchedules,
   createIssueCategory,
   createAuthSession,
+  authSessionMaxAgeMs,
   createMachine,
   createSection,
   createGuestTrackingLink,
@@ -63,6 +64,8 @@ import {
   pullSparePartsFromSheet,
   publicRequesterIdForUploads,
   retrySpareSync,
+  revokeAuthSession,
+  revokeUserSessions,
   flushWorkOrderSyncQueue,
   savePmResult,
   savePmTemplate,
@@ -227,6 +230,9 @@ app.use("/api", (request, response, next) => {
   if (!token) { response.status(401).json({ error: "Authentication is required." }); return; }
   try {
     request.cmmsUser = authenticateSession(token);
+    if (authorization.startsWith("Bearer ")) {
+      response.cookie("cmms-session", token, { httpOnly: true, sameSite: "strict", secure: request.secure, maxAge: authSessionMaxAgeMs(), path: "/" });
+    }
   } catch {
     response.status(401).json({ error: "Your session has expired. Sign in again." });
     return;
@@ -409,17 +415,24 @@ app.delete("/api/users/:id", (request, response) => {
   response.status(204).send();
 });
 
+app.delete("/api/users/:id/sessions", (request, response) => {
+  const ended = revokeUserSessions(request.params.id, String(request.body.actorId || ""));
+  response.json({ ended });
+});
+
 app.post("/api/auth/login", (request, response) => {
   if (!request.body.username || !request.body.password) {
     throw new Error("Username and password are required.");
   }
 
   const session = createAuthSession(String(request.body.username), String(request.body.password));
-  response.cookie("cmms-session", session.token, { httpOnly: true, sameSite: "strict", secure: request.secure, maxAge: 30 * 86400000, path: "/" });
+  response.cookie("cmms-session", session.token, { httpOnly: true, sameSite: "strict", secure: request.secure, maxAge: authSessionMaxAgeMs(), path: "/" });
   response.json(session);
 });
 
-app.post("/api/auth/logout", (_request, response) => {
+app.post("/api/auth/logout", (request, response) => {
+  const token = request.header("authorization")?.replace(/^Bearer /, "") || sessionCookie(request);
+  if (token) revokeAuthSession(token);
   response.clearCookie("cmms-session", { path: "/" });
   response.status(204).send();
 });

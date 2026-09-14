@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import { mkdirSync } from "node:fs";
+import { createHash } from "node:crypto";
 
 const root = path.resolve("tmp", `work-order-management-${Date.now()}`);
 mkdirSync(root, { recursive: true });
@@ -21,6 +22,15 @@ m.migrate();
 inPlant(() => m.seed());
 const admin = m.listUsers().find((user) => user.role === "admin");
 assert(admin);
+const rememberedSession = inPlant(() => m.createAuthSession(admin.username, password));
+assert.equal(rememberedSession.expiresAt, "9999-12-31T23:59:59.999Z");
+const rememberedTokenHash = createHash("sha256").update(rememberedSession.token).digest("hex");
+inPlant(() => m.db.prepare("UPDATE auth_sessions SET expiresAt = ? WHERE tokenHash = ?")
+  .run(new Date(Date.now() + 60 * 60 * 1000).toISOString(), rememberedTokenHash));
+inPlant(() => m.seed());
+assert.equal(inPlant(() => m.authenticateSession(rememberedSession.token)).id, admin.id);
+const renewedSession = inPlant(() => m.db.prepare("SELECT expiresAt FROM auth_sessions WHERE tokenHash = ?").get(rememberedTokenHash));
+assert.equal(renewedSession.expiresAt, "9999-12-31T23:59:59.999Z");
 inPlant(() => m.db.prepare(`
   INSERT INTO users (id, username, name, role, department, title, active, plantAccess)
   VALUES ('wo-developer', 'wo-developer', 'WO Developer', 'developer', 'IT', 'Developer', 1, 'both')
@@ -45,6 +55,10 @@ const technician = createUser("technician", "technician");
 const kaizenTechnician = createUser("technician", "kaizen-technician", "Kaizen");
 const requester = createUser("requester", "requester");
 const secondRequester = createUser("requester", "requester-two", "SHE");
+const requesterSession = inPlant(() => m.createAuthSession(requester.username, password));
+assert.equal(inPlant(() => m.authenticateSession(requesterSession.token)).id, requester.id);
+assert.equal(inPlant(() => m.revokeUserSessions(requester.id, admin.id)), 1);
+assert.throws(() => inPlant(() => m.authenticateSession(requesterSession.token)), /expired or invalid/i);
 const masterData = inPlant(() => m.listMasterData());
 const section = masterData.sections[0];
 const issueCategory = masterData.issueCategories[0];

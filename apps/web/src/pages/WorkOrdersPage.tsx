@@ -9,9 +9,14 @@ import { formatDateTime, formatLiveDuration, userName } from "../utils/format";
 import { useCurrentUser } from "../state/UserContext";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
-const statusOptions: Array<WorkOrderStatus | "all"> = [
+type WorkOrderStatusFilter = WorkOrderStatus | "all" | "active" | "moving" | "waiting";
+
+const statusOptions: WorkOrderStatusFilter[] = [
   "all",
+  "active",
   "open",
+  "moving",
+  "waiting",
   "acknowledged",
   "in_progress",
   "pending_material",
@@ -20,6 +25,20 @@ const statusOptions: Array<WorkOrderStatus | "all"> = [
   "closed",
   "cancelled"
 ];
+
+const groupedStatusLabels: Record<"active" | "moving" | "waiting", string> = {
+  active: "Active work orders",
+  moving: "In progress",
+  waiting: "Waiting"
+};
+
+function matchesStatusFilter(workOrder: WorkOrder, filter: WorkOrderStatusFilter) {
+  if (filter === "all") return true;
+  if (filter === "active") return !["closed", "cancelled"].includes(workOrder.status);
+  if (filter === "moving") return ["acknowledged", "in_progress", "returned"].includes(workOrder.status);
+  if (filter === "waiting") return ["pending_material", "resolved"].includes(workOrder.status);
+  return workOrder.status === filter;
+}
 
 export function WorkOrdersPage() {
   const { users, currentUser } = useCurrentUser();
@@ -31,7 +50,7 @@ export function WorkOrdersPage() {
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
   const [search, setSearch] = useState(params.get("q") || "");
-  const [status, setStatus] = useState<WorkOrderStatus | "all">(statusOptions.includes(params.get("status") as WorkOrderStatus) ? params.get("status") as WorkOrderStatus : "all");
+  const [status, setStatus] = useState<WorkOrderStatusFilter>(statusOptions.includes(params.get("status") as WorkOrderStatusFilter) ? params.get("status") as WorkOrderStatusFilter : "all");
   const [scope, setScope] = useState<"all" | "department" | "mine">(params.get("scope") === "mine" ? "mine" : params.get("scope") === "all" ? "all" : workOrderDepartmentForUser(currentUser?.department || "") ? "department" : "all");
   const [month, setMonth] = useState(params.get("month") || "");
   const [sectionId, setSectionId] = useState(params.get("section") || "all");
@@ -73,7 +92,7 @@ export function WorkOrdersPage() {
 
   const filtered = useMemo(() => {
     return workOrders.filter((workOrder) => {
-      const matchesStatus = status === "all" || workOrder.status === status;
+      const matchesStatus = matchesStatusFilter(workOrder, status);
       const matchesMonth = !month || workOrder.workDate.startsWith(month);
       const matchesSection = sectionId === "all" || workOrder.sectionId === sectionId;
       const matchesMachine =
@@ -124,6 +143,10 @@ export function WorkOrdersPage() {
     } catch (error) { setActionError(error instanceof Error ? error.message : "Couldn’t delete this work order."); }
   }
 
+  function selectSummaryStatus(nextStatus: Exclude<WorkOrderStatusFilter, "all">) {
+    setStatus((current) => current === nextStatus ? "all" : nextStatus);
+  }
+
   return (
     <section className="page-stack">
       <div className="page-title-row page-title-clean">
@@ -140,31 +163,31 @@ export function WorkOrdersPage() {
       </div>
 
       <div className="queue-ribbon">
-        <article>
+        <button type="button" className={status === "active" ? "is-active" : ""} aria-pressed={status === "active"} onClick={() => selectSummaryStatus("active")}>
           <Layers3 size={18} aria-hidden="true" />
           <span>Active</span>
           <strong>{loading ? "—" : counts.active}</strong>
-        </article>
-        <article>
+        </button>
+        <button type="button" className={status === "open" ? "is-active" : ""} aria-pressed={status === "open"} onClick={() => selectSummaryStatus("open")}>
           <AlertTriangle size={18} aria-hidden="true" />
           <span>New</span>
           <strong>{counts.new}</strong>
-        </article>
-        <article>
+        </button>
+        <button type="button" className={status === "moving" ? "is-active" : ""} aria-pressed={status === "moving"} onClick={() => selectSummaryStatus("moving")}>
           <Wrench size={18} aria-hidden="true" />
           <span>In progress</span>
           <strong>{counts.moving}</strong>
-        </article>
-        <article>
+        </button>
+        <button type="button" className={status === "waiting" ? "is-active" : ""} aria-pressed={status === "waiting"} onClick={() => selectSummaryStatus("waiting")}>
           <Clock3 size={18} aria-hidden="true" />
           <span>Waiting</span>
           <strong>{counts.waiting}</strong>
-        </article>
-        <article>
+        </button>
+        <button type="button" className={status === "closed" ? "is-active" : ""} aria-pressed={status === "closed"} onClick={() => selectSummaryStatus("closed")}>
           <CheckCircle2 size={18} aria-hidden="true" />
           <span>Closed</span>
           <strong>{counts.closed}</strong>
-        </article>
+        </button>
       </div>
 
       <div className="filter-bar">
@@ -175,10 +198,10 @@ export function WorkOrdersPage() {
 
         <button className="ux-filter-toggle secondary-action" type="button" aria-expanded={filtersOpen} aria-controls="work-order-filters" onClick={() => setFiltersOpen(!filtersOpen)}>{filtersOpen ? "Hide filters" : "Filter work orders"}{[status !== "all", Boolean(month), sectionId !== "all", machineId !== "all", scope !== "all"].filter(Boolean).length ? ` (${[status !== "all", Boolean(month), sectionId !== "all", machineId !== "all", scope !== "all"].filter(Boolean).length})` : ""}</button>
         <div id="work-order-filters" className={`ux-extra-filters ${filtersOpen ? "is-open" : ""}`}>
-        <select aria-label="Filter by status" value={status} onChange={(event) => setStatus(event.target.value as WorkOrderStatus | "all")}>
+        <select aria-label="Filter by status" value={status} onChange={(event) => setStatus(event.target.value as WorkOrderStatusFilter)}>
           {statusOptions.map((option) => (
             <option key={option} value={option}>
-              {option === "all" ? "All statuses" : workOrderStatusLabels[option]}
+              {option === "all" ? "All statuses" : option in groupedStatusLabels ? groupedStatusLabels[option as keyof typeof groupedStatusLabels] : workOrderStatusLabels[option as WorkOrderStatus]}
             </option>
           ))}
         </select>
@@ -310,8 +333,8 @@ function WorkOrderCard({
 }) {
   const needsVerification = workOrder.status === "resolved" && workOrder.requesterId === currentUserId;
   const timerRunning = !["closed", "cancelled"].includes(workOrder.status);
-  const timerEnd = timerRunning ? timerNow : workOrder.updatedAt;
-  const timerLabel = timerRunning ? "Open" : workOrder.status === "cancelled" ? "Cancelled" : "Closed";
+  const timerEnd = timerRunning ? timerNow : workOrder.closedAt || workOrder.updatedAt;
+  const timerLabel = timerRunning ? "Open" : workOrder.status === "cancelled" ? "Cancelled" : "Total";
 
   return (
     <article className={`work-order-card card-status-${workOrder.status} ${needsVerification ? "needs-verification" : ""}`}>

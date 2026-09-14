@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { User, WorkOrder } from "@sugi-cmms/shared";
-import { api, ApiError } from "../api/client";
+import { api, ApiError, authSessionEndedEvent } from "../api/client";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
 interface UserContextValue {
@@ -78,6 +78,18 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
+    const endLocalSession = () => {
+      localStorage.removeItem(sessionUserKey);
+      setCurrentUserIdState("");
+      setUsers([]);
+      setWorkOrders([]);
+      setWorkOrdersReady(false);
+    };
+    window.addEventListener(authSessionEndedEvent, endLocalSession);
+    return () => window.removeEventListener(authSessionEndedEvent, endLocalSession);
+  }, []);
+
+  useEffect(() => {
     if (!api.hasSession()) {
       localStorage.removeItem(sessionUserKey);
       setCurrentUserIdState("");
@@ -132,6 +144,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }, [currentUser?.id, currentUser?.role]);
 
   useLiveRefresh(["work-orders"], async () => { await refreshWorkOrders(); }, { enabled: Boolean(currentUser), fallbackMs: 5000 });
+  useLiveRefresh(["users"], async () => {
+    await api.me();
+    await refreshUsers();
+  }, { enabled: Boolean(currentUser), fallbackMs: 30000 });
 
   const value = useMemo<UserContextValue>(
     () => ({ users, currentUser, loadingUsers, isAuthenticated, login, logout, setCurrentUserId, refreshUsers, workOrders, workOrdersReady, refreshWorkOrders }),

@@ -1330,11 +1330,20 @@ function sessionTokenHash(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
+const dayInMilliseconds = 24 * 60 * 60 * 1000;
+const permanentAuthSessionExpiry = "9999-12-31T23:59:59.999Z";
+
+export function authSessionMaxAgeMs() {
+  // Browsers may cap persistent cookies, while the app's bearer token remains
+  // valid until it is explicitly revoked on the server.
+  return 400 * dayInMilliseconds;
+}
+
 export function createAuthSession(username: string, password: string): AuthSession {
   const user = loginUser(username, password);
   const token = randomBytes(32).toString("base64url");
   const createdAt = now();
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  const expiresAt = permanentAuthSessionExpiry;
   db.prepare("DELETE FROM auth_sessions WHERE expiresAt <= ?").run(createdAt);
   db.prepare("INSERT INTO auth_sessions (tokenHash, userId, expiresAt, createdAt) VALUES (?, ?, ?, ?)")
     .run(sessionTokenHash(token), user.id, expiresAt, createdAt);
@@ -1343,13 +1352,37 @@ export function createAuthSession(username: string, password: string): AuthSessi
 
 export function authenticateSession(token: string): User {
   const timestamp = now();
-  const authenticated = db.prepare(`
-    SELECT u.id, u.username, u.name, u.role, u.department, u.title, u.avatarUrl, u.plantAccess
+  const authenticated = row<(User & { sessionExpiresAt: string }) | undefined>(db.prepare(`
+    SELECT u.id, u.username, u.name, u.role, u.department, u.title, u.avatarUrl, u.plantAccess,
+      session.expiresAt AS sessionExpiresAt
     FROM auth_sessions session JOIN users u ON u.id = session.userId
     WHERE session.tokenHash = ? AND session.expiresAt > ? AND u.active = 1
-  `).get(sessionTokenHash(token), timestamp);
+  `).get(sessionTokenHash(token), timestamp));
   if (!authenticated) throw new Error("Session expired or invalid.");
-  return row<User>(authenticated);
+  const { sessionExpiresAt, ...user } = authenticated;
+  if (sessionExpiresAt !== permanentAuthSessionExpiry) {
+    db.prepare("UPDATE auth_sessions SET expiresAt = ? WHERE tokenHash = ?")
+      .run(permanentAuthSessionExpiry, sessionTokenHash(token));
+  }
+  return user;
+}
+
+export function revokeAuthSession(token: string) {
+  if (!token) return;
+  db.prepare("DELETE FROM auth_sessions WHERE tokenHash = ?").run(sessionTokenHash(token));
+}
+
+export function revokeUserSessions(id: string, actorId: string) {
+  const actor = requireAdmin(actorId);
+  const target = getUser(id);
+  if (actor.plantAccess !== "both" && target.plantAccess !== actor.plantAccess) {
+    throw new Error("You cannot end sessions for a user from another plant.");
+  }
+  if (target.role === "developer" && actor.role !== "developer") {
+    throw new Error("Only a developer account can end another developer account's sessions.");
+  }
+  const result = db.prepare("DELETE FROM auth_sessions WHERE userId = ?").run(id);
+  return Number(result.changes);
 }
 
 export function updateUserAvatar(id: string, avatarUrl: string): User {

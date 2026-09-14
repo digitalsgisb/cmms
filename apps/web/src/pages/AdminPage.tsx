@@ -1,4 +1,4 @@
-import { BadgeCheck, Building2, Camera, ClipboardCopy, ExternalLink, Factory, FileDown, ListChecks, MonitorDown, Pencil, Plus, QrCode, Save, Shield, Tags, Trash2, UserCog, UsersRound, X, type LucideIcon } from "lucide-react";
+import { BadgeCheck, Building2, Camera, ClipboardCopy, ExternalLink, Factory, FileDown, ListChecks, LogOut, MonitorDown, Pencil, Plus, QrCode, Save, Shield, Tags, Trash2, UserCog, UsersRound, X, type LucideIcon } from "lucide-react";
 import QRCode from "qrcode";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -79,6 +79,8 @@ export function AdminPage() {
   const [uploadingUserId, setUploadingUserId] = useState("");
   const [savingUser, setSavingUser] = useState(false);
   const [removingUserId, setRemovingUserId] = useState("");
+  const [endingSessionsUserId, setEndingSessionsUserId] = useState("");
+  const [sessionMessage, setSessionMessage] = useState("");
   const [editingUserId, setEditingUserId] = useState("");
   const [updatingUser, setUpdatingUser] = useState(false);
   const [editUser, setEditUser] = useState({
@@ -246,6 +248,28 @@ export function AdminPage() {
       setAdminError(error instanceof Error ? error.message : "Unable to remove user.");
     } finally {
       setRemovingUserId("");
+    }
+  }
+
+  async function endUserSessions(user: User) {
+    if (!currentUser) return;
+    const confirmed = window.confirm(
+      `End every active session for ${user.name}? They will be signed out on all devices and must log in again.`
+    );
+    if (!confirmed) return;
+
+    setEndingSessionsUserId(user.id);
+    setAdminError("");
+    setSessionMessage("");
+    try {
+      const result = await api.endUserSessions(user.id, currentUser.id);
+      setSessionMessage(result.ended === 0
+        ? `${user.name} has no active sessions.`
+        : `Ended ${result.ended} active ${result.ended === 1 ? "session" : "sessions"} for ${user.name}.`);
+    } catch (error) {
+      setAdminError(error instanceof Error ? error.message : "Unable to end this user's sessions.");
+    } finally {
+      setEndingSessionsUserId("");
     }
   }
 
@@ -434,6 +458,7 @@ export function AdminPage() {
       </div>
 
       {adminError ? <p className="error-line" role="alert">{adminError}</p> : null}
+      {sessionMessage ? <p className="success-line" role="status">{sessionMessage}</p> : null}
 
       {activeTab === "people" ? (
         <div className="admin-grid">
@@ -501,6 +526,16 @@ export function AdminPage() {
                       onClick={() => startEditingUser(user)}
                     >
                       <Pencil size={14} aria-hidden="true" />Edit
+                    </button>
+                    <button
+                      className="admin-end-session-button"
+                      type="button"
+                      disabled={!canAdmin || Boolean(endingSessionsUserId) || user.id === currentUser?.id || user.id === "u-requester-public" || (user.role === "developer" && currentUser?.role !== "developer")}
+                      onClick={() => endUserSessions(user)}
+                      title={user.id === currentUser?.id ? "Use Sign out to end your current session" : user.id === "u-requester-public" ? "The public requester form does not use a staff session" : "Sign this user out on every device"}
+                    >
+                      <LogOut size={14} aria-hidden="true" />
+                      {endingSessionsUserId === user.id ? "Ending" : "End sessions"}
                     </button>
                     <button
                       className="admin-remove-user-button"

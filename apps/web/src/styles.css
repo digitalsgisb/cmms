@@ -2538,7 +2538,9 @@ tbody tr:hover {
   gap: 10px;
 }
 
-.queue-ribbon article {
+.queue-ribbon button {
+  appearance: none;
+  width: 100%;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
@@ -2546,8 +2548,31 @@ tbody tr:hover {
   border: 1px solid rgba(127, 17, 27, 0.12);
   border-radius: 8px;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(255, 247, 247, 0.86));
+  color: inherit;
   padding: 12px;
   box-shadow: var(--shadow-soft);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.queue-ribbon button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(127, 17, 27, 0.34);
+  box-shadow: 0 10px 24px rgba(92, 20, 27, 0.12);
+}
+
+.queue-ribbon button.is-active {
+  transform: translateY(-2px);
+  border-color: var(--maroon);
+  background: linear-gradient(135deg, #fff5f5, #ffffff);
+  box-shadow: 0 0 0 2px rgba(127, 17, 27, 0.09), 0 12px 28px rgba(92, 20, 27, 0.14);
+}
+
+.queue-ribbon button:focus-visible {
+  outline: 3px solid rgba(35, 129, 194, 0.42);
+  outline-offset: 2px;
 }
 
 .queue-ribbon svg {
@@ -5292,6 +5317,7 @@ tbody tr:hover {
 
 .admin-add-user-button,
 .admin-edit-user-button,
+.admin-end-session-button,
 .admin-save-user-button,
 .admin-remove-user-button {
   display: inline-flex;
@@ -5307,6 +5333,15 @@ tbody tr:hover {
   border: 1px solid rgba(127, 17, 27, 0.16);
   background: #ffffff;
   color: var(--maroon);
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.admin-end-session-button {
+  min-height: 32px;
+  border: 1px solid #e2c995;
+  background: #fff9eb;
+  color: #875f14;
   padding: 6px 10px;
   font-size: 12px;
 }
@@ -5330,6 +5365,7 @@ tbody tr:hover {
 
 .admin-add-user-button:disabled,
 .admin-edit-user-button:disabled,
+.admin-end-session-button:disabled,
 .admin-save-user-button:disabled,
 .admin-remove-user-button:disabled {
   cursor: not-allowed;
@@ -7071,7 +7107,7 @@ tbody tr:hover {
     gap: 6px;
   }
 
-  .queue-ribbon article {
+  .queue-ribbon button {
     min-height: 58px;
     grid-template-columns: 1fr;
     justify-items: center;
@@ -7224,14 +7260,14 @@ tbody tr:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .queue-ribbon article {
+  .queue-ribbon button {
     grid-template-columns: auto minmax(0, 1fr) auto;
     justify-items: stretch;
     text-align: left;
     padding: 9px 10px;
   }
 
-  .queue-ribbon article:last-child {
+  .queue-ribbon button:last-child {
     grid-column: 1 / -1;
   }
 }
@@ -11334,6 +11370,8 @@ tbody tr:hover {
 .requester-elapsed-timer strong { color: inherit; font-size: 14px; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .requester-elapsed-timer.is-live { border-color: #e0bd76; color: #805611; background: #fff8e8; box-shadow: 0 0 0 0 rgba(194,139,39,.2); animation: requesterTimerPulse 2.4s ease-in-out infinite; }
 .requester-elapsed-timer.is-stopped { border-color: #bcd9ca; color: #246f52; background: #eff9f4; }
+.requester-account-card.status-closed .requester-elapsed-timer { width: 100%; justify-content: flex-start; border-color: #9fcdb7; background: #e4f5ec; padding: 10px 12px; }
+.requester-account-card.status-closed .requester-elapsed-timer strong { font-size: 17px; }
 .requester-elapsed-timer.is-detailed { width: 100%; margin: 0 0 16px; padding: 12px 14px; }
 .requester-elapsed-timer.is-detailed strong { font-size: 20px; }
 .requester-elapsed-timer.is-detailed time { margin-left: auto; color: #7d7479; font-size: 10px; }
@@ -11810,14 +11848,14 @@ body,
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .queue-ribbon article {
+  .queue-ribbon button {
     grid-template-columns: auto minmax(0, 1fr) auto;
     justify-items: stretch;
     padding: 10px;
     text-align: left;
   }
 
-  .queue-ribbon article:last-child {
+  .queue-ribbon button:last-child {
     grid-column: 1 / -1;
   }
 
@@ -11918,7 +11956,7 @@ body,
 }
 
 @media (max-width: 420px) {
-  .queue-ribbon article {
+  .queue-ribbon button {
     min-width: 0;
   }
 
@@ -11983,8 +12021,8 @@ body,
   .ux-extra-filters.is-open { display: grid; width: 100%; gap: 10px; }
   .ux-extra-filters :is(select, input) { width: 100%; min-height: 44px; font-size: 16px; }
   .queue-ribbon { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .queue-ribbon article { min-height: 48px; padding: 10px 12px; }
-  .queue-ribbon article:last-child { grid-column: auto; }
+  .queue-ribbon button { min-height: 48px; padding: 10px 12px; }
+  .queue-ribbon button:last-child { grid-column: auto; }
 }
 .ux-people-search { display: grid; gap: 8px; margin: 20px 0 14px; color: var(--ink-soft); font-size: 14px; font-weight: 600; }
 .ux-people-search input { width: 100%; min-height: 44px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px; background: #fff; font: inherit; }
