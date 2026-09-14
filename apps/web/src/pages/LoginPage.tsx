@@ -94,12 +94,12 @@ function preferredLandingPath(user: User, from: string) {
     return "/requester";
   }
 
-  if (user.role === "technician" && from === "/") {
-    return "/technician";
+  if (user.role === "executive") {
+    return "/";
   }
 
-  if (user.role === "executive" && from === "/") {
-    return "/work-orders";
+  if (user.role === "technician" && from === "/") {
+    return "/technician";
   }
 
   return from;

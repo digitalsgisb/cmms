@@ -259,6 +259,10 @@ export function Layout() {
     return <Navigate to="/requester" replace />;
   }
 
+  if (currentUser.role === "executive" && location.pathname.startsWith("/technician")) {
+    return <Navigate to="/" replace />;
+  }
+
   if (currentUser.role === "technician") {
     return (
       <div className="technician-app-shell">

@@ -10,7 +10,7 @@ import { api, guestLiveEventsUrl, mediaUrl } from "../api/client";
 import { StatusBadge } from "../components/Badges";
 import { ImageLightbox } from "../components/ImageLightbox";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
-import { formatDateTime } from "../utils/format";
+import { formatDateTime, formatLiveDuration } from "../utils/format";
 
 const trackingSteps = [
   { label: "Submitted", Icon: Send },
@@ -50,6 +50,7 @@ export function GuestTrackingPage() {
   const [action, setAction] = useState<"closed" | "returned" | "">("");
   const [copied, setCopied] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState<{ src: string; alt: string; label: string } | null>(null);
+  const [timerNow, setTimerNow] = useState(() => new Date().toISOString());
 
   async function loadTracking() {
     if (!id || !token) {
@@ -68,6 +69,10 @@ export function GuestTrackingPage() {
   }
 
   useEffect(() => { void loadTracking(); }, [id, token]);
+  useEffect(() => {
+    const timer = window.setInterval(() => setTimerNow(new Date().toISOString()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
   useLiveRefresh(["work-orders"], loadTracking, { enabled: Boolean(id && token), fallbackMs: 5000, streamEnabled: false });
   useEffect(() => {
     if (!id || !token || typeof EventSource === "undefined") return;
@@ -130,6 +135,8 @@ export function GuestTrackingPage() {
   const { workOrder, activities } = tracking;
   const stage = statusStage(workOrder.status);
   const photos = workOrder.attachments.filter((attachment) => ["issue", "after", "return_evidence"].includes(attachment.kind));
+  const timerRunning = !["closed", "cancelled"].includes(workOrder.status);
+  const timerEnd = timerRunning ? timerNow : workOrder.closedAt || workOrder.updatedAt;
 
   return <div className="guest-tracker-shell">
     <header className="guest-tracker-topbar">
@@ -144,6 +151,7 @@ export function GuestTrackingPage() {
 
       <section className={`guest-progress-card status-${workOrder.status}`}>
         <div className="guest-progress-heading"><div><p>{workOrder.number}</p><h1>{trackerHeadline(workOrder.status)}</h1><span>Last updated {formatDateTime(workOrder.updatedAt)}</span></div><StatusBadge status={workOrder.status} /></div>
+        <div className={`guest-total-timer ${timerRunning ? "is-live" : "is-stopped"}`}><Clock3 size={22} aria-hidden="true" /><span><small>{timerRunning ? "Live time since opened" : workOrder.status === "closed" ? "Total time: open to close" : "Time open before cancellation"}</small><strong>{formatLiveDuration(workOrder.createdAt, timerEnd)}</strong></span><time>Opened {formatDateTime(workOrder.createdAt)}</time></div>
         <div className="guest-progress-track" style={{ "--tracker-progress": `${(stage / (trackingSteps.length - 1)) * 100}%` } as React.CSSProperties}>
           <div className="guest-progress-line"><span /></div>
           {trackingSteps.map(({ label, Icon }, index) => <div className={`guest-progress-step ${index <= stage ? "done" : ""} ${index === stage ? "current" : ""}`} key={label}><span>{index < stage || workOrder.status === "closed" ? <Check size={14} /> : <Icon size={15} />}</span><strong>{label}</strong></div>)}

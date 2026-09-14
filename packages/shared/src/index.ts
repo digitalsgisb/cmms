@@ -230,6 +230,7 @@ export interface WorkOrder {
   issueCategoryName: string;
   issueDescription: string;
   createdAt: string;
+  closedAt: string | null;
   updatedAt: string;
 }
 
@@ -429,6 +430,7 @@ export interface PublicRequesterWorkOrder {
   responsibleDepartment: WorkOrderDepartment;
   attachments: WorkOrderAttachment[];
   createdAt: string;
+  closedAt: string | null;
   updatedAt: string;
 }
 

@@ -105,6 +105,16 @@ assert.equal(updated.responsibleDepartment, "SHE");
 assert.equal(updated.shiftGroup, "N/A");
 assert.equal(inPlant(() => m.getWorkOrderDetail(workOrder.id)).activities[0].action, "edited");
 
+const timedOrder = createOrder("Requester timer check");
+assert.equal(timedOrder.closedAt, null);
+const closedTimedOrder = inPlant(() => m.updateWorkOrderStatus(timedOrder.id, {
+  actorId: requester.id,
+  status: "closed",
+  note: "Requester verified the timer test."
+}));
+assert(closedTimedOrder.closedAt);
+assert.equal(inPlant(() => m.listWorkOrders(requester)).find((order) => order.id === timedOrder.id)?.closedAt, closedTimedOrder.closedAt);
+
 const maintenanceOrder = createOrder("Maintenance routing");
 const kaizenOrder = createOrder("Kaizen routing", "kaizen");
 const projectOrder = createOrder("Shared project", "project");

@@ -3394,7 +3394,14 @@ async function runWorkOrderSyncQueue(actorId?: string): Promise<WorkOrderSyncRes
 }
 
 export function listWorkOrders(actor?: User): WorkOrder[] {
-  const workOrders = rows<WorkOrder>(db.prepare("SELECT * FROM scoped_work_orders ORDER BY updatedAt DESC").all());
+  const workOrders = rows<WorkOrder>(db.prepare(`
+    SELECT wo.*,
+      (SELECT activity.createdAt FROM scoped_work_order_activities activity
+       WHERE activity.workOrderId = wo.id AND activity.action = 'closed'
+       ORDER BY activity.createdAt DESC LIMIT 1) AS closedAt
+    FROM scoped_work_orders wo
+    ORDER BY wo.updatedAt DESC
+  `).all());
   if (!actor) return workOrders;
   if (actor.role === "requester") return workOrders;
   if (actor.role === "technician") return workOrders.filter((workOrder) => technicianCanAccessWorkOrder(actor, workOrder));
@@ -3414,7 +3421,14 @@ export function listTvWorkOrders(): TvWorkOrder[] {
 }
 
 export function getWorkOrder(id: string): WorkOrder {
-  const workOrder = db.prepare("SELECT * FROM scoped_work_orders WHERE id = ?").get(id);
+  const workOrder = db.prepare(`
+    SELECT wo.*,
+      (SELECT activity.createdAt FROM scoped_work_order_activities activity
+       WHERE activity.workOrderId = wo.id AND activity.action = 'closed'
+       ORDER BY activity.createdAt DESC LIMIT 1) AS closedAt
+    FROM scoped_work_orders wo
+    WHERE wo.id = ?
+  `).get(id);
   if (!workOrder) {
     throw new Error("Work order not found");
   }
@@ -3779,6 +3793,9 @@ export function listRequesterWorkOrders(): PublicRequesterWorkOrder[] {
         wo.reportedByDepartment,
         wo.responsibleDepartment,
         wo.createdAt,
+        (SELECT activity.createdAt FROM scoped_work_order_activities activity
+         WHERE activity.workOrderId = wo.id AND activity.action = 'closed'
+         ORDER BY activity.createdAt DESC LIMIT 1) AS closedAt,
         wo.updatedAt
       FROM scoped_work_orders wo
       JOIN users requester ON requester.id = wo.requesterId
@@ -3871,6 +3888,7 @@ export function getGuestWorkOrderTracking(workOrderId: string, token: string): G
       responsibleDepartment: detail.responsibleDepartment,
       attachments: detail.attachments.map((attachment) => ({ ...attachment, url: `${attachment.url}?token=${encodeURIComponent(token)}` })),
       createdAt: detail.createdAt,
+      closedAt: detail.closedAt,
       updatedAt: detail.updatedAt,
       title: detail.title,
       priority: detail.priority,
