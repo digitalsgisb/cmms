@@ -3,12 +3,12 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { User, WorkOrder, WorkOrderAttachment, WorkOrderActivity, WorkOrderDetail, WorkOrderStatus } from "@sugi-cmms/shared";
-import { technicianCanAccessWorkOrder, workOrderStatusLabels, workOrderTypeLabels } from "@sugi-cmms/shared";
+import { longProductionDowntimeMinutes, technicianCanAccessWorkOrder, workOrderStatusLabels, workOrderTypeLabels } from "@sugi-cmms/shared";
 import { api, mediaUrl } from "../api/client";
 import { PriorityBadge, StatusBadge } from "../components/Badges";
 import { ActionButton } from "../components/ActionButton";
 import { useCurrentUser } from "../state/UserContext";
-import { formatDate, formatDateTime, formatDuration, userName } from "../utils/format";
+import { formatDate, formatDateTime, formatDuration, formatMinutes, userName } from "../utils/format";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
 const workflowSteps: WorkOrderStatus[] = ["open", "acknowledged", "in_progress", "pending_material", "resolved", "closed"];
@@ -43,6 +43,8 @@ export function WorkOrderDetailPage() {
   const [files, setFiles] = useState<FileList | null>(null);
   const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
   const [resolveNote, setResolveNote] = useState("");
+  const [resolveHours, setResolveHours] = useState("");
+  const [resolveMinutes, setResolveMinutes] = useState("");
   const [resolveFiles, setResolveFiles] = useState<FileList | null>(null);
   const [resolveError, setResolveError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -163,7 +165,8 @@ export function WorkOrderDetailPage() {
               status,
               actorId: currentUser.id,
               note: note || fallbackNote,
-              assignedToId: detail.assignedToId
+              assignedToId: detail.assignedToId,
+              productionDowntimeReason: status === "closed" && detail.responsibleDepartment === "Production" ? note.trim() || null : null
             });
       if (status === "acknowledged" && currentUser.role === "technician") {
         navigator.vibrate?.([36, 18, 36]);
@@ -181,6 +184,8 @@ export function WorkOrderDetailPage() {
 
   function openResolveDialog() {
     setResolveNote(note.trim());
+    setResolveHours("");
+    setResolveMinutes("");
     setResolveFiles(null);
     setResolveError("");
     setResolveDialogOpen(true);
@@ -194,6 +199,7 @@ export function WorkOrderDetailPage() {
 
     const repairSummary = resolveNote.trim();
     const completionPhotos = resolveFiles ? Array.from(resolveFiles) : [];
+    const maintenanceActualMinutes = (Number(resolveHours) || 0) * 60 + (Number(resolveMinutes) || 0);
 
     if (!repairSummary) {
       setResolveError("Please write what was repaired or replaced before resolving.");
@@ -202,6 +208,11 @@ export function WorkOrderDetailPage() {
 
     if (completionPhotos.length === 0) {
       setResolveError("Please upload at least one completion photo before resolving.");
+      return;
+    }
+
+    if (!Number.isInteger(maintenanceActualMinutes) || maintenanceActualMinutes < 1 || maintenanceActualMinutes > 10080) {
+      setResolveError("Enter maintenance actual time between 1 minute and 7 days.");
       return;
     }
 
@@ -214,10 +225,13 @@ export function WorkOrderDetailPage() {
         status: "resolved",
         actorId: currentUser.id,
         note: repairSummary,
-        assignedToId: detail.assignedToId
+        assignedToId: detail.assignedToId,
+        maintenanceActualMinutes
       });
       setNote("");
       setResolveNote("");
+      setResolveHours("");
+      setResolveMinutes("");
       setResolveFiles(null);
       setResolveDialogOpen(false);
       setBusy(false);
@@ -321,11 +335,14 @@ export function WorkOrderDetailPage() {
   const workflowIndex = displayWorkflow.indexOf(detail.status);
   const actionLocked = busy || Boolean(busyAction);
   const createdAt = findActivityTime(detail.activities, "created") || detail.createdAt;
-  const acknowledgedAt = findActivityTime(detail.activities, "acknowledged");
-  const startedAt = findActivityTime(detail.activities, "started");
-  const resolvedAt = findActivityTime(detail.activities, "resolved");
+  const startedAt = detail.maintenanceStartedAt || findActivityTime(detail.activities, "started");
+  const resolvedAt = detail.resolvedAt || findActivityTime(detail.activities, "resolved");
   const closedAt = findActivityTime(detail.activities, "closed");
   const terminalAt = closedAt || (detail.status === "cancelled" ? detail.updatedAt : null);
+  const productionDowntimeEnd = resolvedAt || terminalAt || timerNow;
+  const queueEnd = startedAt || terminalAt || timerNow;
+  const productionDowntimeMinutes = resolvedAt ? Math.max(0, Math.round((Date.parse(resolvedAt) - Date.parse(createdAt)) / 60000)) : 0;
+  const requiresDowntimeExplanation = detail.responsibleDepartment === "Production" && productionDowntimeMinutes >= longProductionDowntimeMinutes;
   const isAssignedToCurrentUser = currentUser ? detail.assignedToId === currentUser.id : false;
   const isTechnician = currentUser?.role === "technician";
   const canClaimOpen = detail.status === "open" && !detail.assignedToId && detail.type !== "project";
@@ -364,8 +381,9 @@ export function WorkOrderDetailPage() {
             <div className="technician-command-summary" aria-label="Current job summary">
               <div><small>Current status</small><strong>{workOrderStatusLabels[visualStatus]}</strong></div>
               <div><small>Assigned technician</small><strong>{detail.assignedTo?.name || "Waiting for acceptance"}</strong></div>
-              <div><small>Total open time</small><strong>{formatDuration(createdAt, terminalAt || timerNow)}</strong></div>
-              <div><small>Repair duration</small><strong>{startedAt ? formatDuration(startedAt, resolvedAt || terminalAt || timerNow) : "Not started"}</strong></div>
+              <div><small>Total queue time</small><strong>{formatDuration(createdAt, queueEnd)}</strong></div>
+              <div><small>System repair elapsed</small><strong>{startedAt ? formatDuration(startedAt, resolvedAt || terminalAt || timerNow) : "Not started"}</strong></div>
+              <div><small>Maintenance actual</small><strong>{formatMinutes(detail.maintenanceActualMinutes)}</strong></div>
             </div>
           ) : null}
         </div>
@@ -402,18 +420,23 @@ export function WorkOrderDetailPage() {
       {!isTechnician ? <div className="timer-grid">
         <article className="timer-card primary">
           <TimerReset size={18} aria-hidden="true" />
-          <span>Total open time</span>
-          <strong>{formatDuration(createdAt, terminalAt || timerNow)}</strong>
+          <span>Production downtime</span>
+          <strong>{formatDuration(createdAt, productionDowntimeEnd)}</strong>
         </article>
         <article className="timer-card technician-secondary-timer">
           <Clock3 size={18} aria-hidden="true" />
-          <span>Time to acknowledge</span>
-          <strong>{acknowledgedAt ? formatDuration(createdAt, acknowledgedAt) : "Waiting"}</strong>
+          <span>Total queue time</span>
+          <strong>{formatDuration(createdAt, queueEnd)}</strong>
         </article>
         <article className="timer-card">
           <Wrench size={18} aria-hidden="true" />
-          <span>Repair duration</span>
+          <span>System repair elapsed</span>
           <strong>{startedAt ? formatDuration(startedAt, resolvedAt || terminalAt || timerNow) : "Not started"}</strong>
+        </article>
+        <article className="timer-card technician-secondary-timer">
+          <TimerReset size={18} aria-hidden="true" />
+          <span>Maintenance actual</span>
+          <strong>{formatMinutes(detail.maintenanceActualMinutes)}</strong>
         </article>
         <article className="timer-card technician-secondary-timer">
           <CheckCircle2 size={18} aria-hidden="true" />
@@ -484,6 +507,12 @@ export function WorkOrderDetailPage() {
                   <dt>Updated</dt>
                   <dd>{formatDateTime(detail.updatedAt)}</dd>
                 </div>
+                {detail.productionDowntimeReason ? (
+                  <div className="technician-secondary-detail">
+                    <dt>Production downtime explanation</dt>
+                    <dd>{detail.productionDowntimeReason}</dd>
+                  </div>
+                ) : null}
               </dl>
           </div>
 
@@ -548,7 +577,10 @@ export function WorkOrderDetailPage() {
               {detail.status === "resolved" ? (
                 <>
                   <p>Maintenance marked this work order as resolved. Verify the result, then close it or return it for follow-up.</p>
-                  <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} placeholder="Verification note (optional)" />
+                  <label className="verification-reason-field">
+                    {requiresDowntimeExplanation ? "Production downtime explanation (required)" : "Verification note (optional)"}
+                    <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} placeholder={requiresDowntimeExplanation ? "Explain the operational reason for the extended downtime" : "Add a verification note"} />
+                  </label>
                   <div className="button-stack">
                     <ActionButton
                       type="button"
@@ -556,7 +588,7 @@ export function WorkOrderDetailPage() {
                       tone="resolve"
                       busy={busy && busyAction === "closed"}
                       busyLabel="Closing..."
-                      disabled={actionLocked}
+                      disabled={actionLocked || (requiresDowntimeExplanation && !note.trim())}
                       onClick={() => updateStatus("closed", "Requester verified and closed the work order.")}
                     >
                       Verify & Close
@@ -625,7 +657,7 @@ export function WorkOrderDetailPage() {
                     Pending Material
                   </ActionButton>
                 ) : null}
-                {["acknowledged", "in_progress", "pending_material", "returned"].includes(detail.status) ? (
+                {startedAt && ["acknowledged", "in_progress", "pending_material", "returned"].includes(detail.status) ? (
                   <ActionButton
                     type="button"
                     icon={CheckCircle2}
@@ -644,7 +676,10 @@ export function WorkOrderDetailPage() {
             <div className="section-panel verification-panel ready">
               <h2>Requester Verification</h2>
               <p>Review the completed work and close it, or return it to maintenance for follow-up.</p>
-              <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} placeholder="Verification note (optional)" />
+              <label className="verification-reason-field">
+                {requiresDowntimeExplanation ? "Production downtime explanation (required)" : "Verification note (optional)"}
+                <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} placeholder={requiresDowntimeExplanation ? "Explain the operational reason for the extended downtime" : "Add a verification note"} />
+              </label>
               <div className="button-stack">
                 <ActionButton
                   type="button"
@@ -652,7 +687,7 @@ export function WorkOrderDetailPage() {
                   tone="resolve"
                   busy={busy && busyAction === "closed"}
                   busyLabel="Closing..."
-                  disabled={actionLocked}
+                  disabled={actionLocked || (requiresDowntimeExplanation && !note.trim())}
                   onClick={() => updateStatus("closed", "Requester verified and closed the work order.")}
                 >
                   Close
@@ -755,6 +790,15 @@ export function WorkOrderDetailPage() {
               />
             </label>
 
+            <fieldset className="resolve-duration-field">
+              <legend>Maintenance actual time</legend>
+              <p>Enter hands-on time counted by maintenance. This stays separate from system elapsed time.</p>
+              <div>
+                <label>Hours<input type="number" min="0" max="168" step="1" inputMode="numeric" value={resolveHours} onChange={(event) => setResolveHours(event.target.value)} /></label>
+                <label>Minutes<input type="number" min="0" max="59" step="1" inputMode="numeric" value={resolveMinutes} onChange={(event) => setResolveMinutes(event.target.value)} /></label>
+              </div>
+            </fieldset>
+
             <label className="resolve-field resolve-upload-box">
               Completion photo
               <input type="file" accept="image/*" multiple required onChange={(event) => setResolveFiles(event.target.files)} />
@@ -773,7 +817,7 @@ export function WorkOrderDetailPage() {
                 tone="resolve"
                 busy={busy && busyAction === "resolved"}
                 busyLabel="Resolving..."
-                disabled={busy || !resolveNote.trim() || !resolveFiles || resolveFiles.length === 0}
+                disabled={busy || !resolveNote.trim() || !resolveFiles || resolveFiles.length === 0 || (Number(resolveHours) || 0) * 60 + (Number(resolveMinutes) || 0) < 1}
               >
                 Confirm Resolve
               </ActionButton>

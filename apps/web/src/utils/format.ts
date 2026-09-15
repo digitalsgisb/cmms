@@ -68,6 +68,16 @@ export function formatDuration(start: string | null, end: string | null = new Da
   return `${minutes}m`;
 }
 
+export function formatMinutes(totalMinutes: number | null) {
+  if (totalMinutes === null) return "Not reported";
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
 export function formatLiveDuration(start: string | null, end: string | null = new Date().toISOString()) {
   if (!start) {
     return "0m 00s";

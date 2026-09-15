@@ -56,6 +56,8 @@ export function TechnicianPage() {
   const [queueError, setQueueError] = useState("");
   const [resolveTarget, setResolveTarget] = useState<WorkOrder | null>(null);
   const [resolveNote, setResolveNote] = useState("");
+  const [resolveHours, setResolveHours] = useState("");
+  const [resolveMinutes, setResolveMinutes] = useState("");
   const [resolveFiles, setResolveFiles] = useState<FileList | null>(null);
   const [resolveError, setResolveError] = useState("");
   const [liveArrival, setLiveArrival] = useState<{ id: string; number: string; title: string } | null>(null);
@@ -281,6 +283,8 @@ export function TechnicianPage() {
   function openResolveDialog(workOrder: WorkOrder) {
     setResolveTarget(workOrder);
     setResolveNote("");
+    setResolveHours("");
+    setResolveMinutes("");
     setResolveFiles(null);
     setResolveError("");
   }
@@ -293,6 +297,7 @@ export function TechnicianPage() {
 
     const repairSummary = resolveNote.trim();
     const completionPhotos = resolveFiles ? Array.from(resolveFiles) : [];
+    const maintenanceActualMinutes = (Number(resolveHours) || 0) * 60 + (Number(resolveMinutes) || 0);
 
     if (!repairSummary) {
       setResolveError("Please add a short repair remark before resolving.");
@@ -301,6 +306,11 @@ export function TechnicianPage() {
 
     if (completionPhotos.length === 0) {
       setResolveError("Please upload at least one completion photo before resolving.");
+      return;
+    }
+
+    if (!Number.isInteger(maintenanceActualMinutes) || maintenanceActualMinutes < 1 || maintenanceActualMinutes > 10080) {
+      setResolveError("Enter maintenance actual time between 1 minute and 7 days.");
       return;
     }
 
@@ -314,10 +324,13 @@ export function TechnicianPage() {
         status: "resolved",
         actorId: currentUser.id,
         note: repairSummary,
-        assignedToId: resolveTarget.assignedToId
+        assignedToId: resolveTarget.assignedToId,
+        maintenanceActualMinutes
       });
       setResolveTarget(null);
       setResolveNote("");
+      setResolveHours("");
+      setResolveMinutes("");
       setResolveFiles(null);
       setSubmitting(false);
       await waitForActionMotion();
@@ -426,7 +439,7 @@ export function TechnicianPage() {
             {["acknowledged", "in_progress", "returned"].includes(workOrder.status) ? (
               <ActionButton type="button" icon={PackageOpen} tone="material" busy={submitting && busyId === workOrder.id && busyAction === "pending_material"} busyLabel="Waiting..." disabled={Boolean(busyId)} onClick={() => quickAction(workOrder, "pending_material", "Waiting for parts or material.")}>Pending</ActionButton>
             ) : null}
-            {["acknowledged", "in_progress", "pending_material", "returned"].includes(workOrder.status) ? (
+            {workOrder.maintenanceStartedAt && ["acknowledged", "in_progress", "pending_material", "returned"].includes(workOrder.status) ? (
               <ActionButton type="button" icon={CheckCircle2} tone="resolve" busy={submitting && busyId === workOrder.id && busyAction === "resolved"} busyLabel="Resolving..." disabled={Boolean(busyId)} onClick={() => openResolveDialog(workOrder)}>Resolve</ActionButton>
             ) : null}
           </div>
@@ -540,6 +553,15 @@ export function TechnicianPage() {
               />
             </label>
 
+            <fieldset className="resolve-duration-field">
+              <legend>Maintenance actual time</legend>
+              <p>Enter hands-on time counted by maintenance. This stays separate from system elapsed time.</p>
+              <div>
+                <label>Hours<input type="number" min="0" max="168" step="1" inputMode="numeric" value={resolveHours} onChange={(event) => setResolveHours(event.target.value)} /></label>
+                <label>Minutes<input type="number" min="0" max="59" step="1" inputMode="numeric" value={resolveMinutes} onChange={(event) => setResolveMinutes(event.target.value)} /></label>
+              </div>
+            </fieldset>
+
             <label className="resolve-field resolve-upload-box">
               Completion photo
               <input type="file" accept="image/*" multiple required onChange={(event) => setResolveFiles(event.target.files)} />
@@ -558,7 +580,7 @@ export function TechnicianPage() {
                 tone="resolve"
                 busy={submitting && busyAction === "resolved"}
                 busyLabel="Resolving..."
-                disabled={submitting || !resolveNote.trim() || !resolveFiles || resolveFiles.length === 0}
+                disabled={submitting || !resolveNote.trim() || !resolveFiles || resolveFiles.length === 0 || (Number(resolveHours) || 0) * 60 + (Number(resolveMinutes) || 0) < 1}
               >
                 Confirm Resolve
               </ActionButton>

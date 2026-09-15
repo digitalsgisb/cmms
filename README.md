@@ -106,10 +106,18 @@ PostgreSQL is not used by this repository: the server database in this version i
 In row 1 of the `WorkOrders` tab, paste these column names exactly (the Apps Script also creates missing headers when it receives its first record):
 
 ```text
-WorkOrderID	DateSubmitted	Date	Shift	Type	Section	Area	Machine Name	MachineID	IssueCategory	ReportedBy	Department	Priority	IssueDescription	PhotoIssue	Downtime Actual	Total Downtime	Status	MaintenanceBy	MaintenanceNotes	PhotoFix	DateAcknowledge	AcknowledgeTime	DateRepair	RepairTime	FinishTime	VerifyTime	Change Spare Part	Part Name	Quantity	Part Number	DateResolved	Date Finish	DateClosed	Remarks	ReturnPhoto	UpdatedAt
+WorkOrderID	DateSubmitted	Date	Shift	Type	Section	Area	Machine Name	MachineID	IssueCategory	ReportedBy	Department	Priority	IssueDescription	PhotoIssue	Downtime Actual	Total Downtime	Production Downtime	Total Queue Time	System Repair Elapsed	Maintenance Actual	Downtime Reason	Status	MaintenanceBy	MaintenanceNotes	PhotoFix	DateAcknowledge	AcknowledgeTime	DateRepair	RepairTime	FinishTime	VerifyTime	Change Spare Part	Part Name	Quantity	Part Number	DateResolved	Date Finish	DateClosed	Remarks	ReturnPhoto	UpdatedAt
 ```
 
 The same screen accepts the existing Node-RED endpoint (for example `http://node-red:1880/workorderpk`). CMMS posts the compatible `{ "Data": ... }` payload only for work-order lifecycle events, allowing the supplied Telegram flow to keep handling Open/Returned alerts and Resolved/Closed removal.
+
+Work-order timing uses separate accountability clocks:
+
+- **Production Downtime** is system-calculated from issue submission until maintenance resolves the work order.
+- **Total Queue Time** is system-calculated from issue submission until the first Start Repair action.
+- **System Repair Elapsed** is system-calculated from the first Start Repair action until the latest resolution.
+- **Maintenance Actual** is the hands-on time entered by maintenance at resolution.
+- Production work orders with at least 60 minutes of downtime require a production downtime explanation before requester closure.
 
 The Apps Script formats the mirror for people rather than exposing raw payloads: dates use `dd/mm/yyyy`, timestamps use `dd/mm/yyyy hh:mm`, duration fields show elapsed minutes, photo paths become compact links, long descriptions wrap, and technical ID/sync columns are hidden by default. After changing `docs/work-orders-apps-script.js`, create a new Apps Script deployment version so the live `/exec` endpoint uses the update. Reload the Sheet and run **SUGI CMMS → Format existing work orders** once to clean up rows written by an older script. Set `APP_PUBLIC_URL` to the CMMS address reachable by Sheet users if photo links should open from Google Sheets.
 

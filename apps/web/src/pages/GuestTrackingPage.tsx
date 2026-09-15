@@ -5,12 +5,12 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import type { GuestWorkOrderTracking, WorkOrderStatus } from "@sugi-cmms/shared";
-import { workOrderStatusLabels } from "@sugi-cmms/shared";
+import { longProductionDowntimeMinutes, workOrderStatusLabels } from "@sugi-cmms/shared";
 import { api, guestLiveEventsUrl, mediaUrl } from "../api/client";
 import { StatusBadge } from "../components/Badges";
 import { ImageLightbox } from "../components/ImageLightbox";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
-import { formatDateTime, formatLiveDuration } from "../utils/format";
+import { formatDateTime, formatLiveDuration, formatMinutes } from "../utils/format";
 
 const trackingSteps = [
   { label: "Submitted", Icon: Send },
@@ -111,8 +111,15 @@ export function GuestTrackingPage() {
 
   async function verify(status: "closed" | "returned") {
     if (!tracking) return;
+    const resolvedAt = tracking.workOrder.resolvedAt || tracking.workOrder.updatedAt;
+    const needsReason = tracking.workOrder.responsibleDepartment === "Production" &&
+      Math.max(0, Date.parse(resolvedAt) - Date.parse(tracking.workOrder.createdAt)) >= longProductionDowntimeMinutes * 60000;
     if (status === "returned" && !note.trim()) {
       setError("Add a short reason before returning the work order to maintenance.");
+      return;
+    }
+    if (status === "closed" && needsReason && !note.trim()) {
+      setError(`Add a production downtime explanation before closing work orders lasting ${longProductionDowntimeMinutes} minutes or more.`);
       return;
     }
     setAction(status);
@@ -135,8 +142,10 @@ export function GuestTrackingPage() {
   const { workOrder, activities } = tracking;
   const stage = statusStage(workOrder.status);
   const photos = workOrder.attachments.filter((attachment) => ["issue", "after", "return_evidence"].includes(attachment.kind));
-  const timerRunning = !["closed", "cancelled"].includes(workOrder.status);
-  const timerEnd = timerRunning ? timerNow : workOrder.closedAt || workOrder.updatedAt;
+  const timerRunning = !workOrder.resolvedAt && !["closed", "cancelled"].includes(workOrder.status);
+  const timerEnd = workOrder.resolvedAt || (timerRunning ? timerNow : workOrder.updatedAt);
+  const needsDowntimeReason = workOrder.responsibleDepartment === "Production" && Boolean(workOrder.resolvedAt) &&
+    Math.max(0, Date.parse(workOrder.resolvedAt!) - Date.parse(workOrder.createdAt)) >= longProductionDowntimeMinutes * 60000;
 
   return <div className="guest-tracker-shell">
     <header className="guest-tracker-topbar">
@@ -151,7 +160,7 @@ export function GuestTrackingPage() {
 
       <section className={`guest-progress-card status-${workOrder.status}`}>
         <div className="guest-progress-heading"><div><p>{workOrder.number}</p><h1>{trackerHeadline(workOrder.status)}</h1><span>Last updated {formatDateTime(workOrder.updatedAt)}</span></div><StatusBadge status={workOrder.status} /></div>
-        <div className={`guest-total-timer ${timerRunning ? "is-live" : "is-stopped"}`}><Clock3 size={22} aria-hidden="true" /><span><small>{timerRunning ? "Live time since opened" : workOrder.status === "closed" ? "Total time: open to close" : "Time open before cancellation"}</small><strong>{formatLiveDuration(workOrder.createdAt, timerEnd)}</strong></span><time>Opened {formatDateTime(workOrder.createdAt)}</time></div>
+        <div className={`guest-total-timer ${timerRunning ? "is-live" : "is-stopped"}`}><Clock3 size={22} aria-hidden="true" /><span><small>{timerRunning ? "Live production downtime" : workOrder.resolvedAt ? "Production downtime" : "Time before cancellation"}</small><strong>{formatLiveDuration(workOrder.createdAt, timerEnd)}</strong></span><time>Opened {formatDateTime(workOrder.createdAt)}</time></div>
         <div className="guest-progress-track" style={{ "--tracker-progress": `${(stage / (trackingSteps.length - 1)) * 100}%` } as React.CSSProperties}>
           <div className="guest-progress-line"><span /></div>
           {trackingSteps.map(({ label, Icon }, index) => <div className={`guest-progress-step ${index <= stage ? "done" : ""} ${index === stage ? "current" : ""}`} key={label}><span>{index < stage || workOrder.status === "closed" ? <Check size={14} /> : <Icon size={15} />}</span><strong>{label}</strong></div>)}
@@ -166,6 +175,8 @@ export function GuestTrackingPage() {
           <section className="guest-tracker-panel guest-work-order-summary"><header><div><p>Request details</p><h2>{workOrder.title}</h2></div><span className={`priority-pill priority-${workOrder.priority}`}>{workOrder.priority}</span></header><p>{workOrder.issueDescription}</p><dl><div><dt>Responsible department</dt><dd>{workOrder.responsibleDepartment}</dd></div><div><dt>Machine / place</dt><dd>{workOrder.machineName}</dd></div><div><dt>Section</dt><dd>{workOrder.sectionName}</dd></div><div><dt>Area</dt><dd>{workOrder.area}</dd></div><div><dt>Issue</dt><dd>{workOrder.issueCategoryName}</dd></div><div><dt>Assigned to</dt><dd>{workOrder.assignedToName}</dd></div><div><dt>Reported by</dt><dd>{workOrder.reportedByName}</dd></div></dl></section>
 
           {workOrder.completionNote ? <section className="guest-tracker-panel guest-completion-note"><CheckCircle2 size={22} /><div><p>Maintenance completion note</p><strong>{workOrder.completionNote}</strong></div></section> : null}
+          {workOrder.maintenanceActualMinutes !== null ? <section className="guest-tracker-panel guest-completion-note"><Wrench size={22} /><div><p>Maintenance reported actual time</p><strong>{formatMinutes(workOrder.maintenanceActualMinutes)}</strong></div></section> : null}
+          {workOrder.productionDowntimeReason ? <section className="guest-tracker-panel guest-completion-note"><Clock3 size={22} /><div><p>Production downtime explanation</p><strong>{workOrder.productionDowntimeReason}</strong></div></section> : null}
 
           {photos.length ? <section className="guest-tracker-panel guest-tracker-photos"><header><div><p>Evidence</p><h2>Work order photos</h2></div><Image size={20} /></header><div>{photos.map((photo) => { const label = photo.kind === "issue" ? "Issue" : photo.kind === "after" ? "Completed" : "Returned"; return <button type="button" key={photo.id} onClick={() => setPreviewPhoto({ src: mediaUrl(photo.url), alt: photo.originalName, label })}><img src={mediaUrl(photo.url)} alt={photo.originalName} /><span>{label}</span></button>; })}</div></section> : null}
 
@@ -173,7 +184,7 @@ export function GuestTrackingPage() {
         </div>
 
         <aside>
-          {workOrder.status === "resolved" ? <section className="guest-verify-card"><span><ShieldCheck size={25} /></span><p>Your decision</p><h2>Is the work completed?</h2><small>Review the maintenance note and completion photo before closing. If something is still wrong, return it with a reason.</small><label>Verification note<textarea rows={4} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Optional when closing; required when returning" /></label><button className="verify" type="button" disabled={Boolean(action)} onClick={() => verify("closed")}><CheckCircle2 size={17} />{action === "closed" ? "Closing…" : "Verify & close"}</button><button className="return" type="button" disabled={Boolean(action)} onClick={() => verify("returned")}><RefreshCcw size={17} />{action === "returned" ? "Returning…" : "Return to maintenance"}</button></section> : <section className="guest-waiting-card"><Clock3 size={24} /><p>{workOrder.status === "closed" ? "Verification complete" : "No action needed yet"}</p><h2>{workOrder.status === "closed" ? "Thank you for verifying" : workOrderStatusLabels[workOrder.status]}</h2><small>{workOrder.status === "closed" ? "This work order is complete. The tracking link remains available as your record." : "This page updates automatically. Return using your private link at any time."}</small></section>}
+          {workOrder.status === "resolved" ? <section className="guest-verify-card"><span><ShieldCheck size={25} /></span><p>Your decision</p><h2>Is the work completed?</h2><small>Review the maintenance note and completion photo before closing. If something is still wrong, return it with a reason.</small><label>{needsDowntimeReason ? "Production downtime explanation" : "Verification note"}<textarea rows={4} value={note} onChange={(event) => setNote(event.target.value)} placeholder={needsDowntimeReason ? "Required before closing this extended downtime" : "Optional when closing; required when returning"} /></label><button className="verify" type="button" disabled={Boolean(action) || (needsDowntimeReason && !note.trim())} onClick={() => verify("closed")}><CheckCircle2 size={17} />{action === "closed" ? "Closing…" : "Verify & close"}</button><button className="return" type="button" disabled={Boolean(action)} onClick={() => verify("returned")}><RefreshCcw size={17} />{action === "returned" ? "Returning…" : "Return to maintenance"}</button></section> : <section className="guest-waiting-card"><Clock3 size={24} /><p>{workOrder.status === "closed" ? "Verification complete" : "No action needed yet"}</p><h2>{workOrder.status === "closed" ? "Thank you for verifying" : workOrderStatusLabels[workOrder.status]}</h2><small>{workOrder.status === "closed" ? "This work order is complete. The tracking link remains available as your record." : "This page updates automatically. Return using your private link at any time."}</small></section>}
         </aside>
       </div>
     </main>

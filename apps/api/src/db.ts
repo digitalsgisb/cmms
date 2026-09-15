@@ -73,7 +73,7 @@ import type {
   UpdateWorkOrderSyncSettingsInput,
   WorkOrderType
 } from "@sugi-cmms/shared";
-import { technicianCanAccessWorkOrder, workOrderStatusLabels } from "@sugi-cmms/shared";
+import { longProductionDowntimeMinutes, technicianCanAccessWorkOrder, workOrderStatusLabels } from "@sugi-cmms/shared";
 import { productionAssets2026 } from "./production-assets-2026.js";
 import { emitNotificationCreated } from "./notification-events.js";
 
@@ -170,6 +170,8 @@ export function migrate() {
       assignedToId TEXT,
       dueDate TEXT,
       completionNote TEXT,
+      maintenanceActualMinutes INTEGER,
+      productionDowntimeReason TEXT,
       workDate TEXT NOT NULL,
       shiftGroup TEXT NOT NULL,
       sectionId TEXT,
@@ -545,6 +547,8 @@ export function migrate() {
   addWorkOrderColumnIfMissing(workOrderColumns, "issueCategoryId", "TEXT");
   addWorkOrderColumnIfMissing(workOrderColumns, "issueCategoryName", "TEXT NOT NULL DEFAULT ''");
   addWorkOrderColumnIfMissing(workOrderColumns, "issueDescription", "TEXT");
+  addWorkOrderColumnIfMissing(workOrderColumns, "maintenanceActualMinutes", "INTEGER");
+  addWorkOrderColumnIfMissing(workOrderColumns, "productionDowntimeReason", "TEXT");
 
   db.prepare("UPDATE work_orders SET workDate = COALESCE(workDate, substr(createdAt, 1, 10)) WHERE workDate IS NULL").run();
   db.prepare("UPDATE work_orders SET shiftGroup = COALESCE(shiftGroup, 'A') WHERE shiftGroup IS NULL").run();
@@ -3265,11 +3269,11 @@ function elapsedMinutes(start: string, end: string) {
 
 function workOrderSheetRow(workOrderId: string) {
   const detail = getWorkOrderDetail(workOrderId);
-  const activityAt = (action: ActivityAction) => detail.activities.find((item) => item.action === action)?.createdAt || "";
-  const acknowledgedAt = activityAt("acknowledged");
-  const repairStartedAt = activityAt("started");
-  const resolvedAt = activityAt("resolved");
-  const closedAt = activityAt("closed");
+  const latestActivityAt = (action: ActivityAction) => detail.activities.find((item) => item.action === action)?.createdAt || "";
+  const acknowledgedAt = [...detail.activities].reverse().find((item) => item.action === "acknowledged")?.createdAt || "";
+  const repairStartedAt = detail.maintenanceStartedAt || "";
+  const resolvedAt = detail.resolvedAt || "";
+  const closedAt = latestActivityAt("closed");
   const issuePhoto = detail.attachments.find((item) => item.kind === "issue");
   const fixPhoto = detail.attachments.find((item) => item.kind === "after");
   const returnPhoto = detail.attachments.find((item) => item.kind === "return_evidence");
@@ -3299,6 +3303,11 @@ function workOrderSheetRow(workOrderId: string) {
     PhotoIssue: publicMediaUrl(issuePhoto?.url),
     "Downtime Actual": elapsedMinutes(repairStartedAt, resolvedAt),
     "Total Downtime": elapsedMinutes(detail.createdAt, resolvedAt),
+    "Production Downtime": elapsedMinutes(detail.createdAt, resolvedAt),
+    "Total Queue Time": elapsedMinutes(detail.createdAt, repairStartedAt),
+    "System Repair Elapsed": elapsedMinutes(repairStartedAt, resolvedAt),
+    "Maintenance Actual": detail.maintenanceActualMinutes ?? "",
+    "Downtime Reason": detail.productionDowntimeReason || "",
     Status: workOrderStatusLabels[detail.status],
     MaintenanceBy: detail.assignedTo?.name || "",
     MaintenanceNotes: detail.completionNote || "",
@@ -3430,6 +3439,12 @@ export function listWorkOrders(actor?: User): WorkOrder[] {
   const workOrders = rows<WorkOrder>(db.prepare(`
     SELECT wo.*,
       (SELECT activity.createdAt FROM scoped_work_order_activities activity
+       WHERE activity.workOrderId = wo.id AND activity.action = 'started'
+       ORDER BY activity.createdAt ASC LIMIT 1) AS maintenanceStartedAt,
+      (SELECT activity.createdAt FROM scoped_work_order_activities activity
+       WHERE activity.workOrderId = wo.id AND activity.action = 'resolved'
+       ORDER BY activity.createdAt DESC LIMIT 1) AS resolvedAt,
+      (SELECT activity.createdAt FROM scoped_work_order_activities activity
        WHERE activity.workOrderId = wo.id AND activity.action = 'closed'
        ORDER BY activity.createdAt DESC LIMIT 1) AS closedAt
     FROM scoped_work_orders wo
@@ -3456,6 +3471,12 @@ export function listTvWorkOrders(): TvWorkOrder[] {
 export function getWorkOrder(id: string): WorkOrder {
   const workOrder = db.prepare(`
     SELECT wo.*,
+      (SELECT activity.createdAt FROM scoped_work_order_activities activity
+       WHERE activity.workOrderId = wo.id AND activity.action = 'started'
+       ORDER BY activity.createdAt ASC LIMIT 1) AS maintenanceStartedAt,
+      (SELECT activity.createdAt FROM scoped_work_order_activities activity
+       WHERE activity.workOrderId = wo.id AND activity.action = 'resolved'
+       ORDER BY activity.createdAt DESC LIMIT 1) AS resolvedAt,
       (SELECT activity.createdAt FROM scoped_work_order_activities activity
        WHERE activity.workOrderId = wo.id AND activity.action = 'closed'
        ORDER BY activity.createdAt DESC LIMIT 1) AS closedAt
@@ -3658,6 +3679,7 @@ export function updateWorkOrderStatus(id: string, input: UpdateWorkOrderStatusIn
   const assignedToId = input.assignedToId === undefined ? current.assignedToId : input.assignedToId;
   if (assignedToId && !userPlants(getUser(assignedToId)).includes(current.plantId)) throw new Error("Assignee must have access to this plant.");
   const trimmedNote = input.note.trim();
+  const productionDowntimeReason = input.productionDowntimeReason?.trim() || "";
 
   if (input.status === "resolved") {
     if (!trimmedNote) {
@@ -3671,15 +3693,34 @@ export function updateWorkOrderStatus(id: string, input: UpdateWorkOrderStatusIn
     if (afterAttachmentCount === 0) {
       throw new Error("At least one completion photo is required before resolving.");
     }
+
+    if (!current.maintenanceStartedAt) {
+      throw new Error("Select Start Repair before resolving so total queue time can be measured fairly.");
+    }
+
+    if (!Number.isInteger(input.maintenanceActualMinutes) || Number(input.maintenanceActualMinutes) < 1 || Number(input.maintenanceActualMinutes) > 10080) {
+      throw new Error("Enter maintenance actual time between 1 minute and 7 days before resolving.");
+    }
+  }
+
+  if (input.status === "closed" && current.responsibleDepartment === "Production" && current.resolvedAt) {
+    const productionDowntimeMinutes = Math.max(0, Math.round((Date.parse(current.resolvedAt) - Date.parse(current.createdAt)) / 60000));
+    if (productionDowntimeMinutes >= longProductionDowntimeMinutes && !productionDowntimeReason) {
+      throw new Error(`Add a production downtime explanation before closing work orders lasting ${longProductionDowntimeMinutes} minutes or more.`);
+    }
   }
 
   const completionNote = input.status === "resolved" ? trimmedNote : current.completionNote;
+  const maintenanceActualMinutes = input.status === "resolved" ? Number(input.maintenanceActualMinutes) : current.maintenanceActualMinutes;
+  const savedProductionDowntimeReason = input.status === "closed" && current.responsibleDepartment === "Production" && productionDowntimeReason
+    ? productionDowntimeReason
+    : current.productionDowntimeReason;
 
   db.prepare(`
     UPDATE work_orders
-    SET status = ?, assignedToId = ?, completionNote = ?, updatedAt = ?
+    SET status = ?, assignedToId = ?, completionNote = ?, maintenanceActualMinutes = ?, productionDowntimeReason = ?, updatedAt = ?
     WHERE id = ?
-  `).run(input.status, assignedToId, completionNote, updatedAt, id);
+  `).run(input.status, assignedToId, completionNote, maintenanceActualMinutes, savedProductionDowntimeReason, updatedAt, id);
 
   const action = statusToAction(input.status);
   addActivity(id, input.actorId, action, input.status, trimmedNote || `Status changed to ${input.status}.`);
@@ -3825,7 +3866,15 @@ export function listRequesterWorkOrders(): PublicRequesterWorkOrder[] {
         wo.reportedByName,
         wo.reportedByDepartment,
         wo.responsibleDepartment,
+        wo.maintenanceActualMinutes,
+        wo.productionDowntimeReason,
         wo.createdAt,
+        (SELECT activity.createdAt FROM scoped_work_order_activities activity
+         WHERE activity.workOrderId = wo.id AND activity.action = 'started'
+         ORDER BY activity.createdAt ASC LIMIT 1) AS maintenanceStartedAt,
+        (SELECT activity.createdAt FROM scoped_work_order_activities activity
+         WHERE activity.workOrderId = wo.id AND activity.action = 'resolved'
+         ORDER BY activity.createdAt DESC LIMIT 1) AS resolvedAt,
         (SELECT activity.createdAt FROM scoped_work_order_activities activity
          WHERE activity.workOrderId = wo.id AND activity.action = 'closed'
          ORDER BY activity.createdAt DESC LIMIT 1) AS closedAt,
@@ -3926,6 +3975,10 @@ export function getGuestWorkOrderTracking(workOrderId: string, token: string): G
       title: detail.title,
       priority: detail.priority,
       completionNote: detail.completionNote,
+      maintenanceActualMinutes: detail.maintenanceActualMinutes,
+      productionDowntimeReason: detail.productionDowntimeReason,
+      maintenanceStartedAt: detail.maintenanceStartedAt,
+      resolvedAt: detail.resolvedAt,
       assignedToName: detail.assignedTo?.name || "Waiting for assignment"
     },
     activities: detail.activities.map((activity) => ({
@@ -3954,7 +4007,8 @@ export function verifyGuestWorkOrder(
   updateWorkOrderStatus(workOrderId, {
     actorId: publicRequesterId,
     status,
-    note: trimmedNote || "Guest requester verified and closed the work order."
+    note: trimmedNote || "Guest requester verified and closed the work order.",
+    productionDowntimeReason: status === "closed" && workOrder.responsibleDepartment === "Production" ? trimmedNote : null
   });
   return getGuestWorkOrderTracking(workOrderId, token);
 }
@@ -4341,7 +4395,9 @@ export function validateStatusInput(body: Partial<UpdateWorkOrderStatusInput>): 
     status: body.status,
     actorId: body.actorId,
     note: body.note ? String(body.note) : "",
-    assignedToId: body.assignedToId
+    assignedToId: body.assignedToId,
+    maintenanceActualMinutes: body.maintenanceActualMinutes == null ? null : Number(body.maintenanceActualMinutes),
+    productionDowntimeReason: body.productionDowntimeReason ? String(body.productionDowntimeReason) : null
   };
 }
 

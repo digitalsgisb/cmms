@@ -4114,7 +4114,7 @@ tbody tr:hover {
 
 .timer-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 10px;
 }
 
@@ -4385,6 +4385,58 @@ tbody tr:hover {
   border-color: rgba(127, 17, 27, 0.48);
   background: #ffffff;
   box-shadow: 0 0 0 4px rgba(127, 17, 27, 0.1);
+}
+
+.resolve-duration-field {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(127, 17, 27, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.62);
+  padding: 12px;
+}
+
+.resolve-duration-field legend {
+  padding: 0 5px;
+  color: #3f313b;
+  font-weight: 900;
+}
+
+.resolve-duration-field > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.resolve-duration-field > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.resolve-duration-field label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.resolve-duration-field input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid rgba(127, 17, 27, 0.16);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 9px 11px;
+}
+
+.verification-reason-field {
+  display: grid;
+  gap: 7px;
+  color: var(--ink);
+  font-weight: 800;
 }
 
 .resolve-upload-box {

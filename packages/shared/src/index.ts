@@ -18,6 +18,7 @@ export type WorkOrderStatus =
 
 export type WorkOrderPriority = "low" | "medium" | "high" | "critical";
 export type ShiftGroup = "A" | "B" | "N/A";
+export const longProductionDowntimeMinutes = 60;
 export type WorkOrderDepartment =
   | "Logistic"
   | "Production"
@@ -217,6 +218,8 @@ export interface WorkOrder {
   assignedToId: string | null;
   dueDate: string | null;
   completionNote: string | null;
+  maintenanceActualMinutes: number | null;
+  productionDowntimeReason: string | null;
   workDate: string;
   shiftGroup: ShiftGroup;
   sectionId: string | null;
@@ -230,6 +233,8 @@ export interface WorkOrder {
   issueCategoryName: string;
   issueDescription: string;
   createdAt: string;
+  maintenanceStartedAt: string | null;
+  resolvedAt: string | null;
   closedAt: string | null;
   updatedAt: string;
 }
@@ -387,6 +392,8 @@ export interface UpdateWorkOrderStatusInput {
   actorId: string;
   note: string;
   assignedToId?: string | null;
+  maintenanceActualMinutes?: number | null;
+  productionDowntimeReason?: string | null;
 }
 
 export interface UpdateWorkOrderInput {
@@ -428,8 +435,12 @@ export interface PublicRequesterWorkOrder {
   reportedByName: string;
   reportedByDepartment: string;
   responsibleDepartment: WorkOrderDepartment;
+  maintenanceActualMinutes: number | null;
+  productionDowntimeReason: string | null;
   attachments: WorkOrderAttachment[];
   createdAt: string;
+  maintenanceStartedAt: string | null;
+  resolvedAt: string | null;
   closedAt: string | null;
   updatedAt: string;
 }

@@ -332,9 +332,9 @@ function WorkOrderCard({
   onDelete: (workOrder: WorkOrder) => void;
 }) {
   const needsVerification = workOrder.status === "resolved" && workOrder.requesterId === currentUserId;
-  const timerRunning = !["closed", "cancelled"].includes(workOrder.status);
-  const timerEnd = timerRunning ? timerNow : workOrder.closedAt || workOrder.updatedAt;
-  const timerLabel = timerRunning ? "Open" : workOrder.status === "cancelled" ? "Cancelled" : "Total";
+  const timerRunning = !workOrder.resolvedAt && !["closed", "cancelled"].includes(workOrder.status);
+  const timerEnd = workOrder.resolvedAt || (timerRunning ? timerNow : workOrder.updatedAt);
+  const timerLabel = timerRunning ? "Production downtime" : workOrder.resolvedAt ? "Production downtime" : "Cancelled";
 
   return (
     <article className={`work-order-card card-status-${workOrder.status} ${needsVerification ? "needs-verification" : ""}`}>

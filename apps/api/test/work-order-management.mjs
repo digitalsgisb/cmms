@@ -161,6 +161,50 @@ assert.throws(() => inPlant(() => m.claimWorkOrder(maintenanceOrder.id, kaizenTe
 assert.throws(() => inPlant(() => m.assignWorkOrder(maintenanceOrder.id, kaizenTechnician.id, executive.id)), /team responsible/i);
 assert.equal(inPlant(() => m.claimWorkOrder(kaizenOrder.id, kaizenTechnician.id)).assignedToId, kaizenTechnician.id);
 
+const fairTimingOrder = createOrder("Fair timing workflow");
+inPlant(() => m.claimWorkOrder(fairTimingOrder.id, technician.id));
+inPlant(() => m.addAttachment({
+  workOrderId: fairTimingOrder.id,
+  uploadedBy: technician.id,
+  filename: "after.jpg",
+  originalName: "after.jpg",
+  mimeType: "image/jpeg",
+  size: 10,
+  url: "/test/after.jpg",
+  kind: "after"
+}));
+assert.throws(
+  () => inPlant(() => m.updateWorkOrderStatus(fairTimingOrder.id, { actorId: technician.id, status: "resolved", note: "Repair complete", maintenanceActualMinutes: 25 })),
+  /Start Repair/i
+);
+inPlant(() => m.updateWorkOrderStatus(fairTimingOrder.id, { actorId: technician.id, status: "in_progress", note: "Repair started" }));
+assert.throws(
+  () => inPlant(() => m.updateWorkOrderStatus(fairTimingOrder.id, { actorId: technician.id, status: "resolved", note: "Repair complete" })),
+  /maintenance actual time/i
+);
+const resolvedFairTimingOrder = inPlant(() => m.updateWorkOrderStatus(fairTimingOrder.id, {
+  actorId: technician.id,
+  status: "resolved",
+  note: "Repair complete",
+  maintenanceActualMinutes: 25
+}));
+assert.equal(resolvedFairTimingOrder.maintenanceActualMinutes, 25);
+assert(resolvedFairTimingOrder.maintenanceStartedAt);
+assert(resolvedFairTimingOrder.resolvedAt);
+const extendedDowntimeStart = new Date(Date.parse(resolvedFairTimingOrder.resolvedAt) - 2 * 60 * 60 * 1000).toISOString();
+inPlant(() => m.db.prepare("UPDATE work_orders SET createdAt = ? WHERE id = ?").run(extendedDowntimeStart, fairTimingOrder.id));
+assert.throws(
+  () => inPlant(() => m.updateWorkOrderStatus(fairTimingOrder.id, { actorId: requester.id, status: "closed", note: "Verified" })),
+  /production downtime explanation/i
+);
+const closedFairTimingOrder = inPlant(() => m.updateWorkOrderStatus(fairTimingOrder.id, {
+  actorId: requester.id,
+  status: "closed",
+  note: "Technician was completing a higher-priority machine breakdown.",
+  productionDowntimeReason: "Technician was completing a higher-priority machine breakdown."
+}));
+assert.equal(closedFairTimingOrder.productionDowntimeReason, "Technician was completing a higher-priority machine breakdown.");
+
 const disposable = createOrder("Delete permission check");
 await assert.rejects(inPlant(() => m.deleteWorkOrder(disposable.id, technician.id)), /Executive or admin/i);
 await assert.rejects(inPlant(() => m.deleteWorkOrder(disposable.id, developer.id)), /Executive or admin/i);
