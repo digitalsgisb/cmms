@@ -41,6 +41,13 @@ const technicianTabs: Array<{ to: string; label: string; icon: typeof LayoutDash
   { to: "/technician/more", label: "More", icon: Menu }
 ];
 
+const executiveTabs: Array<{ to: string; label: string; icon: typeof LayoutDashboard }> = [
+  { to: "/", label: "Home", icon: LayoutDashboard },
+  { to: "/work-orders", label: "Work", icon: ClipboardCheck },
+  { to: "/preventive-maintenance", label: "PM", icon: ShieldCheck },
+  { to: "/performance", label: "KPI", icon: ChartNoAxesCombined }
+];
+
 function isTechnicianTabActive(tabPath: string, pathname: string) {
   if (tabPath === "/") {
     return pathname === "/";
@@ -55,11 +62,17 @@ function isTechnicianTabActive(tabPath: string, pathname: string) {
   return pathname.startsWith(tabPath);
 }
 
+function isExecutiveTabActive(tabPath: string, pathname: string) {
+  if (tabPath === "/") return pathname === "/";
+  return pathname.startsWith(tabPath);
+}
+
 export function Layout() {
   const { currentUser, loadingUsers, logout, refreshWorkOrders } = useCurrentUser();
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const knownNotificationIdsRef = useRef<Set<string> | null>(null);
   const technicianMainRef = useRef<HTMLElement>(null);
+  const executiveMainRef = useRef<HTMLElement>(null);
   const [notificationError, setNotificationError] = useState("");
   const [markingRead, setMarkingRead] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -68,6 +81,7 @@ export function Layout() {
   const isRequester = currentUser?.role === "requester";
   const hasDeveloperAccess = Boolean(currentUser && ["admin", "developer"].includes(currentUser.role));
   const canUseTechnicianViews = currentUser ? currentUser.role !== "requester" : true;
+  const canOpenTechnicianQueue = currentUser ? ["technician", "admin", "developer"].includes(currentUser.role) : true;
   const workOrdersActive = location.pathname.startsWith("/work-orders") || (!isRequester && location.pathname.startsWith("/technician"));
   const sparePartsActive = location.pathname.startsWith("/spare-parts");
   const preventiveActive = location.pathname.startsWith("/preventive-maintenance");
@@ -185,6 +199,13 @@ export function Layout() {
   useLayoutEffect(() => {
     if (currentUser?.role === "technician") {
       technicianMainRef.current?.scrollTo({ top: 0, behavior: "auto" });
+      window.scrollTo({ top: 0, behavior: "auto" });
+    }
+  }, [currentUser?.role, location.pathname]);
+
+  useLayoutEffect(() => {
+    if (currentUser?.role === "executive") {
+      executiveMainRef.current?.scrollTo({ top: 0, behavior: "auto" });
       window.scrollTo({ top: 0, behavior: "auto" });
     }
   }, [currentUser?.role, location.pathname]);
@@ -353,7 +374,7 @@ export function Layout() {
   }
 
   return (
-    <div className={`app-shell ${mobileNavOpen ? "mobile-nav-is-open" : ""}`}>
+    <div className={`app-shell ${currentUser.role === "executive" ? "executive-app-shell" : ""} ${mobileNavOpen ? "mobile-nav-is-open" : ""}`}>
       <aside className={`sidebar ${mobileNavOpen ? "mobile-open" : ""}`} id="mobile-main-navigation">
         <div className="brand">
           <span className="brand-mark">
@@ -415,15 +436,15 @@ export function Layout() {
               <NavLink to="/work-orders" tabIndex={workOrdersOpen ? 0 : -1} className={({ isActive }) => (isActive ? "active" : "")} onClick={() => setMobileNavOpen(false)}>
                 Main
               </NavLink>
+              {canOpenTechnicianQueue ? (
+                <NavLink to="/technician" tabIndex={workOrdersOpen ? 0 : -1} className={({ isActive }) => (isActive ? "active" : "")} onClick={() => setMobileNavOpen(false)}>
+                  Technician
+                </NavLink>
+              ) : null}
               {canUseTechnicianViews ? (
-                <>
-                  <NavLink to="/technician" tabIndex={workOrdersOpen ? 0 : -1} className={({ isActive }) => (isActive ? "active" : "")} onClick={() => setMobileNavOpen(false)}>
-                    Technician
-                  </NavLink>
-                  <a href="/tv" target="_blank" rel="noreferrer" tabIndex={workOrdersOpen ? 0 : -1} onClick={() => setMobileNavOpen(false)}>
-                    TV Board
-                  </a>
-                </>
+                <a href="/tv" target="_blank" rel="noreferrer" tabIndex={workOrdersOpen ? 0 : -1} onClick={() => setMobileNavOpen(false)}>
+                  TV Board
+                </a>
               ) : null}
             </div>
           </div>
@@ -554,9 +575,9 @@ export function Layout() {
         onClick={() => setMobileNavOpen(false)}
       />
 
-      <div className="content-shell">
+      <div className={`content-shell ${currentUser.role === "executive" ? "executive-content-shell" : ""}`}>
         <a className="ux-skip-link" href="#main-content">Skip to content</a>
-        <header className="topbar">
+        <header className={`topbar ${currentUser.role === "executive" ? "executive-topbar" : ""}`}>
           <div className="topbar-main">
             <button
               className="mobile-menu-button"
@@ -619,9 +640,34 @@ export function Layout() {
           </div>
         </header>
 
-        <main id="main-content" tabIndex={-1} className="page-frame">
+        <main id="main-content" tabIndex={-1} className="page-frame" ref={currentUser.role === "executive" ? executiveMainRef : undefined}>
           <Outlet />
         </main>
+
+        {currentUser.role === "executive" ? (
+          <nav className="executive-tabbar" aria-label="Executive navigation">
+            {executiveTabs.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={`executive-tab ${isExecutiveTabActive(item.to, location.pathname) ? "active" : ""}`}
+              >
+                <item.icon size={20} aria-hidden="true" />
+                <span>{item.label}</span>
+              </NavLink>
+            ))}
+            <button
+              className={`executive-tab executive-more-tab ${mobileNavOpen ? "active" : ""}`}
+              type="button"
+              aria-label="Open all executive navigation"
+              aria-expanded={mobileNavOpen}
+              onClick={() => setMobileNavOpen(true)}
+            >
+              <Menu size={20} aria-hidden="true" />
+              <span>More</span>
+            </button>
+          </nav>
+        ) : null}
       </div>
     </div>
   );
