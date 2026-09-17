@@ -52,6 +52,7 @@ function createUser(role, suffix, department = role === "technician" ? "Maintena
 
 const executive = createUser("executive", "executive");
 const technician = createUser("technician", "technician");
+const supportingTechnician = createUser("technician", "supporting-technician");
 const kaizenTechnician = createUser("technician", "kaizen-technician", "Kaizen");
 const requester = createUser("requester", "requester");
 const secondRequester = createUser("requester", "requester-two", "SHE");
@@ -182,13 +183,20 @@ assert.throws(
   () => inPlant(() => m.updateWorkOrderStatus(fairTimingOrder.id, { actorId: technician.id, status: "resolved", note: "Repair complete" })),
   /maintenance actual time/i
 );
+assert.throws(
+  () => inPlant(() => m.updateWorkOrderStatus(fairTimingOrder.id, { actorId: technician.id, status: "resolved", note: "Repair complete", maintenanceActualMinutes: 25 })),
+  /supporting technicians/i
+);
 const resolvedFairTimingOrder = inPlant(() => m.updateWorkOrderStatus(fairTimingOrder.id, {
   actorId: technician.id,
   status: "resolved",
   note: "Repair complete",
-  maintenanceActualMinutes: 25
+  maintenanceActualMinutes: 25,
+  supportingTechnicianIds: [supportingTechnician.id]
 }));
 assert.equal(resolvedFairTimingOrder.maintenanceActualMinutes, 25);
+assert.deepEqual(resolvedFairTimingOrder.supportingTechnicianIds, [supportingTechnician.id]);
+assert.equal(inPlant(() => m.getWorkOrderDetail(fairTimingOrder.id)).supportingTechnicians[0]?.id, supportingTechnician.id);
 assert(resolvedFairTimingOrder.maintenanceStartedAt);
 assert(resolvedFairTimingOrder.resolvedAt);
 const extendedDowntimeStart = new Date(Date.parse(resolvedFairTimingOrder.resolvedAt) - 2 * 60 * 60 * 1000).toISOString();

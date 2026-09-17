@@ -169,6 +169,7 @@ export function migrate() {
       status TEXT NOT NULL,
       requesterId TEXT NOT NULL,
       assignedToId TEXT,
+      supportingTechnicianIds TEXT NOT NULL DEFAULT '[]',
       dueDate TEXT,
       completionNote TEXT,
       maintenanceActualMinutes INTEGER,
@@ -550,6 +551,7 @@ export function migrate() {
   addWorkOrderColumnIfMissing(workOrderColumns, "issueDescription", "TEXT");
   addWorkOrderColumnIfMissing(workOrderColumns, "maintenanceActualMinutes", "INTEGER");
   addWorkOrderColumnIfMissing(workOrderColumns, "productionDowntimeReason", "TEXT");
+  addWorkOrderColumnIfMissing(workOrderColumns, "supportingTechnicianIds", "TEXT NOT NULL DEFAULT '[]'");
 
   db.prepare("UPDATE work_orders SET workDate = COALESCE(workDate, substr(createdAt, 1, 10)) WHERE workDate IS NULL").run();
   db.prepare("UPDATE work_orders SET shiftGroup = COALESCE(shiftGroup, 'A') WHERE shiftGroup IS NULL").run();
@@ -3309,6 +3311,7 @@ function workOrderSheetRow(workOrderId: string) {
     "Total Queue Time": elapsedMinutes(detail.createdAt, repairStartedAt),
     "System Repair Elapsed": elapsedMinutes(repairStartedAt, resolvedAt),
     "Maintenance Actual": detail.maintenanceActualMinutes ?? "",
+    "Maintenance Team": [detail.assignedTo?.name, ...detail.supportingTechnicians.map((technician) => technician.name)].filter(Boolean).join(" | "),
     "Downtime Reason": detail.productionDowntimeReason || "",
     Status: workOrderStatusLabels[detail.status],
     MaintenanceBy: detail.assignedTo?.name || "",
@@ -3437,8 +3440,25 @@ async function runWorkOrderSyncQueue(actorId?: string): Promise<WorkOrderSyncRes
   };
 }
 
+type StoredWorkOrder = Omit<WorkOrder, "supportingTechnicianIds"> & { supportingTechnicianIds: string | string[] | null };
+
+function hydrateWorkOrderTeam(workOrder: StoredWorkOrder): WorkOrder {
+  let supportingTechnicianIds: string[] = [];
+  if (Array.isArray(workOrder.supportingTechnicianIds)) {
+    supportingTechnicianIds = workOrder.supportingTechnicianIds;
+  } else if (workOrder.supportingTechnicianIds) {
+    try {
+      const parsed = JSON.parse(workOrder.supportingTechnicianIds) as unknown;
+      if (Array.isArray(parsed)) supportingTechnicianIds = parsed.filter((id): id is string => typeof id === "string");
+    } catch {
+      supportingTechnicianIds = [];
+    }
+  }
+  return { ...workOrder, supportingTechnicianIds };
+}
+
 export function listWorkOrders(actor?: User): WorkOrder[] {
-  const workOrders = rows<WorkOrder>(db.prepare(`
+  const workOrders = rows<StoredWorkOrder>(db.prepare(`
     SELECT wo.*,
       (SELECT activity.createdAt FROM scoped_work_order_activities activity
        WHERE activity.workOrderId = wo.id AND activity.action = 'started'
@@ -3451,7 +3471,7 @@ export function listWorkOrders(actor?: User): WorkOrder[] {
        ORDER BY activity.createdAt DESC LIMIT 1) AS closedAt
     FROM scoped_work_orders wo
     ORDER BY wo.updatedAt DESC
-  `).all());
+  `).all()).map(hydrateWorkOrderTeam);
   if (!actor) return workOrders;
   if (actor.role === "requester") return workOrders;
   if (actor.role === "technician") return workOrders.filter((workOrder) => technicianCanAccessWorkOrder(actor, workOrder));
@@ -3489,13 +3509,14 @@ export function getWorkOrder(id: string): WorkOrder {
     throw new Error("Work order not found");
   }
 
-  return row<WorkOrder>(workOrder);
+  return hydrateWorkOrderTeam(row<StoredWorkOrder>(workOrder));
 }
 
 export function getWorkOrderDetail(id: string): WorkOrderDetail {
   const workOrder = getWorkOrder(id);
   const requester = getUser(workOrder.requesterId);
   const assignedTo = workOrder.assignedToId ? getUser(workOrder.assignedToId) : null;
+  const supportingTechnicians = workOrder.supportingTechnicianIds.map((userId) => getUser(userId));
   const section = getOptionalSection(workOrder.sectionId);
   const machine = getOptionalMachine(workOrder.machineId);
   const issueCategory = getOptionalIssueCategory(workOrder.issueCategoryId);
@@ -3506,7 +3527,7 @@ export function getWorkOrderDetail(id: string): WorkOrderDetail {
     db.prepare("SELECT * FROM scoped_work_order_attachments WHERE workOrderId = ? ORDER BY createdAt DESC").all(id)
   );
 
-  return { ...workOrder, requester, assignedTo, section, machine, issueCategory, activities, attachments };
+  return { ...workOrder, requester, assignedTo, supportingTechnicians, section, machine, issueCategory, activities, attachments };
 }
 
 export function createWorkOrder(input: CreateWorkOrderInput): WorkOrder {
@@ -3703,6 +3724,18 @@ export function updateWorkOrderStatus(id: string, input: UpdateWorkOrderStatusIn
     if (!Number.isInteger(input.maintenanceActualMinutes) || Number(input.maintenanceActualMinutes) < 1 || Number(input.maintenanceActualMinutes) > 10080) {
       throw new Error("Enter maintenance actual time between 1 minute and 7 days before resolving.");
     }
+
+    const supportingTechnicianIds = [...new Set((input.supportingTechnicianIds || []).filter(Boolean))]
+      .filter((userId) => userId !== assignedToId);
+    if (supportingTechnicianIds.length < 1 || supportingTechnicianIds.length > 3) {
+      throw new Error("Select 1 to 3 supporting technicians before resolving.");
+    }
+    for (const userId of supportingTechnicianIds) {
+      const technician = getUser(userId);
+      if (technician.role !== "technician" || !userPlants(technician).includes(current.plantId)) {
+        throw new Error("Every supporting person must be a technician with access to this plant.");
+      }
+    }
   }
 
   if (input.status === "closed" && current.responsibleDepartment === "Production") {
@@ -3714,15 +3747,18 @@ export function updateWorkOrderStatus(id: string, input: UpdateWorkOrderStatusIn
 
   const completionNote = input.status === "resolved" ? trimmedNote : current.completionNote;
   const maintenanceActualMinutes = input.status === "resolved" ? Number(input.maintenanceActualMinutes) : current.maintenanceActualMinutes;
+  const supportingTechnicianIds = input.status === "resolved"
+    ? [...new Set((input.supportingTechnicianIds || []).filter(Boolean))].filter((userId) => userId !== assignedToId)
+    : current.supportingTechnicianIds;
   const savedProductionDowntimeReason = input.status === "closed" && current.responsibleDepartment === "Production" && productionDowntimeReason
     ? productionDowntimeReason
     : current.productionDowntimeReason;
 
   db.prepare(`
     UPDATE work_orders
-    SET status = ?, assignedToId = ?, completionNote = ?, maintenanceActualMinutes = ?, productionDowntimeReason = ?, updatedAt = ?
+    SET status = ?, assignedToId = ?, completionNote = ?, maintenanceActualMinutes = ?, supportingTechnicianIds = ?, productionDowntimeReason = ?, updatedAt = ?
     WHERE id = ?
-  `).run(input.status, assignedToId, completionNote, maintenanceActualMinutes, savedProductionDowntimeReason, updatedAt, id);
+  `).run(input.status, assignedToId, completionNote, maintenanceActualMinutes, JSON.stringify(supportingTechnicianIds), savedProductionDowntimeReason, updatedAt, id);
 
   const action = statusToAction(input.status);
   addActivity(id, input.actorId, action, input.status, trimmedNote || `Status changed to ${input.status}.`);
@@ -4467,6 +4503,7 @@ export function validateStatusInput(body: Partial<UpdateWorkOrderStatusInput>): 
     note: body.note ? String(body.note) : "",
     assignedToId: body.assignedToId,
     maintenanceActualMinutes: body.maintenanceActualMinutes == null ? null : Number(body.maintenanceActualMinutes),
+    supportingTechnicianIds: Array.isArray(body.supportingTechnicianIds) ? body.supportingTechnicianIds.map(String) : undefined,
     productionDowntimeReason: body.productionDowntimeReason ? String(body.productionDowntimeReason) : null
   };
 }

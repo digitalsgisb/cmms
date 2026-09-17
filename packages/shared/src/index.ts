@@ -216,6 +216,7 @@ export interface WorkOrder {
   status: WorkOrderStatus;
   requesterId: string;
   assignedToId: string | null;
+  supportingTechnicianIds: string[];
   dueDate: string | null;
   completionNote: string | null;
   maintenanceActualMinutes: number | null;
@@ -279,6 +280,7 @@ export interface NotificationRecord {
 export interface WorkOrderDetail extends WorkOrder {
   requester: User;
   assignedTo: User | null;
+  supportingTechnicians: User[];
   section: Section | null;
   machine: Machine | null;
   issueCategory: IssueCategory | null;
@@ -393,6 +395,7 @@ export interface UpdateWorkOrderStatusInput {
   note: string;
   assignedToId?: string | null;
   maintenanceActualMinutes?: number | null;
+  supportingTechnicianIds?: string[];
   productionDowntimeReason?: string | null;
 }
 

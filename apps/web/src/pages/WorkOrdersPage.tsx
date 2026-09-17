@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle2, Clock3, Eye, Layers3, Pencil, Plus, Search, Trash2, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import type { KeyboardEvent, MouseEvent } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import type { MasterData, User, WorkOrder, WorkOrderStatus } from "@sugi-cmms/shared";
 import { workOrderDepartmentForUser, workOrderStatusLabels, workOrderTypeLabels } from "@sugi-cmms/shared";
 import { api } from "../api/client";
@@ -394,6 +395,14 @@ function ClosedWorkOrderHistory({
   canManage: boolean;
   onDelete: (workOrder: WorkOrder) => void;
 }) {
+  const navigate = useNavigate();
+  function openClosedWorkOrder(event: MouseEvent | KeyboardEvent, workOrder: WorkOrder) {
+    if (event.target instanceof HTMLElement && event.target.closest("a, button")) return;
+    if ("key" in event && event.key !== "Enter" && event.key !== " ") return;
+    if ("key" in event) event.preventDefault();
+    navigate(`/work-orders/${workOrder.id}`);
+  }
+
   return (
     <section className="requester-subsection closed-work-order-history">
       <div className="subsection-heading">
@@ -418,7 +427,7 @@ function ClosedWorkOrderHistory({
           </thead>
           <tbody>
             {workOrders.map((workOrder) => (
-              <tr key={workOrder.id}>
+              <tr key={workOrder.id} className="closed-history-row-interactive" role="link" tabIndex={0} aria-label={`Open closed work order ${workOrder.number}`} onClick={(event) => openClosedWorkOrder(event, workOrder)} onKeyDown={(event) => openClosedWorkOrder(event, workOrder)}>
                 <td data-label="Work order">
                   <Link className="closed-history-number" to={`/work-orders/${workOrder.id}`}>
                     <strong>{workOrder.number}</strong>

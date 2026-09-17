@@ -59,6 +59,7 @@ export function TechnicianPage() {
   const [resolveHours, setResolveHours] = useState("");
   const [resolveMinutes, setResolveMinutes] = useState("");
   const [resolveFiles, setResolveFiles] = useState<FileList | null>(null);
+  const [resolveSupportingTechnicianIds, setResolveSupportingTechnicianIds] = useState<string[]>([]);
   const [resolveError, setResolveError] = useState("");
   const [liveArrival, setLiveArrival] = useState<{ id: string; number: string; title: string } | null>(null);
   const [activeQueueTab, setActiveQueueTab] = useState<"new" | "mine" | "team" | "history">("new");
@@ -147,6 +148,12 @@ export function TechnicianPage() {
       return haystack.includes(query);
     });
   }, [completedJobs, historySearch, historyType]);
+  const resolveTeamCandidates = useMemo(
+    () => resolveTarget
+      ? users.filter((user) => user.role === "technician" && user.id !== resolveTarget.assignedToId && (user.plantAccess === "both" || user.plantAccess === resolveTarget.plantId))
+      : [],
+    [resolveTarget, users]
+  );
   useEffect(() => {
     if (!workOrdersReady || hasSelectedInitialQueueTabRef.current) return;
     const hasAssignedWork = liveWorkOrders.some((workOrder) =>
@@ -286,7 +293,18 @@ export function TechnicianPage() {
     setResolveHours("");
     setResolveMinutes("");
     setResolveFiles(null);
+    setResolveSupportingTechnicianIds(workOrder.supportingTechnicianIds || []);
     setResolveError("");
+  }
+
+  function toggleSupportingTechnician(userId: string) {
+    setResolveSupportingTechnicianIds((current) =>
+      current.includes(userId)
+        ? current.filter((id) => id !== userId)
+        : current.length < 3
+          ? [...current, userId]
+          : current
+    );
   }
 
   async function submitResolve(event: FormEvent) {
@@ -314,6 +332,11 @@ export function TechnicianPage() {
       return;
     }
 
+    if (resolveSupportingTechnicianIds.length < 1 || resolveSupportingTechnicianIds.length > 3) {
+      setResolveError("Select 1 to 3 supporting technicians who worked on this repair.");
+      return;
+    }
+
     setBusyId(resolveTarget.id);
     setBusyAction("resolved");
     setSubmitting(true);
@@ -325,13 +348,15 @@ export function TechnicianPage() {
         actorId: currentUser.id,
         note: repairSummary,
         assignedToId: resolveTarget.assignedToId,
-        maintenanceActualMinutes
+        maintenanceActualMinutes,
+        supportingTechnicianIds: resolveSupportingTechnicianIds
       });
       setResolveTarget(null);
       setResolveNote("");
       setResolveHours("");
       setResolveMinutes("");
       setResolveFiles(null);
+      setResolveSupportingTechnicianIds([]);
       setSubmitting(false);
       await waitForActionMotion();
       const scrollX = window.scrollX;
@@ -539,8 +564,24 @@ export function TechnicianPage() {
             </div>
 
             <p className="resolve-modal-copy">
-              Upload the completion photo and add a short repair remark before this work order goes to requester verification.
+              Confirm your repair team, then add the actual time, completion photo, and short repair remark.
             </p>
+
+            <fieldset className="resolve-team-field">
+              <legend><UsersRound size={17} /> Repair team</legend>
+              <p><strong>{technicianName(resolveTarget.assignedToId)}</strong> is the lead. Choose 1–3 technicians who worked with you.</p>
+              <div className="resolve-team-options">
+                {resolveTeamCandidates.map((technician) => {
+                  const selected = resolveSupportingTechnicianIds.includes(technician.id);
+                  return <label key={technician.id} className={selected ? "selected" : ""}>
+                    <input type="checkbox" checked={selected} disabled={!selected && resolveSupportingTechnicianIds.length >= 3} onChange={() => toggleSupportingTechnician(technician.id)} />
+                    <span><strong>{technician.name}</strong><small>{technician.title || "Technician"}</small></span>
+                    {selected ? <CheckCircle2 size={16} /> : null}
+                  </label>;
+                })}
+              </div>
+              <small className="resolve-team-count">{resolveSupportingTechnicianIds.length ? `${1 + resolveSupportingTechnicianIds.length} of 4 team members recorded` : "Select at least 1 more · 1 of 4 recorded"}</small>
+            </fieldset>
 
             <label className="resolve-field">
               Short repair remarks
@@ -580,7 +621,7 @@ export function TechnicianPage() {
                 tone="resolve"
                 busy={submitting && busyAction === "resolved"}
                 busyLabel="Resolving..."
-                disabled={submitting || !resolveNote.trim() || !resolveFiles || resolveFiles.length === 0 || (Number(resolveHours) || 0) * 60 + (Number(resolveMinutes) || 0) < 1}
+                disabled={submitting || resolveSupportingTechnicianIds.length < 1 || !resolveNote.trim() || !resolveFiles || resolveFiles.length === 0 || (Number(resolveHours) || 0) * 60 + (Number(resolveMinutes) || 0) < 1}
               >
                 Confirm Resolve
               </ActionButton>

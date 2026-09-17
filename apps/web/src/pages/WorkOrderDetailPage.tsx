@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, CheckCircle2, ClipboardCopy, Clock3, ExternalLink, ImagePlus, MessageSquare, PackageOpen, Pencil, RotateCcw, ShieldCheck, TimerReset, Trash2, Wrench } from "lucide-react";
+import { ArrowLeft, Check, CheckCircle2, ClipboardCopy, Clock3, ExternalLink, ImagePlus, MessageSquare, PackageOpen, Pencil, RotateCcw, ShieldCheck, TimerReset, Trash2, UsersRound, Wrench } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -56,6 +56,7 @@ export function WorkOrderDetailPage() {
   const [resolveHours, setResolveHours] = useState("");
   const [resolveMinutes, setResolveMinutes] = useState("");
   const [resolveFiles, setResolveFiles] = useState<FileList | null>(null);
+  const [resolveSupportingTechnicianIds, setResolveSupportingTechnicianIds] = useState<string[]>([]);
   const [resolveError, setResolveError] = useState("");
   const [busy, setBusy] = useState(false);
   const [busyAction, setBusyAction] = useState("");
@@ -197,8 +198,19 @@ export function WorkOrderDetailPage() {
     setResolveHours("");
     setResolveMinutes("");
     setResolveFiles(null);
+    setResolveSupportingTechnicianIds(detail?.supportingTechnicianIds || []);
     setResolveError("");
     setResolveDialogOpen(true);
+  }
+
+  function toggleSupportingTechnician(userId: string) {
+    setResolveSupportingTechnicianIds((current) =>
+      current.includes(userId)
+        ? current.filter((id) => id !== userId)
+        : current.length < 3
+          ? [...current, userId]
+          : current
+    );
   }
 
   async function submitResolve(event: FormEvent) {
@@ -226,6 +238,11 @@ export function WorkOrderDetailPage() {
       return;
     }
 
+    if (resolveSupportingTechnicianIds.length < 1 || resolveSupportingTechnicianIds.length > 3) {
+      setResolveError("Select 1 to 3 supporting technicians who worked on this repair.");
+      return;
+    }
+
     setBusy(true);
     setBusyAction("resolved");
     setResolveError("");
@@ -236,13 +253,15 @@ export function WorkOrderDetailPage() {
         actorId: currentUser.id,
         note: repairSummary,
         assignedToId: detail.assignedToId,
-        maintenanceActualMinutes
+        maintenanceActualMinutes,
+        supportingTechnicianIds: resolveSupportingTechnicianIds
       });
       setNote("");
       setResolveNote("");
       setResolveHours("");
       setResolveMinutes("");
       setResolveFiles(null);
+      setResolveSupportingTechnicianIds([]);
       setResolveDialogOpen(false);
       setBusy(false);
       await waitForActionMotion();
@@ -367,6 +386,60 @@ export function WorkOrderDetailPage() {
   const visualStatus = ["open", "acknowledged", "in_progress", "pending_material", "returned", "resolved", "closed", "cancelled"].includes(busyAction)
     ? busyAction as WorkOrderStatus
     : detail.status;
+  const supportingCandidates = users.filter((user) =>
+    user.role === "technician" &&
+    user.id !== detail.assignedToId &&
+    (user.plantAccess === "both" || user.plantAccess === detail.plantId)
+  );
+  const imageGroups = [
+    {
+      key: "before",
+      title: "Before repair",
+      copy: "Problem and condition before maintenance",
+      attachments: detail.attachments.filter((attachment) => ["issue", "before"].includes(attachment.kind))
+    },
+    {
+      key: "after",
+      title: "After repair",
+      copy: "Completed work and final condition",
+      attachments: detail.attachments.filter((attachment) => attachment.kind === "after")
+    },
+    {
+      key: "updates",
+      title: "Progress & other",
+      copy: "Progress, return evidence, and general photos",
+      attachments: detail.attachments.filter((attachment) => !["issue", "before", "after"].includes(attachment.kind))
+    }
+  ];
+
+  const workOrderBriefPanel = (
+    <div className={`section-panel detail-summary-panel ${!isTechnician ? "work-order-brief-top" : ""}`}>
+      <div className="detail-heading">
+        <div>
+          <h2>{isTechnician ? "Job Information" : "Work Order Brief"}</h2>
+          <span>{detail.number}</span>
+        </div>
+        <span>{formatDateTime(detail.createdAt)}</span>
+      </div>
+      <p className="detail-description">{detail.description}</p>
+      <dl className="detail-grid">
+        <div><dt>Machine</dt><dd>{detail.machineName || detail.assetName}</dd></div>
+        <div><dt>Section</dt><dd>{detail.location}</dd></div>
+        <div><dt>Area</dt><dd>{detail.area}</dd></div>
+        <div><dt>Reported by</dt><dd>{detail.reportedByName}</dd></div>
+        <div className="technician-secondary-detail"><dt>Reported by department</dt><dd>{detail.reportedByDepartment}</dd></div>
+        <div className="technician-secondary-detail"><dt>Responsible department</dt><dd>{detail.responsibleDepartment}</dd></div>
+        <div className="technician-secondary-detail"><dt>Work date</dt><dd>{formatDate(detail.workDate)}</dd></div>
+        {detail.responsibleDepartment === "Production" && detail.shiftGroup !== "N/A" ? <div className="technician-secondary-detail"><dt>Shift</dt><dd>{detail.shiftGroup}</dd></div> : null}
+        <div><dt>Issue category</dt><dd>{detail.issueCategoryName || detail.issueCategory?.name || "Other"}</dd></div>
+        <div className="technician-secondary-detail"><dt>Lead technician</dt><dd>{detail.assignedTo?.name || "Unassigned"}</dd></div>
+        <div className="technician-secondary-detail"><dt>Supporting team</dt><dd>{detail.supportingTechnicians.length ? detail.supportingTechnicians.map((technician) => technician.name).join(", ") : "Recorded when resolved"}</dd></div>
+        <div className="technician-secondary-detail"><dt>Requester account</dt><dd>{detail.requester.name}</dd></div>
+        <div className="technician-secondary-detail"><dt>Updated</dt><dd>{formatDateTime(detail.updatedAt)}</dd></div>
+        {detail.productionDowntimeReason ? <div className="technician-secondary-detail"><dt>Why it took longer</dt><dd>{detail.productionDowntimeReason}</dd></div> : null}
+      </dl>
+    </div>
+  );
 
   async function copyGuestTrackingLink() {
     if (!guestTrackingUrl) return;
@@ -446,7 +519,9 @@ export function WorkOrderDetailPage() {
         </section>
       ) : null}
 
-      {!isTechnician ? <div className="timer-grid">
+      {!isTechnician ? workOrderBriefPanel : null}
+
+      {!isTechnician ? <section className="work-order-timing-strip" aria-label="Work order timing">
         <article className="timer-card primary">
           <TimerReset size={18} aria-hidden="true" />
           <span>Total time</span>
@@ -472,78 +547,11 @@ export function WorkOrderDetailPage() {
           <span>Verification wait</span>
           <strong>{resolvedAt ? formatDuration(resolvedAt, closedAt || timerNow) : "Not ready"}</strong>
         </article>
-      </div> : null}
+      </section> : null}
 
       <div className="detail-layout">
         <div className="detail-main">
-          <div className="section-panel detail-summary-panel">
-            <div className="detail-heading">
-              <div>
-                <h2>{isTechnician ? "Job Information" : "Work Order Brief"}</h2>
-                <span>{detail.number}</span>
-              </div>
-              <span>{formatDateTime(detail.createdAt)}</span>
-            </div>
-            <p className="detail-description">{detail.description}</p>
-              <dl className="detail-grid">
-                <div>
-                  <dt>Machine</dt>
-                  <dd>{detail.machineName || detail.assetName}</dd>
-                </div>
-                <div>
-                  <dt>Section</dt>
-                  <dd>{detail.location}</dd>
-                </div>
-                <div>
-                  <dt>Area</dt>
-                  <dd>{detail.area}</dd>
-                </div>
-                <div>
-                  <dt>Reported by</dt>
-                  <dd>{detail.reportedByName}</dd>
-                </div>
-                <div className="technician-secondary-detail">
-                  <dt>Reported by department</dt>
-                  <dd>{detail.reportedByDepartment}</dd>
-                </div>
-                <div className="technician-secondary-detail">
-                  <dt>Responsible department</dt>
-                  <dd>{detail.responsibleDepartment}</dd>
-                </div>
-                <div className="technician-secondary-detail">
-                  <dt>Work date</dt>
-                  <dd>{formatDate(detail.workDate)}</dd>
-                </div>
-                {detail.responsibleDepartment === "Production" && detail.shiftGroup !== "N/A" ? (
-                  <div className="technician-secondary-detail">
-                    <dt>Shift</dt>
-                    <dd>{detail.shiftGroup}</dd>
-                  </div>
-                ) : null}
-                <div>
-                  <dt>Issue category</dt>
-                  <dd>{detail.issueCategoryName || detail.issueCategory?.name || "Other"}</dd>
-                </div>
-                <div className="technician-secondary-detail">
-                  <dt>Assigned</dt>
-                  <dd>{detail.assignedTo?.name || "Unassigned"}</dd>
-                </div>
-                <div className="technician-secondary-detail">
-                  <dt>Requester account</dt>
-                  <dd>{detail.requester.name}</dd>
-                </div>
-                <div className="technician-secondary-detail">
-                  <dt>Updated</dt>
-                  <dd>{formatDateTime(detail.updatedAt)}</dd>
-                </div>
-                {detail.productionDowntimeReason ? (
-                  <div className="technician-secondary-detail">
-                    <dt>Why it took longer</dt>
-                    <dd>{detail.productionDowntimeReason}</dd>
-                  </div>
-                ) : null}
-              </dl>
-          </div>
+          {isTechnician ? workOrderBriefPanel : null}
 
           <div className="section-panel detail-activity-panel">
             <div className="section-header">
@@ -570,18 +578,31 @@ export function WorkOrderDetailPage() {
           <div className="section-panel detail-images-panel">
             <div className="section-header">
               <div>
-                <h2>Images</h2>
-                <span>{detail.attachments.length} uploaded</span>
+                <h2>Repair photos</h2>
+                <span>Compare the condition before and after maintenance · {detail.attachments.length} uploaded</span>
               </div>
             </div>
-            <div className="attachment-grid">
-              {detail.attachments.map((attachment) => (
-                <a key={attachment.id} className="attachment-tile" href={mediaUrl(attachment.url)} target="_blank" rel="noreferrer">
-                  <img src={mediaUrl(attachment.url)} alt={attachment.originalName} />
-                  <span>{attachment.kind.replace("_", " ")}</span>
-                </a>
+            <div className="repair-photo-groups">
+              {imageGroups.filter((group) => group.key !== "updates" || group.attachments.length > 0).map((group) => (
+                <section key={group.key} className={`repair-photo-group photo-group-${group.key}`}>
+                  <header>
+                    <span>{group.key === "after" ? <CheckCircle2 size={18} /> : <ImagePlus size={18} />}</span>
+                    <div><strong>{group.title}</strong><small>{group.copy}</small></div>
+                    <b>{group.attachments.length}</b>
+                  </header>
+                  {group.attachments.length ? (
+                    <div className="attachment-grid">
+                      {group.attachments.map((attachment) => (
+                        <a key={attachment.id} className="attachment-tile" href={mediaUrl(attachment.url)} target="_blank" rel="noreferrer">
+                          <img src={mediaUrl(attachment.url)} alt={`${group.title}: ${attachment.originalName}`} />
+                          <span>{attachment.kind.replace("_", " ")}</span>
+                          <small>{attachment.originalName}</small>
+                        </a>
+                      ))}
+                    </div>
+                  ) : <p className="detail-images-empty">No {group.title.toLowerCase()} photo yet.</p>}
+                </section>
               ))}
-              {detail.attachments.length === 0 ? <p className="detail-images-empty">No images uploaded for this job.</p> : null}
             </div>
           </div>
         </div>
@@ -738,7 +759,8 @@ export function WorkOrderDetailPage() {
 
           {canManageWorkOrder ? (
             <form className="section-panel action-panel" onSubmit={assign}>
-              <h2>Assignment</h2>
+              <h2>Lead Technician</h2>
+              <p className="assignment-help">The lead accepts and owns this job. Supporting technicians are recorded when the team resolves it.</p>
               <select value={assignedToId} onChange={(event) => setAssignedToId(event.target.value)}>
                 <option value="">Unassigned</option>
                 {technicians.map((technician) => (
@@ -748,7 +770,7 @@ export function WorkOrderDetailPage() {
                 ))}
               </select>
               <ActionButton type="submit" tone="assign" busy={busy && busyAction === "assign"} busyLabel="Assigning..." disabled={actionLocked || !assignedToId}>
-                Assign
+                Assign Lead
               </ActionButton>
             </form>
           ) : null}
@@ -805,8 +827,24 @@ export function WorkOrderDetailPage() {
             </div>
 
             <p className="resolve-modal-copy">
-              Add the repair summary and completion photo before this work order goes to requester verification.
+              Confirm who worked on the machine, then add the repair summary, actual time, and completion photo.
             </p>
+
+            <fieldset className="resolve-team-field">
+              <legend><UsersRound size={17} /> Repair team</legend>
+              <p><strong>{detail.assignedTo?.name || "Lead technician"}</strong> is the lead. Choose 1–3 other technicians who worked with them.</p>
+              <div className="resolve-team-options">
+                {supportingCandidates.map((technician) => {
+                  const selected = resolveSupportingTechnicianIds.includes(technician.id);
+                  return <label key={technician.id} className={selected ? "selected" : ""}>
+                    <input type="checkbox" checked={selected} disabled={!selected && resolveSupportingTechnicianIds.length >= 3} onChange={() => toggleSupportingTechnician(technician.id)} />
+                    <span><strong>{technician.name}</strong><small>{technician.title || "Technician"}</small></span>
+                    {selected ? <Check size={16} /> : null}
+                  </label>;
+                })}
+              </div>
+              <small className="resolve-team-count">{resolveSupportingTechnicianIds.length ? `${1 + resolveSupportingTechnicianIds.length} of 4 team members recorded` : "Select at least 1 more · 1 of 4 recorded"}</small>
+            </fieldset>
 
             <label className="resolve-field">
               Repair / replacement summary
@@ -846,7 +884,7 @@ export function WorkOrderDetailPage() {
                 tone="resolve"
                 busy={busy && busyAction === "resolved"}
                 busyLabel="Resolving..."
-                disabled={busy || !resolveNote.trim() || !resolveFiles || resolveFiles.length === 0 || (Number(resolveHours) || 0) * 60 + (Number(resolveMinutes) || 0) < 1}
+                disabled={busy || resolveSupportingTechnicianIds.length < 1 || !resolveNote.trim() || !resolveFiles || resolveFiles.length === 0 || (Number(resolveHours) || 0) * 60 + (Number(resolveMinutes) || 0) < 1}
               >
                 Confirm Resolve
               </ActionButton>
