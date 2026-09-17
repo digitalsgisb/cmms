@@ -45,7 +45,7 @@ const executiveTabs: Array<{ to: string; label: string; icon: typeof LayoutDashb
   { to: "/", label: "Home", icon: LayoutDashboard },
   { to: "/work-orders", label: "Work", icon: ClipboardCheck },
   { to: "/preventive-maintenance", label: "PM", icon: ShieldCheck },
-  { to: "/performance", label: "KPI", icon: ChartNoAxesCombined }
+  { to: "/spare-parts", label: "Parts", icon: Package }
 ];
 
 function isTechnicianTabActive(tabPath: string, pathname: string) {
@@ -641,7 +641,11 @@ export function Layout() {
         </header>
 
         <main id="main-content" tabIndex={-1} className="page-frame" ref={currentUser.role === "executive" ? executiveMainRef : undefined}>
-          <Outlet />
+          {currentUser.role === "executive" ? (
+            <div className="executive-route-stage" key={location.pathname}>
+              <Outlet />
+            </div>
+          ) : <Outlet />}
         </main>
 
         {currentUser.role === "executive" ? (
