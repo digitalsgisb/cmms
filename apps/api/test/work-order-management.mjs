@@ -157,6 +157,31 @@ assert(maintenanceVisible.some((order) => order.id === projectOrder.id));
 assert(!kaizenVisible.some((order) => order.id === maintenanceOrder.id));
 assert(kaizenVisible.some((order) => order.id === kaizenOrder.id));
 assert(kaizenVisible.some((order) => order.id === projectOrder.id));
+const executiveTeamEdit = inPlant(() => m.updateWorkOrder(maintenanceOrder.id, m.validateUpdateWorkOrderInput({
+  actorId: executive.id,
+  type: maintenanceOrder.type,
+  priority: maintenanceOrder.priority,
+  dueDate: maintenanceOrder.dueDate,
+  workDate: maintenanceOrder.workDate,
+  shiftGroup: maintenanceOrder.shiftGroup,
+  sectionId: maintenanceOrder.sectionId,
+  machineId: maintenanceOrder.machineId,
+  area: maintenanceOrder.area,
+  machineName: maintenanceOrder.machineName,
+  reportedByName: maintenanceOrder.reportedByName,
+  reportedByDepartment: maintenanceOrder.reportedByDepartment,
+  responsibleDepartment: maintenanceOrder.responsibleDepartment,
+  issueCategoryId: maintenanceOrder.issueCategoryId,
+  issueCategoryName: maintenanceOrder.issueCategoryName,
+  issueDescription: maintenanceOrder.issueDescription,
+  assignedToId: technician.id,
+  supportingTechnicianIds: [kaizenTechnician.id],
+  productionDowntimeReason: "Executive corrected the brief"
+})));
+assert.equal(executiveTeamEdit.assignedToId, technician.id);
+assert.deepEqual(executiveTeamEdit.supportingTechnicianIds, [kaizenTechnician.id]);
+assert.equal(executiveTeamEdit.productionDowntimeReason, "Executive corrected the brief");
+assert.equal(inPlant(() => m.getWorkOrderDetail(maintenanceOrder.id)).supportingTechnicians[0]?.id, kaizenTechnician.id);
 assert.throws(() => inPlant(() => m.claimWorkOrder(projectOrder.id, technician.id)), /assigned by a coordinator/i);
 assert.throws(() => inPlant(() => m.claimWorkOrder(maintenanceOrder.id, kaizenTechnician.id)), /another technician team/i);
 assert.throws(() => inPlant(() => m.assignWorkOrder(maintenanceOrder.id, kaizenTechnician.id, executive.id)), /team responsible/i);

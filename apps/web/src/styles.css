@@ -13162,3 +13162,251 @@ body,
     grid-template-columns: 1fr;
   }
 }
+
+/* Executive inline editor for the complete work-order brief and maintenance team. */
+.detail-heading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.detail-heading-actions button,
+.brief-cancel-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  border: 1px solid rgba(127, 17, 27, 0.2);
+  border-radius: 9px;
+  color: var(--maroon);
+  background: #fff;
+  padding: 8px 13px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.brief-editor {
+  display: grid;
+  gap: 18px;
+  border: 2px solid rgba(127, 17, 27, 0.16);
+  background: linear-gradient(145deg, #fff, #fff8f8);
+}
+
+.brief-editor-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid #eadcdf;
+  padding-bottom: 14px;
+}
+
+.brief-editor-heading h2,
+.brief-editor-heading p {
+  margin: 0;
+}
+
+.brief-editor-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.brief-editor-heading > div > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.brief-editor-readonly {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.brief-editor-readonly span {
+  display: grid;
+  gap: 3px;
+  border-radius: 9px;
+  color: #5b5056;
+  background: #f5eeee;
+  padding: 10px 12px;
+}
+
+.brief-editor-readonly small {
+  color: #88777f;
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.brief-editor label {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  color: #4b3e45;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.brief-editor :is(input, select, textarea) {
+  width: 100%;
+  min-height: 43px;
+  border: 1px solid #d9cbd0;
+  border-radius: 9px;
+  color: var(--ink);
+  background: #fff;
+  padding: 9px 11px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.brief-editor textarea {
+  min-height: 86px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.brief-editor input[readonly] {
+  color: var(--muted);
+  background: #f4f1f2;
+}
+
+.brief-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 13px;
+}
+
+.brief-editor-reason {
+  grid-column: span 2;
+}
+
+.brief-team-editor {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  border: 1px solid rgba(127, 17, 27, 0.16);
+  border-radius: 12px;
+  background: #fff;
+  padding: 15px;
+}
+
+.brief-team-editor legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 7px;
+  color: var(--maroon);
+  font-weight: 900;
+}
+
+.brief-team-editor > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.brief-team-lead-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px;
+  align-items: end;
+  gap: 12px;
+}
+
+.brief-team-total {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 9px;
+  min-height: 62px;
+  border-radius: 10px;
+  color: #fff;
+  background: linear-gradient(135deg, #7f111b, #b93242);
+  padding: 9px 12px;
+}
+
+.brief-team-total strong {
+  grid-row: 1 / span 2;
+  font-size: 27px;
+}
+
+.brief-team-total span {
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.brief-team-total small {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 9px;
+}
+
+.brief-team-options {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-height: 210px;
+}
+
+.brief-editor-error {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+}
+
+.brief-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  border-top: 1px solid #eadcdf;
+  padding-top: 14px;
+}
+
+.brief-editor-actions button {
+  min-width: 135px;
+}
+
+@media (max-width: 980px) {
+  .brief-editor-grid,
+  .brief-team-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .detail-heading {
+    align-items: flex-start;
+  }
+
+  .detail-heading-actions {
+    align-items: flex-end;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .brief-editor-heading,
+  .brief-editor-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .brief-editor-readonly,
+  .brief-editor-grid,
+  .brief-team-options,
+  .brief-team-lead-row {
+    grid-template-columns: 1fr;
+  }
+
+  .brief-editor-reason {
+    grid-column: auto;
+  }
+
+  .brief-editor-actions button {
+    width: 100%;
+  }
+}

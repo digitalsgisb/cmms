@@ -1,9 +1,9 @@
-import { ArrowLeft, Check, CheckCircle2, ClipboardCopy, Clock3, ExternalLink, ImagePlus, MessageSquare, PackageOpen, Pencil, RotateCcw, ShieldCheck, TimerReset, Trash2, UsersRound, Wrench } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { AlertCircle, ArrowLeft, Check, CheckCircle2, ClipboardCopy, Clock3, ExternalLink, ImagePlus, MessageSquare, PackageOpen, Pencil, RotateCcw, Save, ShieldCheck, TimerReset, Trash2, UsersRound, Wrench, X } from "lucide-react";
+import { FormEvent, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import type { User, WorkOrder, WorkOrderAttachment, WorkOrderActivity, WorkOrderDetail, WorkOrderStatus } from "@sugi-cmms/shared";
-import { longProductionDowntimeMinutes, technicianCanAccessWorkOrder, workOrderStatusLabels, workOrderTypeLabels } from "@sugi-cmms/shared";
+import type { MasterData, ShiftGroup, User, WorkOrder, WorkOrderAttachment, WorkOrderActivity, WorkOrderDepartment, WorkOrderDetail, WorkOrderPriority, WorkOrderStatus, WorkOrderType } from "@sugi-cmms/shared";
+import { longProductionDowntimeMinutes, technicianCanAccessWorkOrder, workOrderDepartments, workOrderStatusLabels, workOrderTypeLabels } from "@sugi-cmms/shared";
 import { api, mediaUrl } from "../api/client";
 import { PriorityBadge, StatusBadge } from "../components/Badges";
 import { ActionButton } from "../components/ActionButton";
@@ -23,6 +23,29 @@ const workflowActionByStatus: Record<WorkOrderStatus, WorkOrderActivity["action"
   cancelled: "cancelled"
 };
 const actionSettleMs = 500;
+const otherBriefOption = "__other__";
+const priorityOptions: WorkOrderPriority[] = ["low", "medium", "high", "critical"];
+
+type BriefDraft = {
+  type: WorkOrderType;
+  priority: WorkOrderPriority;
+  dueDate: string;
+  workDate: string;
+  shiftGroup: ShiftGroup;
+  sectionId: string;
+  machineId: string;
+  machineName: string;
+  area: string;
+  reportedByName: string;
+  reportedByDepartment: string;
+  responsibleDepartment: WorkOrderDepartment;
+  issueCategoryId: string;
+  issueCategoryName: string;
+  issueDescription: string;
+  assignedToId: string;
+  supportingTechnicianIds: string[];
+  productionDowntimeReason: string;
+};
 
 function waitForActionMotion() {
   return new Promise((resolve) => window.setTimeout(resolve, actionSettleMs));
@@ -48,7 +71,6 @@ export function WorkOrderDetailPage() {
   const [detail, setDetail] = useState<WorkOrderDetail | null>(null);
   const [note, setNote] = useState("");
   const [comment, setComment] = useState("");
-  const [assignedToId, setAssignedToId] = useState("");
   const [uploadKind, setUploadKind] = useState<WorkOrderAttachment["kind"]>("general");
   const [files, setFiles] = useState<FileList | null>(null);
   const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
@@ -64,6 +86,12 @@ export function WorkOrderDetailPage() {
   const [guestTrackingPath, setGuestTrackingPath] = useState("");
   const [guestLinkCopied, setGuestLinkCopied] = useState(false);
   const [showTechnicianTools, setShowTechnicianTools] = useState(false);
+  const [briefEditing, setBriefEditing] = useState(false);
+  const [briefLoading, setBriefLoading] = useState(false);
+  const [briefSaving, setBriefSaving] = useState(false);
+  const [briefError, setBriefError] = useState("");
+  const [briefMasterData, setBriefMasterData] = useState<MasterData>({ sections: [], machines: [], issueCategories: [] });
+  const [briefDraft, setBriefDraft] = useState<BriefDraft | null>(null);
 
   async function loadDetail() {
     if (!id) {
@@ -74,7 +102,6 @@ export function WorkOrderDetailPage() {
     try {
       const nextDetail = await api.workOrder(id);
       setDetail(nextDetail);
-      setAssignedToId(nextDetail.assignedToId || "");
     } catch (error) { setLoadError(error instanceof Error ? error.message : "Couldn’t load this work order."); }
   }
 
@@ -131,7 +158,6 @@ export function WorkOrderDetailPage() {
       activities: current.activities,
       attachments: [...extraAttachments, ...current.attachments]
     }));
-    setAssignedToId(workOrder.assignedToId || "");
   }
 
   async function refreshDetailQuietly() {
@@ -141,15 +167,10 @@ export function WorkOrderDetailPage() {
 
     const nextDetail = await api.workOrder(id);
     updateDetailWithoutJump(() => nextDetail);
-    setAssignedToId(nextDetail.assignedToId || "");
   }
 
   useLiveRefresh(["work-orders"], refreshDetailQuietly, { enabled: Boolean(id) });
 
-  const technicians = useMemo(
-    () => users.filter((user) => user.role === "technician" && (!detail || technicianCanAccessWorkOrder(user, detail))),
-    [detail?.type, users]
-  );
   const canMaintain = currentUser ? ["technician", "executive", "admin", "developer"].includes(currentUser.role) : false;
   const canManageWorkOrder = currentUser ? ["executive", "admin"].includes(currentUser.role) : false;
   const canVerify =
@@ -275,24 +296,103 @@ export function WorkOrderDetailPage() {
     }
   }
 
-  async function assign(event: FormEvent) {
+  async function openBriefEditor() {
+    if (!detail || !canManageWorkOrder) return;
+    setBriefLoading(true);
+    setBriefError("");
+    try {
+      const masterData = await api.masterData();
+      setBriefMasterData(masterData);
+      setBriefDraft({
+        type: detail.type,
+        priority: detail.priority,
+        dueDate: detail.dueDate || "",
+        workDate: detail.workDate,
+        shiftGroup: detail.shiftGroup,
+        sectionId: detail.sectionId || "",
+        machineId: detail.machineId || "",
+        machineName: detail.machineName,
+        area: detail.area,
+        reportedByName: detail.reportedByName,
+        reportedByDepartment: detail.reportedByDepartment,
+        responsibleDepartment: detail.responsibleDepartment,
+        issueCategoryId: detail.issueCategoryId || otherBriefOption,
+        issueCategoryName: detail.issueCategoryId ? "" : detail.issueCategoryName === "Other" ? "" : detail.issueCategoryName,
+        issueDescription: detail.issueDescription,
+        assignedToId: detail.assignedToId || "",
+        supportingTechnicianIds: detail.supportingTechnicianIds,
+        productionDowntimeReason: detail.productionDowntimeReason || ""
+      });
+      setBriefEditing(true);
+    } catch (error) {
+      setBriefError(error instanceof Error ? error.message : "Unable to open the work-order editor.");
+    } finally {
+      setBriefLoading(false);
+    }
+  }
+
+  function toggleBriefSupportingTechnician(userId: string) {
+    setBriefDraft((current) => current ? {
+      ...current,
+      supportingTechnicianIds: current.supportingTechnicianIds.includes(userId)
+        ? current.supportingTechnicianIds.filter((id) => id !== userId)
+        : current.supportingTechnicianIds.length < 3
+          ? [...current.supportingTechnicianIds, userId]
+          : current.supportingTechnicianIds
+    } : current);
+  }
+
+  async function saveBrief(event: FormEvent) {
     event.preventDefault();
-    if (!detail || !currentUser || !assignedToId) {
+    if (!detail || !currentUser || !briefDraft || !canManageWorkOrder) return;
+    const selectedMachine = briefMasterData.machines.find((machine) => machine.id === briefDraft.machineId);
+    const machineName = selectedMachine?.name || briefDraft.machineName.trim();
+    if (!machineName) {
+      setBriefError("Enter the machine, equipment, or place name.");
+      return;
+    }
+    if (!briefDraft.assignedToId && briefDraft.supportingTechnicianIds.length) {
+      setBriefError("Choose a lead technician before adding supporting technicians.");
+      return;
+    }
+    if (["resolved", "closed"].includes(detail.status) && briefDraft.supportingTechnicianIds.length < 1) {
+      setBriefError("Completed work orders must record at least 2 technicians: 1 lead and 1 supporting technician.");
       return;
     }
 
-    setBusy(true);
-    setBusyAction("assign");
+    setBriefSaving(true);
+    setBriefError("");
     try {
-      const updatedWorkOrder = await api.assignWorkOrder(detail.id, assignedToId, currentUser.id, note);
-      setNote("");
-      setBusy(false);
-      await waitForActionMotion();
-      mergeWorkOrder(updatedWorkOrder);
-      void refreshDetailQuietly().catch(console.error);
+      await api.updateWorkOrder(detail.id, {
+        actorId: currentUser.id,
+        type: briefDraft.type,
+        priority: briefDraft.priority,
+        dueDate: briefDraft.dueDate || null,
+        workDate: briefDraft.workDate,
+        shiftGroup: briefDraft.responsibleDepartment === "Production" ? briefDraft.shiftGroup : "N/A",
+        sectionId: briefDraft.sectionId || null,
+        machineId: selectedMachine?.id || null,
+        area: selectedMachine?.area || briefDraft.area.trim() || "General",
+        machineName,
+        reportedByName: briefDraft.reportedByName,
+        reportedByDepartment: briefDraft.reportedByDepartment,
+        responsibleDepartment: briefDraft.responsibleDepartment,
+        issueCategoryId: briefDraft.issueCategoryId === otherBriefOption ? null : briefDraft.issueCategoryId || null,
+        issueCategoryName: briefDraft.issueCategoryId === otherBriefOption
+          ? briefDraft.issueCategoryName.trim() || "Other"
+          : briefMasterData.issueCategories.find((category) => category.id === briefDraft.issueCategoryId)?.name,
+        issueDescription: briefDraft.issueDescription,
+        assignedToId: briefDraft.assignedToId || null,
+        supportingTechnicianIds: briefDraft.supportingTechnicianIds,
+        productionDowntimeReason: briefDraft.productionDowntimeReason.trim() || null
+      });
+      await refreshDetailQuietly();
+      setBriefEditing(false);
+      setBriefDraft(null);
+    } catch (error) {
+      setBriefError(error instanceof Error ? error.message : "Unable to save the work-order brief.");
     } finally {
-      setBusy(false);
-      setBusyAction("");
+      setBriefSaving(false);
     }
   }
 
@@ -411,15 +511,79 @@ export function WorkOrderDetailPage() {
       attachments: detail.attachments.filter((attachment) => !["issue", "before", "after"].includes(attachment.kind))
     }
   ];
+  const briefSections = briefMasterData.sections.filter((section) => section.active || section.id === briefDraft?.sectionId);
+  const briefMachines = briefMasterData.machines.filter((machine) =>
+    (machine.active || machine.id === briefDraft?.machineId) && machine.sectionId === briefDraft?.sectionId
+  );
+  const briefIssueCategories = briefMasterData.issueCategories.filter((category) => category.active || category.id === briefDraft?.issueCategoryId);
+  const briefLeadCandidates = users.filter((user) =>
+    user.role === "technician" &&
+    (user.plantAccess === "both" || user.plantAccess === detail.plantId) &&
+    technicianCanAccessWorkOrder(user, { type: briefDraft?.type || detail.type })
+  );
+  const briefSupportingCandidates = users.filter((user) =>
+    user.role === "technician" &&
+    user.id !== briefDraft?.assignedToId &&
+    (user.plantAccess === "both" || user.plantAccess === detail.plantId)
+  );
 
-  const workOrderBriefPanel = (
+  const workOrderBriefPanel = briefEditing && briefDraft ? (
+    <form className={`section-panel detail-summary-panel work-order-brief-top brief-editor`} onSubmit={saveBrief}>
+      <div className="brief-editor-heading">
+        <div><p className="eyebrow">Executive edit</p><h2>Edit Work Order Brief</h2><span>{detail.number}</span></div>
+        <button type="button" className="brief-cancel-button" disabled={briefSaving} onClick={() => { setBriefEditing(false); setBriefDraft(null); setBriefError(""); }}><X size={16} />Cancel</button>
+      </div>
+
+      <div className="brief-editor-readonly">
+        <span><small>Requester account</small><strong>{detail.requester.name}</strong></span>
+        <span><small>Last updated</small><strong>{formatDateTime(detail.updatedAt)}</strong></span>
+      </div>
+
+      <label className="brief-editor-description">Issue description<textarea rows={3} required value={briefDraft.issueDescription} onChange={(event) => setBriefDraft({ ...briefDraft, issueDescription: event.target.value })} /></label>
+
+      <div className="brief-editor-grid">
+        <label>Work order type<select value={briefDraft.type} onChange={(event) => setBriefDraft({ ...briefDraft, type: event.target.value as WorkOrderType, assignedToId: "", supportingTechnicianIds: [] })}>{Object.entries(workOrderTypeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <label>Priority<select value={briefDraft.priority} onChange={(event) => setBriefDraft({ ...briefDraft, priority: event.target.value as WorkOrderPriority })}>{priorityOptions.map((priority) => <option key={priority} value={priority}>{priority[0].toUpperCase() + priority.slice(1)}</option>)}</select></label>
+        <label>Work date<input type="date" required value={briefDraft.workDate} onChange={(event) => setBriefDraft({ ...briefDraft, workDate: event.target.value })} /></label>
+        <label>Due date<input type="date" value={briefDraft.dueDate} onChange={(event) => setBriefDraft({ ...briefDraft, dueDate: event.target.value })} /></label>
+        <label>Responsible department<select value={briefDraft.responsibleDepartment} onChange={(event) => setBriefDraft({ ...briefDraft, responsibleDepartment: event.target.value as WorkOrderDepartment, shiftGroup: event.target.value === "Production" ? "A" : "N/A" })}>{workOrderDepartments.map((department) => <option key={department} value={department}>{department}</option>)}</select></label>
+        {briefDraft.responsibleDepartment === "Production" ? <label>Shift<select value={briefDraft.shiftGroup} onChange={(event) => setBriefDraft({ ...briefDraft, shiftGroup: event.target.value as ShiftGroup })}><option value="A">A</option><option value="B">B</option></select></label> : null}
+        <label>Section<select value={briefDraft.sectionId} onChange={(event) => setBriefDraft({ ...briefDraft, sectionId: event.target.value, machineId: "", machineName: "", area: "" })}><option value="">No section / office</option>{briefSections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}</select></label>
+        <label>Machine / equipment<select value={briefDraft.machineId || otherBriefOption} onChange={(event) => { const machineId = event.target.value === otherBriefOption ? "" : event.target.value; const machine = briefMasterData.machines.find((item) => item.id === machineId); setBriefDraft({ ...briefDraft, machineId, machineName: machine?.name || "", area: machine?.area || "" }); }}><option value={otherBriefOption}>Other / unregistered</option>{briefMachines.map((machine) => <option key={machine.id} value={machine.id}>{machine.name}</option>)}</select></label>
+        {!briefDraft.machineId ? <><label>Machine, equipment, or place<input required value={briefDraft.machineName} onChange={(event) => setBriefDraft({ ...briefDraft, machineName: event.target.value })} /></label><label>Area<input value={briefDraft.area} onChange={(event) => setBriefDraft({ ...briefDraft, area: event.target.value })} placeholder="General" /></label></> : <label>Area<input value={briefDraft.area} readOnly /></label>}
+        <label>Reported by<input required value={briefDraft.reportedByName} onChange={(event) => setBriefDraft({ ...briefDraft, reportedByName: event.target.value })} /></label>
+        <label>Reported by department<select required value={briefDraft.reportedByDepartment} onChange={(event) => setBriefDraft({ ...briefDraft, reportedByDepartment: event.target.value })}><option value="">Choose department</option>{briefDraft.reportedByDepartment && !workOrderDepartments.includes(briefDraft.reportedByDepartment as WorkOrderDepartment) ? <option value={briefDraft.reportedByDepartment}>{briefDraft.reportedByDepartment}</option> : null}{workOrderDepartments.map((department) => <option key={department} value={department}>{department}</option>)}</select></label>
+        <label>Issue category<select value={briefDraft.issueCategoryId} onChange={(event) => setBriefDraft({ ...briefDraft, issueCategoryId: event.target.value, issueCategoryName: "" })}>{briefIssueCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}<option value={otherBriefOption}>Others</option></select></label>
+        {briefDraft.issueCategoryId === otherBriefOption ? <label>Specify issue category<input required value={briefDraft.issueCategoryName} onChange={(event) => setBriefDraft({ ...briefDraft, issueCategoryName: event.target.value })} /></label> : null}
+        <label className="brief-editor-reason">Why it took longer<input value={briefDraft.productionDowntimeReason} onChange={(event) => setBriefDraft({ ...briefDraft, productionDowntimeReason: event.target.value })} placeholder="Leave blank if not applicable" /></label>
+      </div>
+
+      <fieldset className="brief-team-editor">
+        <legend><UsersRound size={17} /> Technicians involved</legend>
+        <div className="brief-team-lead-row">
+          <label>Lead technician<select value={briefDraft.assignedToId} onChange={(event) => setBriefDraft({ ...briefDraft, assignedToId: event.target.value, supportingTechnicianIds: briefDraft.supportingTechnicianIds.filter((id) => id !== event.target.value) })}><option value="">Unassigned</option>{briefLeadCandidates.map((technician) => <option key={technician.id} value={technician.id}>{technician.name}</option>)}</select></label>
+          <div className="brief-team-total"><strong>{(briefDraft.assignedToId ? 1 : 0) + briefDraft.supportingTechnicianIds.length}</strong><span>technicians involved</span><small>Maximum 4</small></div>
+        </div>
+        <p>Choose up to 3 supporting technicians. Completed jobs must have at least 1 supporting technician.</p>
+        <div className="resolve-team-options brief-team-options">
+          {briefSupportingCandidates.map((technician) => {
+            const selected = briefDraft.supportingTechnicianIds.includes(technician.id);
+            return <label key={technician.id} className={selected ? "selected" : ""}><input type="checkbox" checked={selected} disabled={!briefDraft.assignedToId || (!selected && briefDraft.supportingTechnicianIds.length >= 3)} onChange={() => toggleBriefSupportingTechnician(technician.id)} /><span><strong>{technician.name}</strong><small>{technician.title || "Technician"}</small></span>{selected ? <Check size={16} /> : null}</label>;
+          })}
+        </div>
+      </fieldset>
+
+      {briefError ? <p className="error-line brief-editor-error" role="alert"><AlertCircle size={16} />{briefError}</p> : null}
+      <div className="brief-editor-actions"><button type="button" className="secondary-action" disabled={briefSaving} onClick={() => { setBriefEditing(false); setBriefDraft(null); setBriefError(""); }}>Cancel</button><button type="submit" className="primary-action" disabled={briefSaving}><Save size={17} />{briefSaving ? "Saving…" : "Save Brief"}</button></div>
+    </form>
+  ) : (
     <div className={`section-panel detail-summary-panel ${!isTechnician ? "work-order-brief-top" : ""}`}>
       <div className="detail-heading">
         <div>
           <h2>{isTechnician ? "Job Information" : "Work Order Brief"}</h2>
           <span>{detail.number}</span>
         </div>
-        <span>{formatDateTime(detail.createdAt)}</span>
+        <div className="detail-heading-actions"><span>{formatDateTime(detail.createdAt)}</span>{canManageWorkOrder && !isTechnician ? <button type="button" disabled={briefLoading} onClick={() => void openBriefEditor()}><Pencil size={15} />{briefLoading ? "Loading…" : "Edit Brief"}</button> : null}</div>
       </div>
       <p className="detail-description">{detail.description}</p>
       <dl className="detail-grid">
@@ -755,24 +919,6 @@ export function WorkOrderDetailPage() {
                 </ActionButton>
               </div>
             </div>
-          ) : null}
-
-          {canManageWorkOrder ? (
-            <form className="section-panel action-panel" onSubmit={assign}>
-              <h2>Lead Technician</h2>
-              <p className="assignment-help">The lead accepts and owns this job. Supporting technicians are recorded when the team resolves it.</p>
-              <select value={assignedToId} onChange={(event) => setAssignedToId(event.target.value)}>
-                <option value="">Unassigned</option>
-                {technicians.map((technician) => (
-                  <option key={technician.id} value={technician.id}>
-                    {technician.name}
-                  </option>
-                ))}
-              </select>
-              <ActionButton type="submit" tone="assign" busy={busy && busyAction === "assign"} busyLabel="Assigning..." disabled={actionLocked || !assignedToId}>
-                Assign Lead
-              </ActionButton>
-            </form>
           ) : null}
 
           {isTechnician ? (

@@ -3624,13 +3624,41 @@ export function updateWorkOrder(id: string, input: UpdateWorkOrderInput): WorkOr
   const location = section?.name || current.location || "Unassigned";
   const responsibleDepartment = normalizeWorkOrderDepartment(input.responsibleDepartment);
   const shiftGroup = responsibleDepartment === "Production" ? (input.shiftGroup === "B" ? "B" : "A") : "N/A";
+  const assignedToId = input.assignedToId === undefined ? current.assignedToId : input.assignedToId;
+  if (assignedToId) {
+    const leadTechnician = getUser(assignedToId);
+    if (leadTechnician.role !== "technician" || !userPlants(leadTechnician).includes(current.plantId) || !technicianCanAccessWorkOrder(leadTechnician, { ...current, type: input.type })) {
+      throw new Error("Select a lead technician from the team responsible for this work-order type.");
+    }
+  }
+  const supportingTechnicianIds = input.supportingTechnicianIds === undefined
+    ? current.supportingTechnicianIds
+    : [...new Set(input.supportingTechnicianIds.filter(Boolean))].filter((userId) => userId !== assignedToId);
+  if (!assignedToId && supportingTechnicianIds.length) {
+    throw new Error("Choose a lead technician before adding supporting technicians.");
+  }
+  if (supportingTechnicianIds.length > 3) {
+    throw new Error("Select no more than 3 supporting technicians.");
+  }
+  if (["resolved", "closed"].includes(current.status) && (input.assignedToId !== undefined || input.supportingTechnicianIds !== undefined) && supportingTechnicianIds.length < 1) {
+    throw new Error("Completed work orders must record at least 1 supporting technician.");
+  }
+  for (const userId of supportingTechnicianIds) {
+    const technician = getUser(userId);
+    if (technician.role !== "technician" || !userPlants(technician).includes(current.plantId)) {
+      throw new Error("Every supporting person must be a technician with access to this plant.");
+    }
+  }
+  const productionDowntimeReason = input.productionDowntimeReason === undefined
+    ? current.productionDowntimeReason
+    : input.productionDowntimeReason?.trim() || null;
   const updatedAt = now();
 
   db.prepare(
     "UPDATE work_orders SET type = ?, title = ?, description = ?, assetName = ?, location = ?, priority = ?, " +
     "dueDate = ?, workDate = ?, shiftGroup = ?, sectionId = ?, machineId = ?, area = ?, machineName = ?, " +
     "reportedByName = ?, reportedByDepartment = ?, responsibleDepartment = ?, issueCategoryId = ?, issueCategoryName = ?, " +
-    "issueDescription = ?, updatedAt = ? WHERE id = ?"
+    "issueDescription = ?, assignedToId = ?, supportingTechnicianIds = ?, productionDowntimeReason = ?, updatedAt = ? WHERE id = ?"
   ).run(
     input.type,
     machineName + " - " + issueCategoryName,
@@ -3651,11 +3679,14 @@ export function updateWorkOrder(id: string, input: UpdateWorkOrderInput): WorkOr
     issueCategory?.id || null,
     issueCategoryName,
     issueDescription,
+    assignedToId,
+    JSON.stringify(supportingTechnicianIds),
+    productionDowntimeReason,
     updatedAt,
     id
   );
 
-  addActivity(id, input.actorId, "edited", null, "Work order details edited.");
+  addActivity(id, input.actorId, "edited", null, "Work order brief and maintenance team edited.");
   enqueueWorkOrderSync(id, true);
   return getWorkOrder(id);
 }
@@ -4482,7 +4513,10 @@ export function validateUpdateWorkOrderInput(body: Partial<UpdateWorkOrderInput>
     responsibleDepartment,
     issueCategoryId: body.issueCategoryId ? String(body.issueCategoryId) : null,
     issueCategoryName: body.issueCategoryName ? String(body.issueCategoryName).trim() : undefined,
-    issueDescription
+    issueDescription,
+    assignedToId: body.assignedToId === undefined ? undefined : body.assignedToId ? String(body.assignedToId) : null,
+    supportingTechnicianIds: Array.isArray(body.supportingTechnicianIds) ? body.supportingTechnicianIds.map(String) : undefined,
+    productionDowntimeReason: body.productionDowntimeReason === undefined ? undefined : body.productionDowntimeReason ? String(body.productionDowntimeReason) : null
   };
 }
 

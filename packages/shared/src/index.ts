@@ -421,6 +421,9 @@ export interface UpdateWorkOrderInput {
   issueCategoryId?: string | null;
   issueCategoryName?: string;
   issueDescription: string;
+  assignedToId?: string | null;
+  supportingTechnicianIds?: string[];
+  productionDowntimeReason?: string | null;
 }
 
 export interface ClaimWorkOrderInput {
