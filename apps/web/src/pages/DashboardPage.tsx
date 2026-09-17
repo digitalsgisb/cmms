@@ -49,7 +49,7 @@ export function DashboardPage() {
   const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
   const technicianMode = currentUser?.role === "technician";
-  const canUseInProgressModules = Boolean(currentUser && ["admin", "developer"].includes(currentUser.role));
+  const canUseInProgressModules = Boolean(currentUser && ["executive", "admin", "developer"].includes(currentUser.role));
   const accountDepartment = workOrderDepartmentForUser(currentUser?.department || "");
 
   async function loadDashboard(showLoading = false) {
@@ -123,12 +123,19 @@ export function DashboardPage() {
   }, [dashboardWorkOrders, summary, technicianMode]);
 
   const workflow = [
-    { label: "New", value: dashboardWorkOrders.filter((item) => item.status === "open").length, tone: "new" },
-    { label: "Acknowledged", value: dashboardWorkOrders.filter((item) => item.status === "acknowledged").length, tone: "acknowledged" },
-    { label: "In progress", value: dashboardWorkOrders.filter((item) => item.status === "in_progress").length, tone: "progress" },
-    { label: "Waiting parts", value: dashboardWorkOrders.filter((item) => item.status === "pending_material").length, tone: "waiting" },
-    { label: "For verification", value: dashboardWorkOrders.filter((item) => item.status === "resolved").length, tone: "verify" }
+    { label: "New", value: dashboardWorkOrders.filter((item) => item.status === "open").length, tone: "new", filter: "open" },
+    { label: "Acknowledged", value: dashboardWorkOrders.filter((item) => item.status === "acknowledged").length, tone: "acknowledged", filter: "acknowledged" },
+    { label: "In progress", value: dashboardWorkOrders.filter((item) => item.status === "in_progress").length, tone: "progress", filter: "in_progress" },
+    { label: "Waiting parts", value: dashboardWorkOrders.filter((item) => item.status === "pending_material").length, tone: "waiting", filter: "pending_material" },
+    { label: "For verification", value: dashboardWorkOrders.filter((item) => item.status === "resolved").length, tone: "verify", filter: "resolved" }
   ];
+
+  function openCard(event: React.MouseEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>, to: string) {
+    if (event.target instanceof HTMLElement && event.target.closest("a, button, input, select, textarea")) return;
+    if ("key" in event && event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    navigate(to);
+  }
 
   const stockRisks = useMemo(
     () => (inventory?.parts ?? [])
@@ -157,7 +164,7 @@ export function DashboardPage() {
   if (loading && !summary) return <div className="ux-recovery" role="status"><h1>Dashboard</h1><p>Loading maintenance activity…</p></div>;
 
   return (
-    <section className="page-stack dashboard-page dashboard-command-page">
+    <section className={`page-stack dashboard-page dashboard-command-page ${currentUser?.role === "executive" ? "executive-dashboard" : ""}`}>
       {loadError ? <div className="ux-load-error" role="alert"><span>Some information could not load. Displayed figures may be incomplete or out of date. {loadError}</span><button className="secondary-action" type="button" onClick={() => void loadDashboard()}>Try again</button></div> : null}
       <div className="dashboard-hero dashboard-command-hero">
         <div className="dashboard-hero-main">
@@ -170,29 +177,29 @@ export function DashboardPage() {
           </div>
         </div>
         <div className="dashboard-hero-signals">
-          <article><Wrench size={17} /><span>Critical work</span><strong>{criticalOpen}</strong><small>open now</small></article>
-          <article><CalendarClock size={17} /><span>PM due</span><strong>{canUseInProgressModules ? pm?.summary.dueThisWeek ?? 0 : "—"}</strong><small>{canUseInProgressModules ? "this week" : "module locked"}</small></article>
-          <article><Package size={17} /><span>Parts risk</span><strong>{partsRisk}</strong><small>below minimum</small></article>
+          <Link to="/work-orders?status=active&scope=all" aria-label={`${criticalOpen} critical work orders. Open work orders.`}><Wrench size={17} /><span>Critical work</span><strong>{criticalOpen}</strong><small>Tap to review</small></Link>
+          <Link to="/preventive-maintenance/schedule" aria-label={`${pm?.summary.dueThisWeek ?? 0} preventive maintenance schedules due. Open schedule.`}><CalendarClock size={17} /><span>PM due</span><strong>{canUseInProgressModules ? pm?.summary.dueThisWeek ?? 0 : "—"}</strong><small>{canUseInProgressModules ? "Tap to review" : "module locked"}</small></Link>
+          <Link to="/spare-parts" aria-label={`${partsRisk} parts below minimum. Open spare parts.`}><Package size={17} /><span>Parts risk</span><strong>{partsRisk}</strong><small>Tap to review</small></Link>
         </div>
       </div>
 
       <div className="dashboard-kpi-grid metric-grid" aria-busy={loading}>
-        <MetricTile icon={ClipboardList} label={technicianMode ? "My queue" : "Total active"} value={effectiveSummary?.totalOpen ?? 0} />
-        <MetricTile icon={AlertTriangle} label={technicianMode ? "Available jobs" : "New requests"} value={effectiveSummary?.newWorkOrders ?? 0} tone="danger" />
-        <MetricTile icon={Wrench} label="In progress" value={effectiveSummary?.inProgress ?? 0} />
-        <MetricTile icon={CheckCircle2} label="Closed today" value={effectiveSummary?.closedToday ?? 0} tone="success" />
-        <MetricTile icon={ShieldCheck} label="PM compliance" value={canUseInProgressModules ? `${pmCompliance}%` : "Locked"} tone={canUseInProgressModules && pmCompliance >= 95 ? "success" : undefined} />
-        <MetricTile icon={PackageCheck} label="Parts available" value={`${inventory ? percent(inventory.summary.totalParts - inventory.summary.outOfStock, inventory.summary.totalParts) : 0}%`} tone="success" />
+        <MetricTile icon={ClipboardList} label={technicianMode ? "My queue" : "Total active"} value={effectiveSummary?.totalOpen ?? 0} to={technicianMode ? "/technician" : "/work-orders?status=active&scope=all"} />
+        <MetricTile icon={AlertTriangle} label={technicianMode ? "Available jobs" : "New requests"} value={effectiveSummary?.newWorkOrders ?? 0} tone="danger" to={technicianMode ? "/technician" : "/work-orders?status=open&scope=all"} />
+        <MetricTile icon={Wrench} label="In progress" value={effectiveSummary?.inProgress ?? 0} to={technicianMode ? "/technician" : "/work-orders?status=moving&scope=all"} />
+        <MetricTile icon={CheckCircle2} label="Closed today" value={effectiveSummary?.closedToday ?? 0} tone="success" to="/work-orders?status=closed&scope=all" />
+        <MetricTile icon={ShieldCheck} label="PM compliance" value={canUseInProgressModules ? `${pmCompliance}%` : "Locked"} tone={canUseInProgressModules && pmCompliance >= 95 ? "success" : undefined} to={canUseInProgressModules ? "/preventive-maintenance" : undefined} />
+        <MetricTile icon={PackageCheck} label="Parts available" value={`${inventory ? percent(inventory.summary.totalParts - inventory.summary.outOfStock, inventory.summary.totalParts) : 0}%`} tone="success" to="/spare-parts" />
       </div>
 
       <div className="dashboard-command-grid">
-        <section className="dashboard-command-card dashboard-flow-card">
+        <section className="dashboard-command-card dashboard-flow-card interactive-card" role="link" tabIndex={0} onClick={(event) => openCard(event, "/work-orders?status=active&scope=all")} onKeyDown={(event) => openCard(event, "/work-orders?status=active&scope=all")}>
           <div className="dashboard-card-heading">
             <div><span>Work order control</span><h2>Maintenance flow</h2><p>Live queue position from request to verification.</p></div>
             <Link to={technicianMode ? "/technician" : "/work-orders"}>View all <ArrowRight size={14} /></Link>
           </div>
           <div className="dashboard-flow-grid">
-            {workflow.map((item) => <article key={item.label} className={`tone-${item.tone}`}><span>{item.label}</span><strong>{item.value}</strong><i /></article>)}
+            {workflow.map((item) => <Link to={`/work-orders?status=${item.filter}&scope=all`} key={item.label} className={`tone-${item.tone}`} aria-label={`${item.label}: ${item.value}. Open filtered work orders.`}><span>{item.label}</span><strong>{item.value}</strong><i /></Link>)}
           </div>
           <div className="dashboard-closure-split">
             <div><span>Standard maintenance closure</span><strong>{standardClosure}%</strong><i><b style={{ width: `${standardClosure}%` }} /></i></div>
@@ -200,8 +207,8 @@ export function DashboardPage() {
           </div>
         </section>
 
-        <section className="dashboard-command-card dashboard-pm-card">
-          <div className="dashboard-card-heading"><div><span>Preventive maintenance</span><h2>PM discipline</h2></div>{canUseInProgressModules ? <Link to="/preventive-maintenance"><ArrowRight size={15} /></Link> : <span className="dashboard-feature-lock"><LockKeyhole size={14} />Locked</span>}</div>
+        <section className="dashboard-command-card dashboard-pm-card interactive-card" role={canUseInProgressModules ? "link" : undefined} tabIndex={canUseInProgressModules ? 0 : undefined} onClick={canUseInProgressModules ? (event) => openCard(event, "/preventive-maintenance") : undefined} onKeyDown={canUseInProgressModules ? (event) => openCard(event, "/preventive-maintenance") : undefined}>
+          <div className="dashboard-card-heading"><div><span>Preventive maintenance</span><h2>PM discipline</h2></div>{canUseInProgressModules ? <Link to="/preventive-maintenance">Open PM <ArrowRight size={15} /></Link> : <span className="dashboard-feature-lock"><LockKeyhole size={14} />Locked</span>}</div>
           {canUseInProgressModules ? <div className="dashboard-pm-overview">
             <div className="dashboard-compliance-ring" style={{ "--dashboard-ring": `${pmCompliance}%` } as React.CSSProperties}><div><strong>{pmCompliance}%</strong><span>compliance</span></div></div>
             <div className="dashboard-pm-stats">
@@ -212,7 +219,7 @@ export function DashboardPage() {
           </div> : <DashboardLockedMessage />}
         </section>
 
-        <section className="dashboard-command-card dashboard-stock-card">
+        <section className="dashboard-command-card dashboard-stock-card interactive-card" role="link" tabIndex={0} onClick={(event) => openCard(event, "/spare-parts")} onKeyDown={(event) => openCard(event, "/spare-parts")}>
           <div className="dashboard-card-heading"><div><span>Spare parts</span><h2>Inventory readiness</h2><p>{inventory ? money(inventory.summary.totalValue) : "—"} held in stock.</p></div><Link to="/spare-parts">Inventory <ArrowRight size={14} /></Link></div>
           <div className="dashboard-stock-summary">
             <span><strong>{inventory?.summary.totalParts ?? 0}</strong> active SKUs</span>
@@ -226,8 +233,8 @@ export function DashboardPage() {
           </div>
         </section>
 
-        <section className="dashboard-command-card dashboard-attention-card">
-          <div className="dashboard-card-heading"><div><span>Next actions</span><h2>PM attention queue</h2><p>Recover overdue work first, then protect this week’s plan.</p></div><Sparkles size={18} /></div>
+        <section className="dashboard-command-card dashboard-attention-card interactive-card" role={canUseInProgressModules ? "link" : undefined} tabIndex={canUseInProgressModules ? 0 : undefined} onClick={canUseInProgressModules ? (event) => openCard(event, "/preventive-maintenance/schedule") : undefined} onKeyDown={canUseInProgressModules ? (event) => openCard(event, "/preventive-maintenance/schedule") : undefined}>
+          <div className="dashboard-card-heading"><div><span>Next actions</span><h2>PM attention queue</h2><p>Recover overdue work first, then protect this week’s plan.</p></div>{canUseInProgressModules ? <Link to="/preventive-maintenance/schedule">Open plan <ArrowRight size={15} /></Link> : <Sparkles size={18} />}</div>
           {canUseInProgressModules ? <div className="dashboard-attention-list">
             {pmAttention.length > 0 ? pmAttention.map((item) => (
               <Link to="/preventive-maintenance/schedule" key={item.id} className={item.overdue ? "overdue" : ""}>
@@ -237,7 +244,7 @@ export function DashboardPage() {
           </div> : <DashboardLockedMessage />}
         </section>
 
-        <section className="dashboard-command-card dashboard-asset-card">
+        <section className="dashboard-command-card dashboard-asset-card interactive-card" role={canUseInProgressModules ? "link" : undefined} tabIndex={canUseInProgressModules ? 0 : undefined} onClick={canUseInProgressModules ? (event) => openCard(event, "/assets") : undefined} onKeyDown={canUseInProgressModules ? (event) => openCard(event, "/assets") : undefined}>
           <div className="dashboard-card-heading"><div><span>Asset management</span><h2>Production fleet readiness</h2><p>Lifecycle intelligence from the controlled 2026 machine register.</p></div>{canUseInProgressModules ? <Link to="/assets">Open assets <ArrowRight size={14} /></Link> : <span className="dashboard-feature-lock"><LockKeyhole size={14} />Locked</span>}</div>
           {canUseInProgressModules ? <div className="dashboard-asset-layout">
             <div className="dashboard-asset-score">
@@ -274,6 +281,16 @@ export function DashboardPage() {
               ))}
             </tbody>
           </table>
+        </div>
+        <div className="dashboard-work-mobile-list">
+          {visibleWorkOrders.map((workOrder) => (
+            <Link to={`/work-orders/${workOrder.id}`} key={workOrder.id}>
+              <span><strong>{workOrder.number}</strong><StatusBadge status={workOrder.status} /></span>
+              <h3>{workOrder.title}</h3>
+              <small>{workOrder.location} · {workOrder.machineName || workOrder.assetName}</small>
+              <span><PriorityBadge priority={workOrder.priority} /><time>{formatDateTime(workOrder.updatedAt)}</time><ArrowRight size={16} aria-hidden="true" /></span>
+            </Link>
+          ))}
         </div>
         {visibleWorkOrders.length === 0 && !loading ? <p className="quiet-line">{technicianMode ? "No work orders are currently assigned to you." : "No active work orders right now."}</p> : null}
       </section>

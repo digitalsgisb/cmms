@@ -396,6 +396,11 @@ export interface UpdateWorkOrderStatusInput {
   productionDowntimeReason?: string | null;
 }
 
+export interface UpdateDowntimeReasonInput {
+  actorId: string;
+  reason: string;
+}
+
 export interface UpdateWorkOrderInput {
   actorId: string;
   type: WorkOrderType;

@@ -5,7 +5,7 @@ import type { MasterData, User, WorkOrder, WorkOrderStatus } from "@sugi-cmms/sh
 import { workOrderDepartmentForUser, workOrderStatusLabels, workOrderTypeLabels } from "@sugi-cmms/shared";
 import { api } from "../api/client";
 import { PriorityBadge, StatusBadge } from "../components/Badges";
-import { formatDateTime, formatLiveDuration, userName } from "../utils/format";
+import { formatDateTime, formatLiveDuration, formatMinutes, userName } from "../utils/format";
 import { useCurrentUser } from "../state/UserContext";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
@@ -332,9 +332,9 @@ function WorkOrderCard({
   onDelete: (workOrder: WorkOrder) => void;
 }) {
   const needsVerification = workOrder.status === "resolved" && workOrder.requesterId === currentUserId;
-  const timerRunning = !workOrder.resolvedAt && !["closed", "cancelled"].includes(workOrder.status);
-  const timerEnd = workOrder.resolvedAt || (timerRunning ? timerNow : workOrder.updatedAt);
-  const timerLabel = timerRunning ? "Production downtime" : workOrder.resolvedAt ? "Production downtime" : "Cancelled";
+  const timerRunning = !["closed", "cancelled"].includes(workOrder.status);
+  const timerEnd = timerRunning ? timerNow : workOrder.closedAt || workOrder.updatedAt;
+  const timerLabel = workOrder.status === "cancelled" ? "Cancelled" : "Total time";
 
   return (
     <article className={`work-order-card card-status-${workOrder.status} ${needsVerification ? "needs-verification" : ""}`}>
@@ -352,6 +352,7 @@ function WorkOrderCard({
         {needsVerification ? <span className="verification-chip">Needs verification</span> : null}
         <h2>{workOrder.title}</h2>
         <p>{workOrder.issueDescription || workOrder.description}</p>
+        {workOrder.maintenanceActualMinutes !== null ? <p className="card-maintenance-actual"><Wrench size={14} />Maintenance actual: <strong>{formatMinutes(workOrder.maintenanceActualMinutes)}</strong></p> : null}
         <div className="card-meta">
           <span className="department-chip">{workOrder.responsibleDepartment}</span>
           <span>{workOrderTypeLabels[workOrder.type]}</span>

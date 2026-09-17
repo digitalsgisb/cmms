@@ -56,6 +56,7 @@ import type {
   StockSyncStatus,
   UpdateSpareSyncSettingsInput,
   UpdateAssetInput,
+  UpdateDowntimeReasonInput,
   UpdatePmPlanInput,
   UpdateUserInput,
   UpdateWorkOrderInput,
@@ -73,7 +74,7 @@ import type {
   UpdateWorkOrderSyncSettingsInput,
   WorkOrderType
 } from "@sugi-cmms/shared";
-import { longProductionDowntimeMinutes, technicianCanAccessWorkOrder, workOrderStatusLabels } from "@sugi-cmms/shared";
+import { longProductionDowntimeMinutes, technicianCanAccessWorkOrder, workOrderDepartmentForUser, workOrderStatusLabels } from "@sugi-cmms/shared";
 import { productionAssets2026 } from "./production-assets-2026.js";
 import { emitNotificationCreated } from "./notification-events.js";
 
@@ -3302,7 +3303,8 @@ function workOrderSheetRow(workOrderId: string) {
     IssueDescription: detail.issueDescription,
     PhotoIssue: publicMediaUrl(issuePhoto?.url),
     "Downtime Actual": elapsedMinutes(repairStartedAt, resolvedAt),
-    "Total Downtime": elapsedMinutes(detail.createdAt, resolvedAt),
+    "Total Downtime": elapsedMinutes(detail.createdAt, closedAt),
+    "Total Time": elapsedMinutes(detail.createdAt, closedAt),
     "Production Downtime": elapsedMinutes(detail.createdAt, resolvedAt),
     "Total Queue Time": elapsedMinutes(detail.createdAt, repairStartedAt),
     "System Repair Elapsed": elapsedMinutes(repairStartedAt, resolvedAt),
@@ -3703,10 +3705,10 @@ export function updateWorkOrderStatus(id: string, input: UpdateWorkOrderStatusIn
     }
   }
 
-  if (input.status === "closed" && current.responsibleDepartment === "Production" && current.resolvedAt) {
-    const productionDowntimeMinutes = Math.max(0, Math.round((Date.parse(current.resolvedAt) - Date.parse(current.createdAt)) / 60000));
-    if (productionDowntimeMinutes >= longProductionDowntimeMinutes && !productionDowntimeReason) {
-      throw new Error(`Add a production downtime explanation before closing work orders lasting ${longProductionDowntimeMinutes} minutes or more.`);
+  if (input.status === "closed" && current.responsibleDepartment === "Production") {
+    const totalOpenMinutes = Math.max(0, Math.round((Date.parse(updatedAt) - Date.parse(current.createdAt)) / 60000));
+    if (totalOpenMinutes >= longProductionDowntimeMinutes && !productionDowntimeReason && !current.productionDowntimeReason) {
+      throw new Error(`Choose one reason before closing work orders open for ${longProductionDowntimeMinutes} minutes or more.`);
     }
   }
 
@@ -3728,6 +3730,68 @@ export function updateWorkOrderStatus(id: string, input: UpdateWorkOrderStatusIn
   enqueueWorkOrderSync(id, true);
 
   return getWorkOrder(id);
+}
+
+export function updateWorkOrderDowntimeReason(id: string, input: UpdateDowntimeReasonInput): WorkOrder {
+  const current = getWorkOrder(id);
+  const actor = getUser(input.actorId);
+  const actorDepartment = workOrderDepartmentForUser(actor.department);
+  const canUpdate = ["executive", "admin", "developer"].includes(actor.role) ||
+    (actor.role === "requester" && (current.requesterId === actor.id || actorDepartment === current.responsibleDepartment));
+  if (!canUpdate) {
+    throw new Error("Only the requester or responsible department can update this reason.");
+  }
+  if (["closed", "cancelled"].includes(current.status)) {
+    throw new Error("This work order is already finished.");
+  }
+  const reason = input.reason.trim();
+  if (!reason) throw new Error("Choose or enter a reason.");
+  if (reason.length > 500) throw new Error("Keep the reason under 500 characters.");
+
+  db.prepare("UPDATE work_orders SET productionDowntimeReason = ?, updatedAt = ? WHERE id = ?")
+    .run(reason, now(), id);
+  addActivity(id, actor.id, "commented", null, `Delay reason recorded: ${reason}`);
+  enqueueWorkOrderSync(id, true);
+  return getWorkOrder(id);
+}
+
+export function notifyLongRunningWorkOrders() {
+  const cutoff = new Date(Date.now() - longProductionDowntimeMinutes * 60000).toISOString();
+  const workOrders = rows<WorkOrder>(db.prepare(`
+    SELECT wo.*,
+      (SELECT activity.createdAt FROM scoped_work_order_activities activity
+       WHERE activity.workOrderId = wo.id AND activity.action = 'started'
+       ORDER BY activity.createdAt ASC LIMIT 1) AS maintenanceStartedAt,
+      (SELECT activity.createdAt FROM scoped_work_order_activities activity
+       WHERE activity.workOrderId = wo.id AND activity.action = 'resolved'
+       ORDER BY activity.createdAt DESC LIMIT 1) AS resolvedAt,
+      (SELECT activity.createdAt FROM scoped_work_order_activities activity
+       WHERE activity.workOrderId = wo.id AND activity.action = 'closed'
+       ORDER BY activity.createdAt DESC LIMIT 1) AS closedAt
+    FROM scoped_work_orders wo
+    WHERE wo.responsibleDepartment = 'Production'
+      AND wo.status NOT IN ('closed', 'cancelled')
+      AND wo.createdAt <= ?
+      AND COALESCE(trim(wo.productionDowntimeReason), '') = ''
+  `).all(cutoff));
+  const productionRequesters = listUsers("requester")
+    .filter((user) => user.id !== publicRequesterId && workOrderDepartmentForUser(user.department) === "Production");
+  let sent = 0;
+  for (const workOrder of workOrders) {
+    const targetIds = new Set(productionRequesters.map((user) => user.id));
+    if (workOrder.requesterId !== publicRequesterId) targetIds.add(workOrder.requesterId);
+    const title = `${workOrder.number}: reason pending`;
+    for (const userId of targetIds) {
+      const exists = row<{ count: number }>(db.prepare(`
+        SELECT COUNT(*) AS count FROM scoped_notifications
+        WHERE userId = ? AND workOrderId = ? AND title = ?
+      `).get(userId, workOrder.id, title)).count;
+      if (exists) continue;
+      notifyUsers([userId], workOrder.id, title, "Open the work order, follow up with maintenance, and choose why it is taking longer.");
+      sent += 1;
+    }
+  }
+  return sent;
 }
 
 export function claimWorkOrder(id: string, actorId: string, note?: string): WorkOrder {
@@ -4010,6 +4074,12 @@ export function verifyGuestWorkOrder(
     note: trimmedNote || "Guest requester verified and closed the work order.",
     productionDowntimeReason: status === "closed" && workOrder.responsibleDepartment === "Production" ? trimmedNote : null
   });
+  return getGuestWorkOrderTracking(workOrderId, token);
+}
+
+export function updateGuestWorkOrderDowntimeReason(workOrderId: string, token: string, reason: string): GuestWorkOrderTracking {
+  requireGuestTrackingAccess(workOrderId, token);
+  updateWorkOrderDowntimeReason(workOrderId, { actorId: publicRequesterId, reason });
   return getGuestWorkOrderTracking(workOrderId, token);
 }
 

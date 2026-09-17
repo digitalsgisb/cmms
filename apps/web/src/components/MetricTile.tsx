@@ -1,18 +1,21 @@
-import type { LucideIcon } from "lucide-react";
+import { ChevronRight, type LucideIcon } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export function MetricTile({
   icon: Icon,
   label,
   value,
-  tone = "default"
+  tone = "default",
+  to
 }: {
   icon: LucideIcon;
   label: string;
   value: number | string;
   tone?: "default" | "warning" | "danger" | "success";
+  to?: string;
 }) {
-  return (
-    <div className={`metric-tile metric-${tone}`}>
+  const content = (
+    <>
       <div className="metric-icon">
         <Icon size={20} aria-hidden="true" />
       </div>
@@ -20,6 +23,11 @@ export function MetricTile({
         <span>{label}</span>
         <strong>{value}</strong>
       </div>
-    </div>
+      {to ? <ChevronRight className="metric-tile-chevron" size={18} aria-hidden="true" /> : null}
+    </>
   );
+
+  return to
+    ? <Link className={`metric-tile metric-${tone} metric-tile-link`} to={to} aria-label={`${label}: ${value}. Open details.`}>{content}</Link>
+    : <div className={`metric-tile metric-${tone}`}>{content}</div>;
 }

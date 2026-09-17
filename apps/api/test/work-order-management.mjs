@@ -195,15 +195,27 @@ const extendedDowntimeStart = new Date(Date.parse(resolvedFairTimingOrder.resolv
 inPlant(() => m.db.prepare("UPDATE work_orders SET createdAt = ? WHERE id = ?").run(extendedDowntimeStart, fairTimingOrder.id));
 assert.throws(
   () => inPlant(() => m.updateWorkOrderStatus(fairTimingOrder.id, { actorId: requester.id, status: "closed", note: "Verified" })),
-  /production downtime explanation/i
+  /choose one reason/i
 );
+inPlant(() => m.notifyLongRunningWorkOrders());
+inPlant(() => m.notifyLongRunningWorkOrders());
+const reasonReminders = inPlant(() => m.listNotifications(requester.id)).filter((item) => item.workOrderId === fairTimingOrder.id && /reason pending/i.test(item.title));
+assert.equal(reasonReminders.length, 1);
+assert.throws(
+  () => inPlant(() => m.updateWorkOrderDowntimeReason(fairTimingOrder.id, { actorId: technician.id, reason: "Waiting for technician" })),
+  /requester or responsible department/i
+);
+const reasonUpdatedOrder = inPlant(() => m.updateWorkOrderDowntimeReason(fairTimingOrder.id, {
+  actorId: requester.id,
+  reason: "Waiting for technician"
+}));
+assert.equal(reasonUpdatedOrder.productionDowntimeReason, "Waiting for technician");
 const closedFairTimingOrder = inPlant(() => m.updateWorkOrderStatus(fairTimingOrder.id, {
   actorId: requester.id,
   status: "closed",
-  note: "Technician was completing a higher-priority machine breakdown.",
-  productionDowntimeReason: "Technician was completing a higher-priority machine breakdown."
+  note: "Verified"
 }));
-assert.equal(closedFairTimingOrder.productionDowntimeReason, "Technician was completing a higher-priority machine breakdown.");
+assert.equal(closedFairTimingOrder.productionDowntimeReason, "Waiting for technician");
 
 const disposable = createOrder("Delete permission check");
 await assert.rejects(inPlant(() => m.deleteWorkOrder(disposable.id, technician.id)), /Executive or admin/i);

@@ -339,10 +339,10 @@ export function WorkOrderDetailPage() {
   const resolvedAt = detail.resolvedAt || findActivityTime(detail.activities, "resolved");
   const closedAt = findActivityTime(detail.activities, "closed");
   const terminalAt = closedAt || (detail.status === "cancelled" ? detail.updatedAt : null);
-  const productionDowntimeEnd = resolvedAt || terminalAt || timerNow;
+  const totalTimeEnd = terminalAt || timerNow;
   const queueEnd = startedAt || terminalAt || timerNow;
-  const productionDowntimeMinutes = resolvedAt ? Math.max(0, Math.round((Date.parse(resolvedAt) - Date.parse(createdAt)) / 60000)) : 0;
-  const requiresDowntimeExplanation = detail.responsibleDepartment === "Production" && productionDowntimeMinutes >= longProductionDowntimeMinutes;
+  const totalOpenMinutes = Math.max(0, Math.round((Date.parse(totalTimeEnd) - Date.parse(createdAt)) / 60000));
+  const requiresDowntimeExplanation = detail.responsibleDepartment === "Production" && !detail.productionDowntimeReason && totalOpenMinutes >= longProductionDowntimeMinutes;
   const isAssignedToCurrentUser = currentUser ? detail.assignedToId === currentUser.id : false;
   const isTechnician = currentUser?.role === "technician";
   const canClaimOpen = detail.status === "open" && !detail.assignedToId && detail.type !== "project";
@@ -420,8 +420,8 @@ export function WorkOrderDetailPage() {
       {!isTechnician ? <div className="timer-grid">
         <article className="timer-card primary">
           <TimerReset size={18} aria-hidden="true" />
-          <span>Production downtime</span>
-          <strong>{formatDuration(createdAt, productionDowntimeEnd)}</strong>
+          <span>Total time</span>
+          <strong>{formatDuration(createdAt, totalTimeEnd)}</strong>
         </article>
         <article className="timer-card technician-secondary-timer">
           <Clock3 size={18} aria-hidden="true" />
@@ -509,7 +509,7 @@ export function WorkOrderDetailPage() {
                 </div>
                 {detail.productionDowntimeReason ? (
                   <div className="technician-secondary-detail">
-                    <dt>Production downtime explanation</dt>
+                    <dt>Why it took longer</dt>
                     <dd>{detail.productionDowntimeReason}</dd>
                   </div>
                 ) : null}
@@ -578,8 +578,8 @@ export function WorkOrderDetailPage() {
                 <>
                   <p>Maintenance marked this work order as resolved. Verify the result, then close it or return it for follow-up.</p>
                   <label className="verification-reason-field">
-                    {requiresDowntimeExplanation ? "Production downtime explanation (required)" : "Verification note (optional)"}
-                    <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} placeholder={requiresDowntimeExplanation ? "Explain the operational reason for the extended downtime" : "Add a verification note"} />
+                    {requiresDowntimeExplanation ? "Why did this take longer? (required)" : "Verification note (optional)"}
+                    <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} placeholder={requiresDowntimeExplanation ? "Ask maintenance, then enter the reason" : "Add a verification note"} />
                   </label>
                   <div className="button-stack">
                     <ActionButton
@@ -677,8 +677,8 @@ export function WorkOrderDetailPage() {
               <h2>Requester Verification</h2>
               <p>Review the completed work and close it, or return it to maintenance for follow-up.</p>
               <label className="verification-reason-field">
-                {requiresDowntimeExplanation ? "Production downtime explanation (required)" : "Verification note (optional)"}
-                <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} placeholder={requiresDowntimeExplanation ? "Explain the operational reason for the extended downtime" : "Add a verification note"} />
+                {requiresDowntimeExplanation ? "Why did this take longer? (required)" : "Verification note (optional)"}
+                <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} placeholder={requiresDowntimeExplanation ? "Ask maintenance, then enter the reason" : "Add a verification note"} />
               </label>
               <div className="button-stack">
                 <ActionButton

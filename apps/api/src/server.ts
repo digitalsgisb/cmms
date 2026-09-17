@@ -61,6 +61,7 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
   migrate,
+  notifyLongRunningWorkOrders,
   pullSparePartsFromSheet,
   publicRequesterIdForUploads,
   retrySpareSync,
@@ -83,12 +84,14 @@ import {
   updateUser,
   updateUserAvatar,
   updateWorkOrder,
+  updateWorkOrderDowntimeReason,
   updateWorkOrderStatus,
   uploadsRoot,
   validateCreateWorkOrderInput,
   validateStatusInput,
   validateUpdateWorkOrderInput,
   verifyGuestWorkOrder,
+  updateGuestWorkOrderDowntimeReason,
   verifyPmSchedule
 } from "./db.js";
 import { initializeWebPush, sendPushToAllUsers, webPushConfig } from "./web-push.js";
@@ -370,6 +373,15 @@ const workOrderSyncRetry = setInterval(() => {
   void flushAllPlants().catch(console.error);
 }, 60000);
 workOrderSyncRetry.unref();
+
+function notifyAllPlantsAboutLongRunningWork() {
+  for (const plant of ["port-klang", "sendayan"] as const) {
+    plantContext.run({ plant }, () => notifyLongRunningWorkOrders());
+  }
+}
+notifyAllPlantsAboutLongRunningWork();
+const longRunningWorkReminder = setInterval(notifyAllPlantsAboutLongRunningWork, 60000);
+longRunningWorkReminder.unref();
 
 app.get("/api/health", (_request, response) => {
   response.json({
@@ -809,6 +821,14 @@ app.post("/api/requester/work-orders/:id/verification", (request, response) => {
   ));
 });
 
+app.patch("/api/requester/work-orders/:id/downtime-reason", (request, response) => {
+  response.json(updateGuestWorkOrderDowntimeReason(
+    request.params.id,
+    String(request.body.token || ""),
+    String(request.body.reason || "")
+  ));
+});
+
 app.get("/api/work-orders", (request, response) => {
   const workOrders = listWorkOrders(request.cmmsUser);
   response.json(workOrders);
@@ -849,6 +869,13 @@ app.patch("/api/work-orders/:id/status", (request, response) => {
   const input = validateStatusInput(request.body);
   const workOrder = updateWorkOrderStatus(request.params.id, input);
   response.json(workOrder);
+});
+
+app.patch("/api/work-orders/:id/downtime-reason", (request, response) => {
+  response.json(updateWorkOrderDowntimeReason(request.params.id, {
+    actorId: request.cmmsUser!.id,
+    reason: String(request.body.reason || "")
+  }));
 });
 
 app.patch("/api/work-orders/:id/claim", (request, response) => {

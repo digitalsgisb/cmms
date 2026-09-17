@@ -343,6 +343,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ token, status, note })
     }),
+  updateGuestDowntimeReason: (id: string, token: string, reason: string) =>
+    request<GuestWorkOrderTracking>(`/api/requester/work-orders/${encodeURIComponent(id)}/downtime-reason`, {
+      method: "PATCH",
+      body: JSON.stringify({ token, reason })
+    }),
   guestTrackingLink: (id: string) => request<GuestTrackingLink>(`/api/work-orders/${encodeURIComponent(id)}/guest-link`),
   workOrder: (id: string) => request<WorkOrderDetail>(`/api/work-orders/${id}`),
   createWorkOrder: (input: CreateWorkOrderInput) =>
@@ -359,6 +364,11 @@ export const api = {
     request<WorkOrder>(`/api/work-orders/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify(input)
+    }),
+  updateWorkOrderDowntimeReason: (id: string, reason: string) =>
+    request<WorkOrder>(`/api/work-orders/${id}/downtime-reason`, {
+      method: "PATCH",
+      body: JSON.stringify({ reason })
     }),
   claimWorkOrder: (id: string, input: ClaimWorkOrderInput) =>
     request<WorkOrder>(`/api/work-orders/${id}/claim`, {
