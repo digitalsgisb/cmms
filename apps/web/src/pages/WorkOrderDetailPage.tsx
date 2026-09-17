@@ -12,6 +12,16 @@ import { formatDate, formatDateTime, formatDuration, formatMinutes, userName } f
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
 const workflowSteps: WorkOrderStatus[] = ["open", "acknowledged", "in_progress", "pending_material", "resolved", "closed"];
+const workflowActionByStatus: Record<WorkOrderStatus, WorkOrderActivity["action"]> = {
+  open: "created",
+  acknowledged: "acknowledged",
+  in_progress: "started",
+  pending_material: "pending_material",
+  resolved: "resolved",
+  closed: "closed",
+  returned: "returned",
+  cancelled: "cancelled"
+};
 const actionSettleMs = 500;
 
 function waitForActionMotion() {
@@ -408,13 +418,32 @@ export function WorkOrderDetailPage() {
       </div>
 
       {!isTechnician ? (
-        <div className="workflow-strip">
-          {displayWorkflow.map((step, index) => (
-            <div key={step} className={`workflow-step ${index <= workflowIndex ? "done" : ""} ${step === detail.status ? "current" : ""}`}>
-              <span>{index + 1}</span><strong>{workOrderStatusLabels[step]}</strong>
+        <section className="work-order-journey" aria-label="Work order journey">
+          <div className="work-journey-heading">
+            <div>
+              <span>Work order journey</span>
+              <strong>Step {Math.max(1, workflowIndex + 1)} of {displayWorkflow.length}</strong>
             </div>
-          ))}
-        </div>
+            <b>{workOrderStatusLabels[detail.status]}</b>
+          </div>
+          <div className="work-journey-track">
+            {displayWorkflow.map((step, index) => {
+              const isCurrent = step === detail.status;
+              const reachedAt = findActivityTime(detail.activities, workflowActionByStatus[step]);
+              const isDone = Boolean(reachedAt) && !isCurrent;
+              const isSkipped = index < workflowIndex && !reachedAt;
+              return (
+                <div key={step} className={`work-journey-step ${isDone ? "done" : ""} ${isSkipped ? "skipped" : ""} ${isCurrent ? "current" : ""}`}>
+                  <span className="work-journey-node" aria-hidden="true">{isDone ? <Check size={15} /> : isSkipped ? "—" : index + 1}</span>
+                  <div>
+                    <strong>{workOrderStatusLabels[step]}</strong>
+                    <small>{reachedAt ? formatDateTime(reachedAt) : isCurrent ? "Current stage" : isSkipped ? "Skipped" : "Upcoming"}</small>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
       ) : null}
 
       {!isTechnician ? <div className="timer-grid">

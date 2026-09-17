@@ -1536,7 +1536,7 @@ export function SparePartsPage() {
       {message ? <p className="success-line">{message}</p> : null}
       {error ? <p className="error-line" role="alert">{error}</p> : null}
 
-      {!["scanner", "setup"].includes(view) ? renderMetrics() : null}
+      {!["dashboard", "scanner", "setup"].includes(view) ? renderMetrics() : null}
       {view === "dashboard" ? renderDashboard() : null}
       {view === "inventory" ? (
         <div className="spare-inventory-shell">{renderInventoryPanel()}</div>
