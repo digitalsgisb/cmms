@@ -34,6 +34,22 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     setUsers(nextUsers);
   }
 
+  function clearLocalSession() {
+    localStorage.removeItem(sessionUserKey);
+    setCurrentUserIdState("");
+    setUsers([]);
+    setWorkOrders([]);
+    setWorkOrdersReady(false);
+  }
+
+  async function restoreCurrentSession() {
+    const user = await api.restoreSession();
+    setCurrentUserId(user.id);
+    setUsers([user]);
+    await refreshUsers();
+    return user;
+  }
+
   function setCurrentUserId(id: string) {
     localStorage.setItem(sessionUserKey, id);
     setCurrentUserIdState(id);
@@ -73,29 +89,20 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    const endLocalSession = () => {
-      localStorage.removeItem(sessionUserKey);
-      setCurrentUserIdState("");
-      setUsers([]);
-      setWorkOrders([]);
-      setWorkOrdersReady(false);
+    const recoverOrEndLocalSession = () => {
+      void restoreCurrentSession().catch((error) => {
+        if (error instanceof ApiError && error.status === 401) clearLocalSession();
+      });
     };
-    window.addEventListener(authSessionEndedEvent, endLocalSession);
-    return () => window.removeEventListener(authSessionEndedEvent, endLocalSession);
+    window.addEventListener(authSessionEndedEvent, recoverOrEndLocalSession);
+    return () => window.removeEventListener(authSessionEndedEvent, recoverOrEndLocalSession);
   }, []);
 
   useEffect(() => {
-    if (!api.hasSession()) {
-      localStorage.removeItem(sessionUserKey);
-      setCurrentUserIdState("");
-      setLoadingUsers(false);
-      return;
-    }
-    api.me()
-      .then(async (user) => {
-        setCurrentUserId(user.id);
-        setUsers([user]);
-        await refreshUsers();
+    // Always ask the server to restore the session. The HttpOnly cookie can
+    // remain valid even if a PWA/browser update has removed localStorage.
+    void restoreCurrentSession()
+      .then(() => {
         setLoadingUsers(false);
       })
       .catch((error) => {
@@ -104,10 +111,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           setLoadingUsers(false);
           return;
         }
-        api.clearSession();
-        localStorage.removeItem(sessionUserKey);
-        setCurrentUserIdState("");
-        setUsers([]);
+        clearLocalSession();
         setLoadingUsers(false);
       });
   }, []);

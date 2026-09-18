@@ -85,7 +85,7 @@ export class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); this.name = "ApiError"; }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}, notifySessionEnded = true): Promise<T> {
   const token = localStorage.getItem(authTokenKey);
   let response: Response;
   try {
@@ -107,7 +107,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    if (response.status === 401 && token) {
+    if (response.status === 401 && token && notifySessionEnded) {
       localStorage.removeItem(authTokenKey);
       sessionStorage.removeItem("cmms-user-plant-access");
       window.dispatchEvent(new Event(authSessionEndedEvent));
@@ -144,6 +144,25 @@ export const api = {
     return session.user;
   },
   me: async () => { const user = await request<User>("/api/auth/me"); sessionStorage.setItem("cmms-user-plant-access", user.plantAccess); if (user.plantAccess !== "both") setSelectedPlant(user.plantAccess); return user; },
+  restoreSession: async () => {
+    const hadBearerToken = Boolean(localStorage.getItem(authTokenKey));
+    try {
+      const user = await request<User>("/api/auth/me", {}, false);
+      sessionStorage.setItem("cmms-user-plant-access", user.plantAccess);
+      if (user.plantAccess !== "both") setSelectedPlant(user.plantAccess);
+      return user;
+    } catch (error) {
+      // A browser/PWA update can leave the long-lived HttpOnly cookie intact
+      // while its local bearer copy is stale. Retry once with cookie auth only.
+      if (!(error instanceof ApiError) || error.status !== 401 || !hadBearerToken) throw error;
+      localStorage.removeItem(authTokenKey);
+      sessionStorage.removeItem("cmms-user-plant-access");
+      const user = await request<User>("/api/auth/me", {}, false);
+      sessionStorage.setItem("cmms-user-plant-access", user.plantAccess);
+      if (user.plantAccess !== "both") setSelectedPlant(user.plantAccess);
+      return user;
+    }
+  },
   hasSession: () => Boolean(localStorage.getItem(authTokenKey)),
   clearSession: () => { void request<void>("/api/auth/logout", { method: "POST" }).catch(() => {}); localStorage.removeItem(authTokenKey); sessionStorage.removeItem("cmms-user-plant-access"); },
   users: () => request<User[]>(window.location.pathname === "/users" ? "/api/users?manage=1" : "/api/users"),
