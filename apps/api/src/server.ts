@@ -32,6 +32,7 @@ import {
   createWorkOrder,
   dashboardSummary,
   deactivateUser,
+  deleteAppSheetAirLeak,
   deletePushSubscription,
   deleteWorkOrder,
   deletePmResultPhoto,
@@ -852,6 +853,11 @@ app.post("/api/integrations/appsheet/air-leaks", asyncHandler(async (request, re
     : String(request.header("x-integration-key") || "").trim();
   if (!authenticateAirLeakIntegration(token)) {
     response.status(401).json({ ok: false, error: "Invalid Air Leak integration token." });
+    return;
+  }
+  if (String(request.body.action || "").toLowerCase() === "delete") {
+    const result = await deleteAppSheetAirLeak(String(request.body.airLeakId || request.body["Air Leak ID"] || ""));
+    response.json(result);
     return;
   }
   const result = upsertAppSheetAirLeak({

@@ -4040,6 +4040,10 @@ export function updateWorkOrderStatus(id: string, input: UpdateWorkOrderStatusIn
   if (actor.role === "requester" && (current.requesterId !== actor.id || !["closed", "returned", "cancelled"].includes(input.status))) {
     throw new Error("Requesters may only close, return, or cancel their own work orders.");
   }
+  if (actor.role === "requester" && input.status === "cancelled" &&
+      (!['open', 'acknowledged'].includes(current.status) || Boolean(current.maintenanceStartedAt))) {
+    throw new Error("A requester can only cancel a work order before repair work starts.");
+  }
   const effectiveAssignment = current.assignedToId || input.assignedToId;
   if (actor.role === "technician" && (effectiveAssignment !== actor.id || !["acknowledged", "in_progress", "pending_material", "resolved"].includes(input.status))) {
     throw new Error("Technicians may only update work orders assigned to them.");
@@ -4468,12 +4472,11 @@ export function updateGuestWorkOrderDowntimeReason(workOrderId: string, token: s
   return getGuestWorkOrderTracking(workOrderId, token);
 }
 
-export async function deleteWorkOrder(id: string, actorId: string) {
-  requireWorkOrderManager(actorId);
-  const workOrder = getWorkOrder(id);
+async function permanentlyDeleteWorkOrder(workOrder: WorkOrder, notifyWebhook = true) {
+  const id = workOrder.id;
   const runtime = workOrderSyncRuntimeSettings();
 
-  if (runtime.webhookUrl) {
+  if (notifyWebhook && runtime.webhookUrl) {
     const deletionData = { ...workOrderSheetRow(id), Status: "Deleted", UpdatedAt: now() };
     await postJson(runtime.webhookUrl, { Source: "CMMS", Event: "Deleted", Data: deletionData });
   }
@@ -4497,6 +4500,40 @@ export async function deleteWorkOrder(id: string, actorId: string) {
   }
 
   return workOrder;
+}
+
+export async function deleteWorkOrder(id: string, actorId: string) {
+  const actor = getUser(actorId);
+  const workOrder = getWorkOrder(id);
+  if (actor.role === "requester") {
+    if (workOrder.requesterId !== actor.id) {
+      throw new Error("You can only delete a work order issued from your requester account.");
+    }
+    if (!["open", "cancelled"].includes(workOrder.status) || workOrder.assignedToId || workOrder.maintenanceStartedAt) {
+      throw new Error("This work order has already entered the maintenance workflow. Cancel it instead or contact an administrator.");
+    }
+  } else {
+    requireWorkOrderManager(actorId);
+  }
+  return permanentlyDeleteWorkOrder(workOrder);
+}
+
+export async function deleteAppSheetAirLeak(airLeakId: string) {
+  const externalId = airLeakId.trim();
+  if (!externalId) throw new Error("Air Leak ID is required.");
+  const mapping = row<{ workOrderId: string } | undefined>(db.prepare(`
+    SELECT workOrderId FROM scoped_external_work_orders
+    WHERE source = 'appsheet-air-leak' AND externalId = ?
+  `).get(externalId));
+  if (!mapping) return { ok: true as const, deleted: false, airLeakId: externalId };
+  const workOrder = await permanentlyDeleteWorkOrder(getWorkOrder(mapping.workOrderId), false);
+  return {
+    ok: true as const,
+    deleted: true,
+    airLeakId: externalId,
+    workOrderId: workOrder.id,
+    workOrderNumber: workOrder.number
+  };
 }
 
 export function listNotifications(userId: string): NotificationRecord[] {

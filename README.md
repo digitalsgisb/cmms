@@ -130,6 +130,8 @@ The Air Leak App can create duplicate-safe SHE work orders through `POST /api/in
 
 CMMS queues every mapped lifecycle update separately from the general WorkOrders mirror. When the CMMS work order closes, [docs/air-leak-apps-script.js](docs/air-leak-apps-script.js) updates the matching Air Leak row to `Close`, including the close date, assigned technician, proof-photo URL and detailed CMMS status. Existing Production master data is retained as Production; new sections, machines and issue categories are assigned to a department and are only offered for that department's work orders.
 
+To mirror AppSheet deletions, add a second AppSheet Bot for **Deletes only** that calls the same endpoint and token with `{"action":"delete","airLeakId":"<<[_THISROW_BEFORE].[Air Leak ID]>>"}`. The operation is idempotent: it permanently removes only the CMMS work order mapped to that Air Leak ID, and a retry after deletion returns `deleted: false` without affecting another work order.
+
 These values can also be supplied without the UI:
 
 ```dotenv

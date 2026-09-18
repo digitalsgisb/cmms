@@ -1,7 +1,7 @@
 import {
   Activity, AlertTriangle, ArrowLeft, Bell, Building2, CalendarDays, CheckCircle2, ClipboardList, Clock3, Eye, Factory,
   Hammer, History, Home, Lightbulb, LogIn, LogOut, MapPin, RefreshCcw, Search, Send, ShieldCheck,
-  UserCircle2, UserRound, Wrench, X, type LucideIcon
+  Trash2, UserCircle2, UserRound, Wrench, X, type LucideIcon
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -332,6 +332,28 @@ export function PublicRequesterPage() {
     finally { setActionId(""); }
   }
 
+  async function cancelRequesterWorkOrder(workOrder: WorkOrder) {
+    if (!signedRequester || workOrder.requesterId !== currentUser.id) return;
+    if (!window.confirm(`Cancel ${workOrder.number}? Maintenance will see that this request is no longer required.`)) return;
+    setActionId(workOrder.id); setError("");
+    try {
+      await api.updateWorkOrderStatus(workOrder.id, { status: "cancelled", actorId: currentUser.id, note: "Cancelled by requester." });
+      setSuccess(`${workOrder.number} cancelled.`); setDetail(null); await loadAccountWorkOrders();
+    } catch (nextError) { setError(nextError instanceof Error ? nextError.message : "Unable to cancel the work order."); }
+    finally { setActionId(""); }
+  }
+
+  async function deleteRequesterWorkOrder(workOrder: WorkOrder) {
+    if (!signedRequester || workOrder.requesterId !== currentUser.id) return;
+    if (!window.confirm(`Permanently delete ${workOrder.number}? Use this only for a test or accidental request. This cannot be undone.`)) return;
+    setActionId(workOrder.id); setError("");
+    try {
+      await api.deleteWorkOrder(workOrder.id, { actorId: currentUser.id });
+      setSuccess(`${workOrder.number} deleted.`); setDetail(null); await loadAccountWorkOrders();
+    } catch (nextError) { setError(nextError instanceof Error ? nextError.message : "Unable to delete the work order."); }
+    finally { setActionId(""); }
+  }
+
   async function openDetail(workOrder: WorkOrder) {
     if (!signedRequester) return;
     setDetailLoading(true);
@@ -366,7 +388,7 @@ export function PublicRequesterPage() {
     {view === "new" && !selectedType ? <div className={`requester-category-gate ${categoryClosing ? "is-exiting" : ""}`} role="dialog" aria-modal="true" aria-labelledby="requester-category-title" aria-busy={categoryClosing} onClick={(event) => { if (signedRequester && event.target === event.currentTarget) openView("dashboard"); }}><section className="requester-category-card" key={selectedDepartment ? "request-type" : choosingOtherDepartment ? "other-department" : "primary-department"}>{signedRequester ? <button className="requester-category-close" type="button" disabled={categoryClosing} onClick={() => openView("dashboard")} aria-label="Cancel new work order and return home"><X size={20} /></button> : null}<div className="requester-category-heading"><span><img src="/brand/sugi_symbol.png" alt="" /></span><div><p>{selectedDepartment ? `FOR ${selectedDepartment.toUpperCase()}` : signedRequester ? "ACCOUNT REQUEST" : "CONTINUE AS GUEST"}</p><h1 id="requester-category-title">{selectedDepartment ? "What type of work is needed?" : choosingOtherDepartment ? "Which department is responsible?" : "Which department is this for?"}</h1></div></div><p className="requester-category-copy">{selectedDepartment ? "Choose Maintenance, Project, or Kaizen." : choosingOtherDepartment ? "Select the department PIC who should prioritize this work order." : "Production and SHE are listed first. Use Others for the remaining departments."}</p>{selectedDepartment ? <div className="requester-type-grid">{requestTypes.map(({ type, Icon, title, description }) => <button className={`requester-type-card type-${type}`} type="button" key={type} disabled={categoryClosing} onClick={() => chooseType(type)}><span><Icon size={24} /></span><strong>{title}</strong><small>{description}</small></button>)}</div> : choosingOtherDepartment ? <div className="requester-department-grid">{otherDepartments.map((department) => <button type="button" key={department} onClick={() => chooseDepartment(department)}><Building2 size={20} /><strong>{department}</strong></button>)}</div> : <div className="requester-type-grid requester-department-primary"><button className="requester-type-card type-production" type="button" onClick={() => chooseDepartment("Production")}><span><Factory size={24} /></span><strong>Production</strong><small>Production-owned issue</small></button><button className="requester-type-card type-she" type="button" onClick={() => chooseDepartment("SHE")}><span><ShieldCheck size={24} /></span><strong>SHE</strong><small>Safety, Health & Environment</small></button><button className="requester-type-card type-others" type="button" onClick={() => setChoosingOtherDepartment(true)}><span><Building2 size={24} /></span><strong>Others</strong><small>Logistic, DTU, R&amp;D, Account, Management, or Business Development</small></button></div>}{selectedDepartment || choosingOtherDepartment ? <button className="requester-category-back" type="button" onClick={() => { setSelectedDepartment(null); setChoosingOtherDepartment(false); }}><ArrowLeft size={15} />Change department</button> : null}<small className="requester-category-note"><ShieldCheck size={14} />{signedRequester ? `Signed in as ${currentUser.name}` : "Guest access · new requests only"}</small>{!signedRequester ? currentUser ? <a className="requester-category-signin" href="/"><Home size={15} />Return to staff CMMS</a> : <button className="requester-category-signin" type="button" onClick={() => setLoginOpen(true)}><LogIn size={15} />Department user? Sign in to track</button> : null}</section></div> : null}
 
     {loginOpen ? <div className="requester-login-backdrop"><form className="requester-login-card" role="dialog" aria-modal="true" aria-labelledby="requester-login-title" onSubmit={submitLogin}><button className="requester-dialog-close" type="button" onClick={() => setLoginOpen(false)} aria-label="Close sign in"><X size={18} /></button><span className="requester-login-icon"><ShieldCheck size={24} /></span><p>Department access</p><h2 id="requester-login-title">Sign in to your requester account</h2><small>Track department work orders, review maintenance updates, and verify work that you requested.</small><label>Username<input value={loginUsername} onChange={(event) => setLoginUsername(event.target.value)} autoComplete="username" required /></label><label>Password<input type="password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} autoComplete="current-password" required /></label>{loginError ? <p className="error-line" role="alert">{loginError}</p> : null}<button className="primary-action" type="submit" disabled={loginBusy}>{loginBusy ? "Signing in..." : "Open my requester app"}<LogIn size={17} /></button><button className="requester-guest-continue" type="button" onClick={() => setLoginOpen(false)}>Continue as guest</button></form></div> : null}
-    {detail ? <RequesterDetailDialog detail={detail} canVerify={detail.requesterId === currentUser?.id} timerNow={timerNow} onClose={() => setDetail(null)} onVerify={verifyWorkOrder} onSaveReason={saveDowntimeReason} actionId={actionId} note={verificationNotes[detail.id] || ""} onNote={(note) => setVerificationNotes((current) => ({ ...current, [detail.id]: note }))} /> : null}
+    {detail ? <RequesterDetailDialog detail={detail} canVerify={detail.requesterId === currentUser?.id} timerNow={timerNow} onClose={() => setDetail(null)} onVerify={verifyWorkOrder} onSaveReason={saveDowntimeReason} onCancel={cancelRequesterWorkOrder} onDelete={deleteRequesterWorkOrder} actionId={actionId} note={verificationNotes[detail.id] || ""} onNote={(note) => setVerificationNotes((current) => ({ ...current, [detail.id]: note }))} /> : null}
   </div>;
 }
 
@@ -478,9 +500,11 @@ function RequesterWorkOrderCard({ workOrder, timerNow, onDetail, busy = false }:
   </article>;
 }
 
-function RequesterDetailDialog({ detail, canVerify, timerNow, onClose, onVerify, onSaveReason, actionId, note, onNote }: { detail: WorkOrderDetail; canVerify: boolean; timerNow: string; onClose: () => void; onVerify: (workOrder: WorkOrder, status: "closed" | "returned") => void; onSaveReason: (workOrder: WorkOrder) => void; actionId: string; note: string; onNote: (note: string) => void; }) {
+function RequesterDetailDialog({ detail, canVerify, timerNow, onClose, onVerify, onSaveReason, onCancel, onDelete, actionId, note, onNote }: { detail: WorkOrderDetail; canVerify: boolean; timerNow: string; onClose: () => void; onVerify: (workOrder: WorkOrder, status: "closed" | "returned") => void; onSaveReason: (workOrder: WorkOrder) => void; onCancel: (workOrder: WorkOrder) => void; onDelete: (workOrder: WorkOrder) => void; actionId: string; note: string; onNote: (note: string) => void; }) {
   const [previewPhoto, setPreviewPhoto] = useState<{ src: string; alt: string; label: string } | null>(null);
   const needsReason = needsProductionDowntimeExplanation(detail);
+  const canCancel = canVerify && ["open", "acknowledged"].includes(detail.status) && !detail.maintenanceStartedAt;
+  const canDelete = canVerify && ["open", "cancelled"].includes(detail.status) && !detail.assignedToId && !detail.maintenanceStartedAt;
 
   return <><div className="requester-detail-backdrop"><section className={`requester-detail-dialog ${needsReason ? "reason-pending" : ""}`} role="dialog" aria-modal="true" aria-labelledby="requester-detail-title">
     <button className="requester-dialog-close" type="button" onClick={onClose} aria-label="Close details"><X size={18} /></button>
@@ -495,6 +519,10 @@ function RequesterDetailDialog({ detail, canVerify, timerNow, onClose, onVerify,
     <div className="requester-detail-photos"><h3>Photos</h3>{detail.attachments.length ? <div>{detail.attachments.map((attachment) => { const label = attachment.kind.replace("_", " "); return <button type="button" key={attachment.id} onClick={() => setPreviewPhoto({ src: mediaUrl(attachment.url), alt: attachment.originalName, label })}><img src={mediaUrl(attachment.url)} alt={attachment.originalName} /><span>{label}</span></button>; })}</div> : <p>No photos uploaded.</p>}</div>
     <div className="requester-detail-timeline"><h3>Updates</h3>{detail.activities.map((activity) => <article key={activity.id}><span /><div><strong>{activity.message}</strong><time>{formatDateTime(activity.createdAt)}</time></div></article>)}</div>
     {detail.status === "resolved" && canVerify ? <div className="requester-detail-verification">{!needsReason ? <label>Note<textarea rows={2} value={note} onChange={(event) => onNote(event.target.value)} placeholder="Only required when sending back" /></label> : null}<div className="requester-verification-actions"><button type="button" className="verify" disabled={Boolean(actionId) || (needsReason && !note.trim())} onClick={() => onVerify(detail, "closed")}><CheckCircle2 size={17} />Work is OK — Close</button><button type="button" className="return" disabled={Boolean(actionId)} onClick={() => onVerify(detail, "returned")}><RefreshCcw size={17} />Still Problem — Send Back</button></div></div> : null}
+    {canCancel || canDelete ? <div className="requester-owner-actions">
+      {canCancel ? <button type="button" className="requester-cancel-work-order" disabled={Boolean(actionId)} onClick={() => onCancel(detail)}><X size={17} />{actionId === detail.id ? "Saving..." : "Cancel request"}</button> : null}
+      {canDelete ? <button type="button" className="requester-delete-work-order" disabled={Boolean(actionId)} onClick={() => onDelete(detail)}><Trash2 size={17} />{actionId === detail.id ? "Deleting..." : "Delete test request"}</button> : null}
+    </div> : null}
   </section></div>{previewPhoto ? <ImageLightbox {...previewPhoto} onClose={() => setPreviewPhoto(null)} /> : null}</>;
 }
 

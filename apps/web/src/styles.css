@@ -12112,6 +12112,11 @@ tbody tr:hover {
 .requester-detail-timeline strong { font-size: 11px; }
 .requester-detail-timeline time { color: #91868c; font-size: 9px; }
 .requester-detail-verification { display: grid; gap: 10px; margin-top: 20px; border-top: 1px solid #e8dfe2; padding-top: 16px; }
+.requester-owner-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 20px; border-top: 1px solid #e8dfe2; padding-top: 16px; }
+.requester-owner-actions button { display: inline-flex; min-height: 42px; align-items: center; justify-content: center; gap: 7px; border-radius: 9px; padding: 0 14px; font-size: 11px; font-weight: 950; }
+.requester-cancel-work-order { border: 1px solid #c9a56a; color: #7a5115; background: #fff9ed; }
+.requester-delete-work-order { border: 1px solid #d5a1a7; color: #8c1f2c; background: #fff2f3; }
+.requester-owner-actions button:disabled { cursor: wait; opacity: .6; }
 
 @media (max-width: 700px) {
   .requester-app-topbar { min-height: 64px; padding: 8px 13px; }

@@ -145,6 +145,21 @@ assert.equal(updated.responsibleDepartment, "SHE");
 assert.equal(updated.shiftGroup, "N/A");
 assert.equal(inPlant(() => m.getWorkOrderDetail(workOrder.id)).activities[0].action, "edited");
 
+const requesterTestOrder = createOrder("Requester delete test");
+await assert.rejects(inPlant(() => m.deleteWorkOrder(requesterTestOrder.id, secondRequester.id)), /requester account/i);
+await inPlant(() => m.deleteWorkOrder(requesterTestOrder.id, requester.id));
+assert.throws(() => inPlant(() => m.getWorkOrder(requesterTestOrder.id)), /not found/i);
+
+const requesterCancelledOrder = createOrder("Requester cancel test");
+const cancelledByRequester = inPlant(() => m.updateWorkOrderStatus(requesterCancelledOrder.id, {
+  actorId: requester.id,
+  status: "cancelled",
+  note: "Test request cancelled by requester."
+}));
+assert.equal(cancelledByRequester.status, "cancelled");
+await inPlant(() => m.deleteWorkOrder(requesterCancelledOrder.id, requester.id));
+assert.throws(() => inPlant(() => m.getWorkOrder(requesterCancelledOrder.id)), /not found/i);
+
 const timedOrder = createOrder("Requester timer check");
 assert.equal(timedOrder.closedAt, null);
 const closedTimedOrder = inPlant(() => m.updateWorkOrderStatus(timedOrder.id, {
@@ -203,6 +218,10 @@ assert.equal(airLeak.created, true);
 assert.equal(duplicateAirLeak.created, false);
 assert.equal(duplicateAirLeak.workOrderId, airLeak.workOrderId);
 assert.equal(inPlant(() => m.getWorkOrder(airLeak.workOrderId)).responsibleDepartment, "SHE");
+const deletedAirLeak = await inPlant(() => m.deleteAppSheetAirLeak("ALD-TEST-001"));
+assert.equal(deletedAirLeak.deleted, true);
+assert.throws(() => inPlant(() => m.getWorkOrder(airLeak.workOrderId)), /not found/i);
+assert.equal((await inPlant(() => m.deleteAppSheetAirLeak("ALD-TEST-001"))).deleted, false);
 assert(inPlant(() => m.listWorkOrders(requester)).some((order) => order.id === customCategoryOrder.id));
 assert.equal(inPlant(() => m.userCanAccessWorkOrder(requester, customCategoryOrder)), true);
 const maintenanceVisible = inPlant(() => m.listWorkOrders(technician));
