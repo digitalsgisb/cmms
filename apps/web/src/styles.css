@@ -12908,6 +12908,97 @@ body,
   border-color: rgba(127, 17, 27, 0.12);
 }
 
+.brief-maintenance-summary {
+  display: grid;
+  gap: 12px;
+  margin-top: 20px;
+  border: 1px solid rgba(127, 17, 27, 0.13);
+  border-radius: 12px;
+  background: linear-gradient(145deg, #fffafa, #fff);
+  padding: 16px;
+}
+
+.brief-maintenance-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.brief-maintenance-heading :is(p, h3) {
+  margin: 0;
+}
+
+.brief-maintenance-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.brief-maintenance-heading > span {
+  border-radius: 999px;
+  color: #786a70;
+  background: #f0e9eb;
+  padding: 6px 9px;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.brief-maintenance-heading > span.is-recorded {
+  color: #14753e;
+  background: #e5f6eb;
+}
+
+.brief-maintenance-note,
+.brief-maintenance-reason {
+  border-left: 4px solid var(--maroon);
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px 14px;
+}
+
+.brief-maintenance-note small,
+.brief-maintenance-reason small {
+  color: #7b6b73;
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.brief-maintenance-note p,
+.brief-maintenance-reason p {
+  margin: 5px 0 0;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.brief-maintenance-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+  margin: 0;
+}
+
+.brief-maintenance-metrics div {
+  display: grid;
+  gap: 4px;
+  border-radius: 9px;
+  background: #f5eeee;
+  padding: 10px 12px;
+}
+
+.brief-maintenance-metrics dt {
+  color: #88777f;
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.brief-maintenance-metrics dd {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 900;
+}
+
 .work-order-timing-strip {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -13277,6 +13368,12 @@ body,
   font-weight: 900;
 }
 
+.brief-editor label > small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
 .brief-editor :is(input, select, textarea) {
   width: 100%;
   min-height: 43px;
@@ -13400,6 +13497,10 @@ body,
   .brief-team-options {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .brief-maintenance-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 620px) {
@@ -13422,8 +13523,14 @@ body,
   .brief-editor-readonly,
   .brief-editor-grid,
   .brief-team-options,
-  .brief-team-lead-row {
+  .brief-team-lead-row,
+  .brief-maintenance-metrics {
     grid-template-columns: 1fr;
+  }
+
+  .brief-maintenance-heading {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .brief-editor-reason {

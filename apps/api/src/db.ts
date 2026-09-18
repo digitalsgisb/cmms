@@ -3970,13 +3970,16 @@ export function updateWorkOrder(id: string, input: UpdateWorkOrderInput): WorkOr
   const productionDowntimeReason = input.productionDowntimeReason === undefined
     ? current.productionDowntimeReason
     : input.productionDowntimeReason?.trim() || null;
+  const completionNote = input.completionNote === undefined
+    ? current.completionNote
+    : input.completionNote?.trim() || null;
   const updatedAt = now();
 
   db.prepare(
     "UPDATE work_orders SET type = ?, title = ?, description = ?, assetName = ?, location = ?, priority = ?, " +
     "dueDate = ?, workDate = ?, shiftGroup = ?, sectionId = ?, machineId = ?, area = ?, machineName = ?, " +
     "reportedByName = ?, reportedByDepartment = ?, responsibleDepartment = ?, issueCategoryId = ?, issueCategoryName = ?, " +
-    "issueDescription = ?, assignedToId = ?, supportingTechnicianIds = ?, productionDowntimeReason = ?, updatedAt = ? WHERE id = ?"
+    "issueDescription = ?, completionNote = ?, assignedToId = ?, supportingTechnicianIds = ?, productionDowntimeReason = ?, updatedAt = ? WHERE id = ?"
   ).run(
     input.type,
     machineName + " - " + issueCategoryName,
@@ -3997,6 +4000,7 @@ export function updateWorkOrder(id: string, input: UpdateWorkOrderInput): WorkOr
     issueCategory?.id || null,
     issueCategoryName,
     issueDescription,
+    completionNote,
     assignedToId,
     JSON.stringify(supportingTechnicianIds),
     productionDowntimeReason,
@@ -4869,6 +4873,7 @@ export function validateUpdateWorkOrderInput(body: Partial<UpdateWorkOrderInput>
     issueCategoryId: body.issueCategoryId ? String(body.issueCategoryId) : null,
     issueCategoryName: body.issueCategoryName ? String(body.issueCategoryName).trim() : undefined,
     issueDescription,
+    completionNote: body.completionNote === undefined ? undefined : body.completionNote ? String(body.completionNote).trim() : null,
     assignedToId: body.assignedToId === undefined ? undefined : body.assignedToId ? String(body.assignedToId) : null,
     supportingTechnicianIds: Array.isArray(body.supportingTechnicianIds) ? body.supportingTechnicianIds.map(String) : undefined,
     productionDowntimeReason: body.productionDowntimeReason === undefined ? undefined : body.productionDowntimeReason ? String(body.productionDowntimeReason) : null

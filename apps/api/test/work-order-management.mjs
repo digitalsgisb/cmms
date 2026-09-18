@@ -124,7 +124,8 @@ const updateBody = {
   reportedByDepartment: "SHE",
   responsibleDepartment: "SHE",
   issueCategoryId: sheIssueCategory.id,
-  issueDescription: "Updated issue"
+  issueDescription: "Updated issue",
+  completionNote: "Replaced damaged sensor wiring and tested the machine."
 };
 
 assert.throws(
@@ -140,6 +141,7 @@ const updated = inPlant(() => m.updateWorkOrder(workOrder.id, m.validateUpdateWo
 assert.equal(updated.number, workOrder.number);
 assert.equal(updated.machineName, "Updated machine");
 assert.equal(updated.issueDescription, "Updated issue");
+assert.equal(updated.completionNote, "Replaced damaged sensor wiring and tested the machine.");
 assert.equal(updated.priority, "high");
 assert.equal(updated.responsibleDepartment, "SHE");
 assert.equal(updated.shiftGroup, "N/A");

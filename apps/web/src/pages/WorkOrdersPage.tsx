@@ -370,7 +370,7 @@ function WorkOrderCard({
       </Link>
       {canManage ? (
         <div className="work-order-card-actions">
-          <Link className="edit-work-order-button" to={`/work-orders/${workOrder.id}/edit`}>
+          <Link className="edit-work-order-button" to={`/work-orders/${workOrder.id}?edit=brief`}>
             <Pencil size={15} aria-hidden="true" />
             Edit
           </Link>
@@ -448,7 +448,7 @@ function ClosedWorkOrderHistory({
                   <Link to={`/work-orders/${workOrder.id}`} aria-label={`Open ${workOrder.number}`}><Eye size={16} /></Link>
                   {canManage ? (
                     <>
-                      <Link to={`/work-orders/${workOrder.id}/edit`} aria-label={`Edit ${workOrder.number}`}><Pencil size={16} /></Link>
+                      <Link to={`/work-orders/${workOrder.id}?edit=brief`} aria-label={`Edit brief for ${workOrder.number}`}><Pencil size={16} /></Link>
                       <button type="button" onClick={() => onDelete(workOrder)} aria-label={`Delete ${workOrder.number}`}><Trash2 size={16} /></button>
                     </>
                   ) : null}

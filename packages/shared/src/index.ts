@@ -424,6 +424,7 @@ export interface UpdateWorkOrderInput {
   issueCategoryId?: string | null;
   issueCategoryName?: string;
   issueDescription: string;
+  completionNote?: string | null;
   assignedToId?: string | null;
   supportingTechnicianIds?: string[];
   productionDowntimeReason?: string | null;

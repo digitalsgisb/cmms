@@ -1,7 +1,7 @@
 import { AlertCircle, ArrowLeft, Check, CheckCircle2, ClipboardCopy, Clock3, ExternalLink, ImagePlus, MessageSquare, PackageOpen, Pencil, RotateCcw, Save, ShieldCheck, TimerReset, Trash2, UsersRound, Wrench, X } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { MasterData, ShiftGroup, User, WorkOrder, WorkOrderAttachment, WorkOrderActivity, WorkOrderDepartment, WorkOrderDetail, WorkOrderPriority, WorkOrderStatus, WorkOrderType } from "@sugi-cmms/shared";
 import { longProductionDowntimeMinutes, technicianCanAccessWorkOrder, workOrderDepartments, workOrderStatusLabels, workOrderTypeLabels } from "@sugi-cmms/shared";
 import { api, mediaUrl } from "../api/client";
@@ -42,6 +42,7 @@ type BriefDraft = {
   issueCategoryId: string;
   issueCategoryName: string;
   issueDescription: string;
+  completionNote: string;
   assignedToId: string;
   supportingTechnicianIds: string[];
   productionDowntimeReason: string;
@@ -66,6 +67,8 @@ function findActivityTime(activities: WorkOrderActivity[], action: WorkOrderActi
 export function WorkOrderDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const autoOpenedBriefId = useRef("");
   const { currentUser, users } = useCurrentUser();
   const [loadError, setLoadError] = useState("");
   const [detail, setDetail] = useState<WorkOrderDetail | null>(null);
@@ -178,6 +181,18 @@ export function WorkOrderDetailPage() {
       ? currentUser.id === detail.requesterId || ["executive", "admin", "developer"].includes(currentUser.role)
       : false;
   const isRequesterOwner = Boolean(currentUser && detail && currentUser.id === detail.requesterId && currentUser.role === "requester");
+
+  useEffect(() => {
+    if (!detail || !canManageWorkOrder || searchParams.get("edit") !== "brief" || autoOpenedBriefId.current === detail.id) {
+      return;
+    }
+
+    autoOpenedBriefId.current = detail.id;
+    const nextSearchParams = new URLSearchParams(searchParams);
+    nextSearchParams.delete("edit");
+    setSearchParams(nextSearchParams, { replace: true });
+    void openBriefEditor();
+  }, [detail?.id, canManageWorkOrder, searchParams, setSearchParams]);
 
   async function updateStatus(status: WorkOrderStatus, fallbackNote: string) {
     if (!detail || !currentUser) {
@@ -319,6 +334,7 @@ export function WorkOrderDetailPage() {
         issueCategoryId: detail.issueCategoryId || otherBriefOption,
         issueCategoryName: detail.issueCategoryId ? "" : detail.issueCategoryName === "Other" ? "" : detail.issueCategoryName,
         issueDescription: detail.issueDescription,
+        completionNote: detail.completionNote || "",
         assignedToId: detail.assignedToId || "",
         supportingTechnicianIds: detail.supportingTechnicianIds,
         productionDowntimeReason: detail.productionDowntimeReason || ""
@@ -382,6 +398,7 @@ export function WorkOrderDetailPage() {
           ? briefDraft.issueCategoryName.trim() || "Other"
           : briefMasterData.issueCategories.find((category) => category.id === briefDraft.issueCategoryId)?.name,
         issueDescription: briefDraft.issueDescription,
+        completionNote: briefDraft.completionNote.trim() || null,
         assignedToId: briefDraft.assignedToId || null,
         supportingTechnicianIds: briefDraft.supportingTechnicianIds,
         productionDowntimeReason: briefDraft.productionDowntimeReason.trim() || null
@@ -540,6 +557,7 @@ export function WorkOrderDetailPage() {
       </div>
 
       <label className="brief-editor-description">Issue description<textarea rows={3} required value={briefDraft.issueDescription} onChange={(event) => setBriefDraft({ ...briefDraft, issueDescription: event.target.value })} /></label>
+      <label className="brief-editor-description">Maintenance repair notes<textarea rows={4} value={briefDraft.completionNote} onChange={(event) => setBriefDraft({ ...briefDraft, completionNote: event.target.value })} placeholder="What was repaired, replaced, adjusted, or tested?" /><small>The same completion note recorded when maintenance resolves the work order.</small></label>
 
       <div className="brief-editor-grid">
         <label>Work order type<select value={briefDraft.type} onChange={(event) => setBriefDraft({ ...briefDraft, type: event.target.value as WorkOrderType, assignedToId: "", supportingTechnicianIds: [] })}>{Object.entries(workOrderTypeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
@@ -600,8 +618,24 @@ export function WorkOrderDetailPage() {
         <div className="technician-secondary-detail"><dt>Supporting team</dt><dd>{detail.supportingTechnicians.length ? detail.supportingTechnicians.map((technician) => technician.name).join(", ") : "Recorded when resolved"}</dd></div>
         <div className="technician-secondary-detail"><dt>Requester account</dt><dd>{detail.requester.name}</dd></div>
         <div className="technician-secondary-detail"><dt>Updated</dt><dd>{formatDateTime(detail.updatedAt)}</dd></div>
-        {detail.productionDowntimeReason ? <div className="technician-secondary-detail"><dt>Why it took longer</dt><dd>{detail.productionDowntimeReason}</dd></div> : null}
       </dl>
+      <section className="brief-maintenance-summary" aria-labelledby="maintenance-summary-title">
+        <div className="brief-maintenance-heading">
+          <div><p className="eyebrow">Repair handoff</p><h3 id="maintenance-summary-title">Maintenance Completion</h3></div>
+          <span className={detail.completionNote ? "is-recorded" : ""}>{detail.completionNote ? "Notes recorded" : "Awaiting notes"}</span>
+        </div>
+        <div className="brief-maintenance-note">
+          <small>Maintenance repair notes</small>
+          <p>{detail.completionNote || "No maintenance repair notes have been recorded yet."}</p>
+        </div>
+        <dl className="brief-maintenance-metrics">
+          <div><dt>Maintenance actual</dt><dd>{formatMinutes(detail.maintenanceActualMinutes)}</dd></div>
+          <div><dt>Repair started</dt><dd>{startedAt ? formatDateTime(startedAt) : "Not started"}</dd></div>
+          <div><dt>Resolved</dt><dd>{resolvedAt ? formatDateTime(resolvedAt) : "Not resolved"}</dd></div>
+          <div><dt>Closed</dt><dd>{closedAt ? formatDateTime(closedAt) : "Not closed"}</dd></div>
+        </dl>
+        {detail.productionDowntimeReason ? <div className="brief-maintenance-reason"><small>Why it took longer</small><p>{detail.productionDowntimeReason}</p></div> : null}
+      </section>
     </div>
   );
 
@@ -641,10 +675,10 @@ export function WorkOrderDetailPage() {
           </Link>
           {canManageWorkOrder ? (
             <>
-              <Link className="secondary-action work-order-edit-link" to={`/work-orders/${detail.id}/edit`}>
+              <button className="secondary-action work-order-edit-link" type="button" disabled={briefLoading} onClick={() => void openBriefEditor()}>
                 <Pencil size={17} aria-hidden="true" />
-                Edit
-              </Link>
+                {briefLoading ? "Loading..." : "Edit Brief"}
+              </button>
               <button className="secondary-action work-order-delete-link" type="button" disabled={busy} onClick={removeWorkOrder}>
                 <Trash2 size={17} aria-hidden="true" />
                 {busyAction === "delete" ? "Deleting..." : "Delete"}
