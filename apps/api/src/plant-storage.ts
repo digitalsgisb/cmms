@@ -61,6 +61,16 @@ export function migratePlants(db: DatabaseSync) {
         definition = definition.replace(/\)\s*$/, ", UNIQUE (plantId, department, name))");
       }
       const indexes = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL").all(table) as Array<{ sql: string }>;
+      // Existing installations already have a scoped view. SQLite validates
+      // that view and relationship triggers during ALTER TABLE RENAME, so
+      // remove them for the short table rebuild. The common setup below
+      // recreates both immediately afterward.
+      db.exec(`DROP VIEW IF EXISTS scoped_${table}`);
+      const dependentTriggers = db.prepare(`
+        SELECT name FROM sqlite_master
+        WHERE type = 'trigger' AND name LIKE 'plant_link_%' AND sql LIKE ?
+      `).all(`%FROM ${table} WHERE%`) as Array<{ name: string }>;
+      dependentTriggers.forEach((trigger) => db.exec(`DROP TRIGGER IF EXISTS "${trigger.name.replaceAll('"', '""')}"`));
       db.exec(`${definition}; INSERT INTO ${table}_department_migration SELECT * FROM ${table}; DROP TABLE ${table}; ALTER TABLE ${table}_department_migration RENAME TO ${table};`);
       indexes.forEach((index) => db.exec(index.sql));
     }

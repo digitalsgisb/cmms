@@ -19,6 +19,26 @@ const inPlant = (fn) => plantContext.run({ plant: "port-klang" }, fn);
 const password = "Work-order-test-123!";
 
 m.migrate();
+// Reproduce an existing installation from before department-scoped names:
+// both master tables have the old plant-wide unique constraint and their
+// scoped views are already present when the next deployment starts.
+for (const table of ["sections", "issue_categories"]) {
+  const stored = m.db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table);
+  const indexes = m.db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL").all(table);
+  const legacyDefinition = stored.sql
+    .replace(new RegExp(`CREATE TABLE ["\\x60]?${table}["\\x60]?`, "i"), `CREATE TABLE ${table}_legacy_constraint`)
+    .replace(/UNIQUE\s*\(\s*plantId\s*,\s*department\s*,\s*name\s*\)/i, "UNIQUE (plantId, name)");
+  const dependentTriggers = m.db.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'plant_link_%' AND sql LIKE ?").all(`%FROM ${table} WHERE%`);
+  dependentTriggers.forEach((trigger) => m.db.exec(`DROP TRIGGER "${trigger.name}"`));
+  m.db.exec(`DROP VIEW scoped_${table}; ${legacyDefinition}; INSERT INTO ${table}_legacy_constraint SELECT * FROM ${table}; DROP TABLE ${table}; ALTER TABLE ${table}_legacy_constraint RENAME TO ${table};`);
+  indexes.forEach((index) => m.db.exec(index.sql));
+  m.db.exec(`CREATE VIEW scoped_${table} AS SELECT * FROM ${table} WHERE cmms_can_access(plantId)`);
+}
+m.migrate();
+for (const table of ["sections", "issue_categories"]) {
+  const migrated = m.db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table);
+  assert.match(migrated.sql, /UNIQUE\s*\(\s*plantId\s*,\s*department\s*,\s*name\s*\)/i);
+}
 inPlant(() => m.seed());
 const admin = m.listUsers().find((user) => user.role === "admin");
 assert(admin);
