@@ -79,9 +79,9 @@ export function Layout() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const location = useLocation();
   const isRequester = currentUser?.role === "requester";
-  const hasDeveloperAccess = Boolean(currentUser && ["admin", "developer"].includes(currentUser.role));
+  const hasDeveloperAccess = Boolean(currentUser && ["executive", "admin", "developer"].includes(currentUser.role));
   const canUseTechnicianViews = currentUser ? currentUser.role !== "requester" : true;
-  const canOpenTechnicianQueue = currentUser ? ["technician", "admin", "developer"].includes(currentUser.role) : true;
+  const canOpenTechnicianQueue = currentUser ? ["technician", "executive", "admin", "developer"].includes(currentUser.role) : true;
   const workOrdersActive = location.pathname.startsWith("/work-orders") || (!isRequester && location.pathname.startsWith("/technician"));
   const sparePartsActive = location.pathname.startsWith("/spare-parts");
   const preventiveActive = location.pathname.startsWith("/preventive-maintenance");
@@ -278,10 +278,6 @@ export function Layout() {
 
   if (currentUser.role === "requester") {
     return <Navigate to="/requester" replace />;
-  }
-
-  if (currentUser.role === "executive" && location.pathname.startsWith("/technician")) {
-    return <Navigate to="/" replace />;
   }
 
   if (currentUser.role === "technician") {

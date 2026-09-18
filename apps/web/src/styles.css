@@ -5878,6 +5878,24 @@ tbody tr:hover {
   gap: 16px;
 }
 
+.master-department-selector {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.45fr) minmax(0, 1fr);
+  align-items: end;
+  gap: 16px;
+}
+
+.master-department-selector label {
+  display: grid;
+  gap: 8px;
+  font-weight: 900;
+}
+
+.master-department-selector p {
+  margin: 0 0 10px;
+  color: var(--muted);
+}
+
 .master-add-row,
 .master-row {
   display: grid;
@@ -7443,6 +7461,7 @@ tbody tr:hover {
     .master-add-row-machine,
   .master-row,
   .master-row-machine,
+  .master-department-selector,
   .requester-qr-layout,
   .requester-workspace,
   .timer-grid,

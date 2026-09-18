@@ -4,17 +4,18 @@ import type { PlantId } from "@sugi-cmms/shared";
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import multer from "multer";
-import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { loadEnvFile } from "node:process";
-import type { MachineImportRow } from "@sugi-cmms/shared";
+import type { MachineImportRow, WorkOrderDepartment } from "@sugi-cmms/shared";
 import type { User } from "@sugi-cmms/shared";
 import {
   addAttachment,
   addPmResultPhoto,
   addComment,
   adjustSparePart,
+  authenticateAirLeakIntegration,
   assignPmTemplate,
   assignWorkOrder,
   authenticateSession,
@@ -68,6 +69,8 @@ import {
   revokeAuthSession,
   revokeUserSessions,
   flushWorkOrderSyncQueue,
+  flushAirLeakSyncQueue,
+  getAirLeakSyncSettings,
   savePmResult,
   savePmTemplate,
   savePushSubscription,
@@ -75,6 +78,7 @@ import {
   startPmSchedule,
   submitPmSchedule,
   updateIssueCategory,
+  updateAirLeakSyncSettings,
   updateAsset,
   updateMachine,
   updatePmPlan,
@@ -86,6 +90,7 @@ import {
   updateWorkOrder,
   updateWorkOrderDowntimeReason,
   updateWorkOrderStatus,
+  upsertAppSheetAirLeak,
   uploadsRoot,
   validateCreateWorkOrderInput,
   validateStatusInput,
@@ -181,6 +186,40 @@ function saveWorkOrderAttachments(
   });
 }
 
+async function importAirLeakPhoto(workOrderId: string, pictureUrl: string) {
+  if (!pictureUrl.trim()) return false;
+  const detail = getWorkOrderDetail(workOrderId);
+  if (detail.attachments.some((attachment) => attachment.kind === "issue")) return true;
+  let url: URL;
+  try { url = new URL(pictureUrl); }
+  catch { return false; }
+  if (url.protocol !== "https:" || !(url.hostname === "appsheet.com" || url.hostname.endsWith(".appsheet.com"))) return false;
+
+  const remote = await fetch(url, { signal: AbortSignal.timeout(15000), redirect: "follow" });
+  if (!remote.ok) throw new Error(`Unable to download the AppSheet picture (HTTP ${remote.status}).`);
+  const mimeType = remote.headers.get("content-type")?.split(";")[0].trim().toLowerCase() || "";
+  if (!mimeType.startsWith("image/")) throw new Error("The AppSheet picture URL did not return an image.");
+  const bytes = Buffer.from(await remote.arrayBuffer());
+  if (!bytes.length || bytes.length > 8 * 1024 * 1024) throw new Error("The AppSheet picture must be between 1 byte and 8 MB.");
+
+  const extension = mimeType === "image/png" ? ".png" : mimeType === "image/gif" ? ".gif" : mimeType === "image/webp" ? ".webp" : ".jpg";
+  const filename = `${randomUUID()}${extension}`;
+  const targetDir = path.join(uploadsRoot, "work-orders", workOrderId);
+  if (!existsSync(targetDir)) mkdirSync(targetDir, { recursive: true });
+  writeFileSync(path.join(targetDir, filename), bytes);
+  addAttachment({
+    workOrderId,
+    uploadedBy: publicRequesterIdForUploads(),
+    filename,
+    originalName: `AppSheet-${filename}`,
+    mimeType,
+    size: bytes.length,
+    url: `/uploads/work-orders/${workOrderId}/${filename}`,
+    kind: "issue"
+  });
+  return true;
+}
+
 migrate();
 plantContext.run({ plant: "port-klang" }, () => seed());
 plantContext.run({ plant: "sendayan" }, () => ensurePlantPmSchedules());
@@ -203,6 +242,7 @@ declare global {
 }
 
 app.use("/api", (request, response, next) => {
+  const appSheetAirLeakMutation = request.method === "POST" && request.path === "/integrations/appsheet/air-leaks";
   const publicRequesterMutation =
     request.method === "POST" &&
     (request.path === "/requester/work-orders" || /^\/requester\/work-orders\/[^/]+\/attachments$/.test(request.path));
@@ -216,7 +256,7 @@ app.use("/api", (request, response, next) => {
     publicRequesterMutation ||
     publicGuestTracking ||
     (request.method === "GET" && request.path === "/master-data");
-  if (publicGuestTracking || publicRequesterMutation || (publicRequest && !request.header("authorization") && !sessionCookie(request))) {
+  if (appSheetAirLeakMutation || publicGuestTracking || publicRequesterMutation || (publicRequest && !request.header("authorization") && !sessionCookie(request))) {
     let plant = String(request.header("x-cmms-plant") || request.query.plant || "port-klang");
     const guestId = request.path.match(/^\/requester\/work-orders\/([^/]+)/)?.[1];
     if (guestId) {
@@ -288,7 +328,7 @@ function authorizeRequest(request: Request, response: Response, next: NextFuncti
       return;
     }
   }
-  if ((request.path.startsWith("/work-orders/sync")) && !["admin", "developer"].includes(request.cmmsUser!.role)) {
+  if ((request.path.startsWith("/work-orders/sync")) && !["executive", "admin", "developer"].includes(request.cmmsUser!.role)) {
     response.status(403).json({ error: "This feature is locked while development is in progress." });
     return;
   }
@@ -300,7 +340,7 @@ function authorizeRequest(request: Request, response: Response, next: NextFuncti
 type LiveTopic = "work-orders" | "notifications" | "dashboard" | "spare-parts" | "pm" | "assets" | "master-data" | "users";
 
 function topicsForMutation(pathname: string): LiveTopic[] {
-  if (pathname.startsWith("/api/requester/work-orders") || pathname.startsWith("/api/work-orders")) {
+  if (pathname.startsWith("/api/requester/work-orders") || pathname.startsWith("/api/work-orders") || pathname.startsWith("/api/integrations/appsheet/air-leaks")) {
     return ["work-orders", "notifications", "dashboard"];
   }
   if (pathname.startsWith("/api/spare-parts")) return ["spare-parts", "dashboard"];
@@ -393,7 +433,7 @@ app.get("/api/health", (_request, response) => {
 
 app.get("/api/users", (request, response) => {
   const list = () => listUsers(request.query.role ? String(request.query.role) : undefined);
-  response.json(request.query.manage && request.cmmsUser?.plantAccess === "both" && ["admin", "developer"].includes(request.cmmsUser.role) ? plantContext.run({ plant: "all" }, list) : list());
+  response.json(request.query.manage && request.cmmsUser?.plantAccess === "both" && ["executive", "admin", "developer"].includes(request.cmmsUser.role) ? plantContext.run({ plant: "all" }, list) : list());
 });
 
 app.post("/api/users", (request, response) => {
@@ -481,7 +521,7 @@ app.get("/api/auth/me", (request, response) => {
 });
 
 app.post("/api/users/:id/avatar", upload.single("avatar"), (request, response) => {
-  if (request.cmmsUser?.id !== request.params.id && !["admin", "developer"].includes(request.cmmsUser?.role || "")) {
+  if (request.cmmsUser?.id !== request.params.id && !["executive", "admin", "developer"].includes(request.cmmsUser?.role || "")) {
     response.status(403).json({ error: "You can only update your own profile photo." });
     return;
   }
@@ -542,6 +582,7 @@ app.get("/api/master-data", (_request, response) => {
 app.post("/api/master-data/sections", (request, response) => {
   response.status(201).json(createSection({
     actorId: String(request.body.actorId || ""),
+    department: String(request.body.department || "Production") as WorkOrderDepartment,
     name: String(request.body.name || ""),
     active: request.body.active === undefined ? true : Boolean(request.body.active)
   }));
@@ -550,6 +591,7 @@ app.post("/api/master-data/sections", (request, response) => {
 app.patch("/api/master-data/sections/:id", (request, response) => {
   response.json(updateSection(request.params.id, {
     actorId: String(request.body.actorId || ""),
+    department: String(request.body.department || "Production") as WorkOrderDepartment,
     name: String(request.body.name || ""),
     active: request.body.active === undefined ? true : Boolean(request.body.active)
   }));
@@ -558,6 +600,7 @@ app.patch("/api/master-data/sections/:id", (request, response) => {
 app.post("/api/master-data/machines", (request, response) => {
   response.status(201).json(createMachine({
     actorId: String(request.body.actorId || ""),
+    department: String(request.body.department || "Production") as WorkOrderDepartment,
     sectionId: String(request.body.sectionId || ""),
     area: String(request.body.area || "General"),
     name: String(request.body.name || ""),
@@ -570,6 +613,7 @@ app.post("/api/master-data/machines/import", (request, response) => {
   response.status(201).json(importMachines({
     actorId: String(request.body.actorId || ""),
     rows: rows.map((row: Partial<MachineImportRow>) => ({
+      department: String(row.department || "Production") as WorkOrderDepartment,
       sectionName: String(row.sectionName || ""),
       areaName: String(row.areaName || "General"),
       machineName: String(row.machineName || "")
@@ -580,6 +624,7 @@ app.post("/api/master-data/machines/import", (request, response) => {
 app.patch("/api/master-data/machines/:id", (request, response) => {
   response.json(updateMachine(request.params.id, {
     actorId: String(request.body.actorId || ""),
+    department: String(request.body.department || "Production") as WorkOrderDepartment,
     sectionId: String(request.body.sectionId || ""),
     area: String(request.body.area || "General"),
     name: String(request.body.name || ""),
@@ -590,6 +635,7 @@ app.patch("/api/master-data/machines/:id", (request, response) => {
 app.post("/api/master-data/issue-categories", (request, response) => {
   response.status(201).json(createIssueCategory({
     actorId: String(request.body.actorId || ""),
+    department: String(request.body.department || "Production") as WorkOrderDepartment,
     name: String(request.body.name || ""),
     active: request.body.active === undefined ? true : Boolean(request.body.active)
   }));
@@ -598,6 +644,7 @@ app.post("/api/master-data/issue-categories", (request, response) => {
 app.patch("/api/master-data/issue-categories/:id", (request, response) => {
   response.json(updateIssueCategory(request.params.id, {
     actorId: String(request.body.actorId || ""),
+    department: String(request.body.department || "Production") as WorkOrderDepartment,
     name: String(request.body.name || ""),
     active: request.body.active === undefined ? true : Boolean(request.body.active)
   }));
@@ -750,6 +797,24 @@ app.post("/api/work-orders/sync/retry", asyncHandler(async (request, response) =
   response.json(await flushWorkOrderSyncQueue(String(request.body.actorId || "")));
 }));
 
+app.get("/api/integrations/air-leaks/settings", (_request, response) => {
+  response.json(getAirLeakSyncSettings());
+});
+
+app.patch("/api/integrations/air-leaks/settings", (request, response) => {
+  response.json(updateAirLeakSyncSettings({
+    actorId: String(request.body.actorId || ""),
+    inboundToken: request.body.inboundToken ? String(request.body.inboundToken) : undefined,
+    scriptUrl: String(request.body.scriptUrl || ""),
+    scriptToken: request.body.scriptToken ? String(request.body.scriptToken) : undefined,
+    sheetName: String(request.body.sheetName || "Main")
+  }));
+});
+
+app.post("/api/integrations/air-leaks/retry", asyncHandler(async (request, response) => {
+  response.json(await flushAirLeakSyncQueue(String(request.body.actorId || "")));
+}));
+
 app.get("/api/spare-parts/:itemNo", (request, response) => {
   response.json(getSparePartDetail(request.params.itemNo));
 });
@@ -779,6 +844,31 @@ app.post("/api/spare-parts/:itemNo/adjust", asyncHandler(async (request, respons
 app.get("/api/requester/work-orders", (_request, response) => {
   response.status(403).json({ error: "Guest tracking is disabled. Sign in with a requester account to track work orders." });
 });
+
+app.post("/api/integrations/appsheet/air-leaks", asyncHandler(async (request, response) => {
+  const authorization = request.header("authorization") || "";
+  const token = authorization.startsWith("Bearer ")
+    ? authorization.slice(7).trim()
+    : String(request.header("x-integration-key") || "").trim();
+  if (!authenticateAirLeakIntegration(token)) {
+    response.status(401).json({ ok: false, error: "Invalid Air Leak integration token." });
+    return;
+  }
+  const result = upsertAppSheetAirLeak({
+    airLeakId: String(request.body.airLeakId || request.body["Air Leak ID"] || ""),
+    date: String(request.body.date || request.body.Date || ""),
+    section: String(request.body.section || request.body.Section || ""),
+    pictureUrl: String(request.body.pictureUrl || request.body.Picture || ""),
+    issue: String(request.body.issue || request.body.Issue || ""),
+    machine: String(request.body.machine || request.body["Machine/Equipment"] || ""),
+    issuedBy: String(request.body.issuedBy || request.body["Issue By"] || "")
+  });
+  let photoImported = false;
+  if (request.body.pictureUrl || request.body.Picture) {
+    photoImported = await importAirLeakPhoto(result.workOrderId, String(request.body.pictureUrl || request.body.Picture));
+  }
+  response.status(result.created ? 201 : 200).json({ ...result, photoImported });
+}));
 
 app.post("/api/requester/work-orders", (request, response) => {
   const input = validateCreateWorkOrderInput({
@@ -980,8 +1070,8 @@ app.delete("/api/push/subscriptions", (request, response) => {
 });
 
 app.post("/api/push/test", asyncHandler(async (request, response) => {
-  if (request.cmmsUser!.role !== "admin") {
-    response.status(403).json({ error: "Only an administrator can send a test notification." });
+  if (!["executive", "admin", "developer"].includes(request.cmmsUser!.role)) {
+    response.status(403).json({ error: "Executive, admin, or developer access is required." });
     return;
   }
 
@@ -1026,5 +1116,10 @@ function sessionCookie(request: Request): string {
   return (request.headers.cookie || "").split(";").map((part) => part.trim()).find((part) => part.startsWith("cmms-session="))?.slice(13) || "";
 }
 async function flushAllPlants() {
-  for (const plant of ["port-klang", "sendayan"] as const) await plantContext.run({ plant }, () => flushWorkOrderSyncQueue());
+  for (const plant of ["port-klang", "sendayan"] as const) {
+    await plantContext.run({ plant }, async () => {
+      await flushWorkOrderSyncQueue();
+      await flushAirLeakSyncQueue();
+    });
+  }
 }

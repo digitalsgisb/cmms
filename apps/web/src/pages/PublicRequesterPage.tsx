@@ -138,17 +138,17 @@ export function PublicRequesterPage() {
   }, { fallbackMs: 10000 });
 
   const isOffice = selectedType === "office";
-  const activeSections = useMemo(() => masterData.sections.filter((section) => section.active), [masterData.sections]);
-  const activeIssues = useMemo(() => masterData.issueCategories.filter((category) => category.active), [masterData.issueCategories]);
+  const activeSections = useMemo(() => masterData.sections.filter((section) => section.active && section.department === selectedDepartment), [masterData.sections, selectedDepartment]);
+  const activeIssues = useMemo(() => masterData.issueCategories.filter((category) => category.active && category.department === selectedDepartment), [masterData.issueCategories, selectedDepartment]);
   const rules = selectedDepartment ? workOrderFormRulesForDepartment(selectedDepartment) : null;
   const sectionOptions = useMemo(() => [...activeSections.map((section) => ({ value: section.id, label: section.name })), { value: otherOptionValue, label: "Others", meta: "Specify a section" }], [activeSections]);
   const areaOptions = useMemo(() => {
     const areas = [...new Set(masterData.machines
-      .filter((machine) => machine.active && (!form.sectionId || form.sectionId === otherOptionValue || machine.sectionId === form.sectionId))
+      .filter((machine) => machine.active && machine.department === selectedDepartment && (!form.sectionId || form.sectionId === otherOptionValue || machine.sectionId === form.sectionId))
       .map((machine) => machine.area).filter(Boolean))];
     return [...areas.map((area) => ({ value: area, label: area })), { value: otherOptionValue, label: "Others", meta: "Specify an area" }];
-  }, [form.sectionId, masterData.machines]);
-  const filteredMachines = useMemo(() => masterData.machines.filter((machine) => machine.active && machine.sectionId === form.sectionId && (!form.area || form.area === otherOptionValue || machine.area === form.area)), [form.area, masterData.machines, form.sectionId]);
+  }, [form.sectionId, masterData.machines, selectedDepartment]);
+  const filteredMachines = useMemo(() => masterData.machines.filter((machine) => machine.active && machine.department === selectedDepartment && machine.sectionId === form.sectionId && (!form.area || form.area === otherOptionValue || machine.area === form.area)), [form.area, masterData.machines, form.sectionId, selectedDepartment]);
   const machineOptions = useMemo(() => [...filteredMachines.map((machine) => ({ value: machine.id, label: machine.name, meta: machine.area })), { value: otherOptionValue, label: "Others", meta: "Specify a machine or equipment" }], [filteredMachines]);
   const issueOptions = useMemo(() => [...activeIssues.map((category) => ({ value: category.id, label: category.name })), { value: otherOptionValue, label: "Others", meta: "Specify an issue category" }], [activeIssues]);
   const accountDepartment = workOrderDepartmentForUser(currentUser?.department || "");
@@ -175,6 +175,7 @@ export function PublicRequesterPage() {
 
   function chooseDepartment(department: WorkOrderDepartment) {
     setSelectedDepartment(department);
+    setForm((current) => ({ ...current, sectionId: "", customSection: "", area: "", customArea: "", machineId: "", placeOrEquipment: "", issueCategoryId: "", customIssueCategory: "" }));
     setChoosingOtherDepartment(false);
     setError("");
   }

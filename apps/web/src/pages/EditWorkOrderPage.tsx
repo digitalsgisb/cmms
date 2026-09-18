@@ -76,16 +76,16 @@ export function EditWorkOrderPage() {
   }, [canEdit, id]);
 
   const activeSections = useMemo(
-    () => masterData.sections.filter((section) => section.active || section.id === form.sectionId),
-    [form.sectionId, masterData.sections]
+    () => masterData.sections.filter((section) => section.department === form.responsibleDepartment && (section.active || section.id === form.sectionId)),
+    [form.responsibleDepartment, form.sectionId, masterData.sections]
   );
   const filteredMachines = useMemo(
-    () => masterData.machines.filter((machine) => (machine.active || machine.id === form.machineId) && machine.sectionId === form.sectionId),
-    [form.machineId, form.sectionId, masterData.machines]
+    () => masterData.machines.filter((machine) => machine.department === form.responsibleDepartment && (machine.active || machine.id === form.machineId) && machine.sectionId === form.sectionId),
+    [form.machineId, form.responsibleDepartment, form.sectionId, masterData.machines]
   );
   const issueCategories = useMemo(
-    () => masterData.issueCategories.filter((category) => category.active || category.id === form.issueCategoryId),
-    [form.issueCategoryId, masterData.issueCategories]
+    () => masterData.issueCategories.filter((category) => category.department === form.responsibleDepartment && (category.active || category.id === form.issueCategoryId)),
+    [form.issueCategoryId, form.responsibleDepartment, masterData.issueCategories]
   );
   const sectionOptions = useMemo(
     () => [{ value: "", label: "No section / office" }, ...activeSections.map((section) => ({ value: section.id, label: section.name }))],
@@ -237,7 +237,7 @@ export function EditWorkOrderPage() {
         <div className="form-grid two-columns">
           <label>
             Responsible department
-            <select value={form.responsibleDepartment} onChange={(event) => setForm({ ...form, responsibleDepartment: event.target.value as WorkOrderDepartment })}>
+            <select value={form.responsibleDepartment} onChange={(event) => setForm({ ...form, responsibleDepartment: event.target.value as WorkOrderDepartment, sectionId: "", machineId: "", customMachineName: "", customArea: "", issueCategoryId: "", customIssueCategory: "" })}>
               {workOrderDepartments.map((department) => <option key={department} value={department}>{department}</option>)}
             </select>
           </label>

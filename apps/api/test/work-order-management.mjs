@@ -65,6 +65,11 @@ const section = masterData.sections[0];
 const issueCategory = masterData.issueCategories[0];
 assert(section);
 assert(issueCategory);
+const sheSection = inPlant(() => m.createSection({ actorId: executive.id, department: "SHE", name: section.name }));
+const sheIssueCategory = inPlant(() => m.listMasterData().issueCategories.find((category) => category.department === "SHE" && category.name === "Air Leak"));
+assert.equal(sheSection.department, "SHE");
+assert.equal(sheSection.name, section.name);
+assert.equal(sheIssueCategory.department, "SHE");
 
 function createOrder(label, type = "maintenance") {
   return inPlant(() => m.createWorkOrder(m.validateCreateWorkOrderInput({
@@ -91,14 +96,14 @@ const updateBody = {
   dueDate: "2026-09-30",
   workDate: "2026-09-09",
   shiftGroup: "B",
-  sectionId: section.id,
+  sectionId: sheSection.id,
   machineId: null,
   area: "Updated area",
   machineName: "Updated machine",
   reportedByName: "Updated reporter",
   reportedByDepartment: "SHE",
   responsibleDepartment: "SHE",
-  issueCategoryId: issueCategory.id,
+  issueCategoryId: sheIssueCategory.id,
   issueDescription: "Updated issue"
 };
 
@@ -137,7 +142,7 @@ const customCategoryOrder = inPlant(() => m.createWorkOrder(m.validateCreateWork
   requesterId: secondRequester.id,
   type: "maintenance",
   workDate: "2026-09-08",
-  sectionId: section.id,
+  sectionId: sheSection.id,
   area: "Other area",
   machineName: "Other equipment",
   reportedByName: secondRequester.name,
@@ -147,6 +152,37 @@ const customCategoryOrder = inPlant(() => m.createWorkOrder(m.validateCreateWork
   issueDescription: "Custom category issue"
 })));
 assert.equal(customCategoryOrder.issueCategoryName, "Access control");
+assert.throws(() => inPlant(() => m.createWorkOrder(m.validateCreateWorkOrderInput({
+  requesterId: secondRequester.id,
+  type: "maintenance",
+  sectionId: section.id,
+  machineName: "Cross-department equipment",
+  reportedByName: secondRequester.name,
+  reportedByDepartment: "SHE",
+  responsibleDepartment: "SHE",
+  issueDescription: "Must reject Production master data"
+}))), /belongs to Production, not SHE/i);
+
+const airLeak = inPlant(() => m.upsertAppSheetAirLeak({
+  airLeakId: "ALD-TEST-001",
+  date: "2026-09-17",
+  section: sheSection.name,
+  machine: "Compressed air line",
+  issuedBy: "Safety Tester",
+  issue: "Air leak found during inspection"
+}));
+const duplicateAirLeak = inPlant(() => m.upsertAppSheetAirLeak({
+  airLeakId: "ALD-TEST-001",
+  date: "2026-09-17",
+  section: sheSection.name,
+  machine: "Compressed air line",
+  issuedBy: "Safety Tester",
+  issue: "Retry of the same finding"
+}));
+assert.equal(airLeak.created, true);
+assert.equal(duplicateAirLeak.created, false);
+assert.equal(duplicateAirLeak.workOrderId, airLeak.workOrderId);
+assert.equal(inPlant(() => m.getWorkOrder(airLeak.workOrderId)).responsibleDepartment, "SHE");
 assert(inPlant(() => m.listWorkOrders(requester)).some((order) => order.id === customCategoryOrder.id));
 assert.equal(inPlant(() => m.userCanAccessWorkOrder(requester, customCategoryOrder)), true);
 const maintenanceVisible = inPlant(() => m.listWorkOrders(technician));

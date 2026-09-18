@@ -79,7 +79,7 @@ function HomePage() {
 
 function RestrictedFeature({ name, children }: { name: string; children: React.ReactNode }) {
   const { currentUser } = useCurrentUser();
-  if (currentUser && (["admin", "developer"].includes(currentUser.role) || (currentUser.role === "executive" && ["Assets", "Preventive Maintenance", "Performance", "Reports"].includes(name)) || (currentUser.role === "technician" && name === "Preventive Maintenance") || (name === "Settings" && currentUser.plantAccess === "both"))) return children;
+  if (currentUser && (["executive", "admin", "developer"].includes(currentUser.role) || (currentUser.role === "technician" && name === "Preventive Maintenance") || (name === "Settings" && currentUser.plantAccess === "both"))) return children;
 
   return (
     <section className="locked-feature-page">

@@ -2,7 +2,7 @@ import { BadgeCheck, Building2, Camera, ClipboardCopy, ExternalLink, Factory, Fi
 import QRCode from "qrcode";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { IssueCategory, Machine, MasterData, Section, User } from "@sugi-cmms/shared";
+import type { IssueCategory, Machine, MasterData, Section, User, WorkOrderDepartment } from "@sugi-cmms/shared";
 import { plantLabels, workOrderDepartments } from "@sugi-cmms/shared";
 import { api, mediaUrl, selectedPlant } from "../api/client";
 import { useCurrentUser } from "../state/UserContext";
@@ -11,7 +11,7 @@ import { useLiveRefresh } from "../hooks/useLiveRefresh";
 const roleNotes = {
   requester: "Issues and tracks department work orders.",
   technician: "Acknowledges, self-assigns, updates, and resolves jobs.",
-  executive: "Monitors workload, reassigns jobs, and keeps completion moving.",
+  executive: "Full operational and administration access, excluding developer-account control.",
   admin: "Controls users, roles, departments, and system rules.",
   developer: "Full system access for configuration, testing, and development."
 };
@@ -34,7 +34,7 @@ function splitSheetLine(line: string) {
   return (line.includes("\t") ? line.split("\t") : line.split(",")).map(cleanPasteCell);
 }
 
-function parseMachinePaste(text: string) {
+function parseMachinePaste(text: string, department: WorkOrderDepartment) {
   const table = text
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -65,6 +65,7 @@ function parseMachinePaste(text: string) {
   }
 
   return table.slice(startIndex).map((cells) => ({
+    department,
     sectionName: cleanPasteCell(cells[sectionIndex]),
     areaName: cleanPasteCell(cells[areaIndex]) || "General",
     machineName: cleanPasteCell(cells[machineIndex])
@@ -104,6 +105,7 @@ export function AdminPage() {
   const requestedTab = searchParams.get("tab") as AdminTab | null;
   const [activeTab, setActiveTab] = useState<AdminTab>(adminTabs.some((item) => item.tab === requestedTab) ? requestedTab! : "people");
   const [masterData, setMasterData] = useState<MasterData>({ sections: [], machines: [], issueCategories: [] });
+  const [masterDepartment, setMasterDepartment] = useState<WorkOrderDepartment>("Production");
   const [newSectionName, setNewSectionName] = useState("");
   const [newMachineName, setNewMachineName] = useState("");
   const [newMachineArea, setNewMachineArea] = useState("");
@@ -116,9 +118,12 @@ export function AdminPage() {
   const [adminError, setAdminError] = useState("");
   const defaultRequesterUrl = `${window.location.origin}/requester?plant=${selectedPlant()}`;
   const [requesterUrl, setRequesterUrl] = useState(defaultRequesterUrl);
-  const canAdmin = Boolean(currentUser && ["admin", "developer"].includes(currentUser.role));
+  const canAdmin = Boolean(currentUser && ["executive", "admin", "developer"].includes(currentUser.role));
   const qrTargetUrl = requesterUrl.trim() || defaultRequesterUrl;
-  const machineImportRows = useMemo(() => parseMachinePaste(machineImportText), [machineImportText]);
+  const machineImportRows = useMemo(() => parseMachinePaste(machineImportText, masterDepartment), [machineImportText, masterDepartment]);
+  const departmentSections = useMemo(() => masterData.sections.filter((section) => section.department === masterDepartment), [masterData.sections, masterDepartment]);
+  const departmentMachines = useMemo(() => masterData.machines.filter((machine) => machine.department === masterDepartment), [masterData.machines, masterDepartment]);
+  const departmentCategories = useMemo(() => masterData.issueCategories.filter((category) => category.department === masterDepartment), [masterData.issueCategories, masterDepartment]);
 
   const roleCounts = useMemo(() => {
     return users.reduce<Record<string, number>>((counts, user) => {
@@ -130,7 +135,7 @@ export function AdminPage() {
   async function loadMasterData() {
     const nextMasterData = await api.masterData();
     setMasterData(nextMasterData);
-    setNewMachineSectionId((current) => current || nextMasterData.sections.find((section) => section.active)?.id || "");
+    setNewMachineSectionId((current) => current || nextMasterData.sections.find((section) => section.active && section.department === masterDepartment)?.id || "");
   }
 
   useEffect(() => {
@@ -147,6 +152,10 @@ export function AdminPage() {
   }, []);
 
   useLiveRefresh(["master-data"], loadMasterData);
+
+  useEffect(() => {
+    setNewMachineSectionId(masterData.sections.find((section) => section.active && section.department === masterDepartment)?.id || "");
+  }, [masterData.sections, masterDepartment]);
 
   useEffect(() => {
     QRCode.toString(qrTargetUrl, { type: "svg", margin: 1, width: 220 })
@@ -281,7 +290,7 @@ export function AdminPage() {
 
     setAdminError("");
     try {
-      await api.createSection({ actorId: currentUser.id, name: newSectionName, active: true });
+      await api.createSection({ actorId: currentUser.id, department: masterDepartment, name: newSectionName, active: true });
       setNewSectionName("");
       await loadMasterData();
     } catch (error) {
@@ -296,7 +305,7 @@ export function AdminPage() {
 
     setAdminError("");
     try {
-      await api.updateSection(section.id, { actorId: currentUser.id, name: section.name, active: section.active });
+      await api.updateSection(section.id, { actorId: currentUser.id, department: section.department, name: section.name, active: section.active });
       await loadMasterData();
     } catch (error) {
       setAdminError(error instanceof Error ? error.message : "Unable to save section.");
@@ -311,7 +320,7 @@ export function AdminPage() {
 
     setAdminError("");
     try {
-      await api.createMachine({ actorId: currentUser.id, sectionId: newMachineSectionId, area: newMachineArea || "General", name: newMachineName, active: true });
+      await api.createMachine({ actorId: currentUser.id, department: masterDepartment, sectionId: newMachineSectionId, area: newMachineArea || "General", name: newMachineName, active: true });
       setNewMachineName("");
       setNewMachineArea("");
       await loadMasterData();
@@ -349,7 +358,7 @@ export function AdminPage() {
 
     setAdminError("");
     try {
-      await api.updateMachine(machine.id, { actorId: currentUser.id, sectionId: machine.sectionId, area: machine.area, name: machine.name, active: machine.active });
+      await api.updateMachine(machine.id, { actorId: currentUser.id, department: machine.department, sectionId: machine.sectionId, area: machine.area, name: machine.name, active: machine.active });
       await loadMasterData();
     } catch (error) {
       setAdminError(error instanceof Error ? error.message : "Unable to save machine.");
@@ -364,7 +373,7 @@ export function AdminPage() {
 
     setAdminError("");
     try {
-      await api.createIssueCategory({ actorId: currentUser.id, name: newCategoryName, active: true });
+      await api.createIssueCategory({ actorId: currentUser.id, department: masterDepartment, name: newCategoryName, active: true });
       setNewCategoryName("");
       await loadMasterData();
     } catch (error) {
@@ -379,7 +388,7 @@ export function AdminPage() {
 
     setAdminError("");
     try {
-      await api.updateIssueCategory(category.id, { actorId: currentUser.id, name: category.name, active: category.active });
+      await api.updateIssueCategory(category.id, { actorId: currentUser.id, department: category.department, name: category.name, active: category.active });
       await loadMasterData();
     } catch (error) {
       setAdminError(error instanceof Error ? error.message : "Unable to save issue category.");
@@ -456,6 +465,17 @@ export function AdminPage() {
           </button>
         ))}
       </div>
+
+      {["sections", "machines", "categories"].includes(activeTab) ? (
+        <section className="section-panel master-department-selector">
+          <label>Master-data department
+            <select value={masterDepartment} onChange={(event) => setMasterDepartment(event.target.value as WorkOrderDepartment)}>
+              {workOrderDepartments.map((department) => <option key={department} value={department}>{department}</option>)}
+            </select>
+          </label>
+          <p>Sections, machines and issue categories below are available only when a work order is issued for <strong>{masterDepartment}</strong>.</p>
+        </section>
+      ) : null}
 
       {adminError ? <p className="error-line" role="alert">{adminError}</p> : null}
       {sessionMessage ? <p className="success-line" role="status">{sessionMessage}</p> : null}
@@ -622,7 +642,7 @@ export function AdminPage() {
             <button type="submit" disabled={!canAdmin || !newSectionName.trim()}>Add Section</button>
           </form>
           <div className="master-list">
-            {masterData.sections.map((section) => (
+            {departmentSections.map((section) => (
               <article className="master-row" key={section.id}>
                 <input value={section.name} onChange={(event) => updateSectionDraft(section.id, { name: event.target.value })} disabled={!canAdmin} />
                 <label>
@@ -648,7 +668,7 @@ export function AdminPage() {
           <form className="master-add-row master-add-row-machine" onSubmit={createMachine}>
             <select value={newMachineSectionId} onChange={(event) => setNewMachineSectionId(event.target.value)} disabled={!canAdmin}>
               <option value="">Select section</option>
-              {masterData.sections.map((section) => (
+              {departmentSections.map((section) => (
                 <option key={section.id} value={section.id}>
                   {section.name}
                 </option>
@@ -687,10 +707,10 @@ export function AdminPage() {
           </section>
 
           <div className="master-list">
-            {masterData.machines.map((machine) => (
+            {departmentMachines.map((machine) => (
               <article className="master-row master-row-machine" key={machine.id}>
                 <select value={machine.sectionId} onChange={(event) => updateMachineDraft(machine.id, { sectionId: event.target.value })} disabled={!canAdmin}>
-                  {masterData.sections.map((section) => (
+                  {departmentSections.map((section) => (
                     <option key={section.id} value={section.id}>
                       {section.name}
                     </option>
@@ -723,7 +743,7 @@ export function AdminPage() {
             <button type="submit" disabled={!canAdmin || !newCategoryName.trim()}>Add Category</button>
           </form>
           <div className="master-list">
-            {masterData.issueCategories.map((category) => (
+            {departmentCategories.map((category) => (
               <article className="master-row" key={category.id}>
                 <input value={category.name} onChange={(event) => updateCategoryDraft(category.id, { name: event.target.value })} disabled={!canAdmin} />
                 <label>

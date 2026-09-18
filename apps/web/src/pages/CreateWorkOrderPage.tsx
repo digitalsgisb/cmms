@@ -58,31 +58,34 @@ export function CreateWorkOrderPage() {
       .then((nextMasterData) => {
         setMasterData(nextMasterData);
         setMasterReady(true);
-        setForm((current) => ({
-          ...current,
-          sectionId: current.sectionId || nextMasterData.sections.find((section) => section.active)?.id || "",
-          issueCategoryId: current.issueCategoryId || nextMasterData.issueCategories.find((category) => category.active)?.id || "",
-          customMachineName: current.customMachineName || assetFromQuery,
-          reportedByName: current.reportedByName || currentUser?.name || "",
-          reportedByDepartment: current.reportedByDepartment || currentUser?.department || "",
-          responsibleDepartment: workOrderDepartmentForUser(currentUser?.department || "") || current.responsibleDepartment
-        }));
+        setForm((current) => {
+          const responsibleDepartment = workOrderDepartmentForUser(currentUser?.department || "") || current.responsibleDepartment;
+          return {
+            ...current,
+            sectionId: current.sectionId || nextMasterData.sections.find((section) => section.active && section.department === responsibleDepartment)?.id || "",
+            issueCategoryId: current.issueCategoryId || nextMasterData.issueCategories.find((category) => category.active && category.department === responsibleDepartment)?.id || "",
+            customMachineName: current.customMachineName || assetFromQuery,
+            reportedByName: current.reportedByName || currentUser?.name || "",
+            reportedByDepartment: current.reportedByDepartment || currentUser?.department || "",
+            responsibleDepartment
+          };
+        });
       })
       .catch(() => setError("Couldn’t load sections and machines. Reload this page before submitting."));
   }, [assetFromQuery, currentUser?.department, currentUser?.name]);
 
-  const activeSections = useMemo(() => masterData.sections.filter((section) => section.active), [masterData.sections]);
-  const activeIssueCategories = useMemo(() => masterData.issueCategories.filter((category) => category.active), [masterData.issueCategories]);
+  const activeSections = useMemo(() => masterData.sections.filter((section) => section.active && section.department === form.responsibleDepartment), [form.responsibleDepartment, masterData.sections]);
+  const activeIssueCategories = useMemo(() => masterData.issueCategories.filter((category) => category.active && category.department === form.responsibleDepartment), [form.responsibleDepartment, masterData.issueCategories]);
   const rules = workOrderFormRulesForDepartment(form.responsibleDepartment);
   const areaOptions = useMemo(() => {
     const areas = [...new Set(masterData.machines
-      .filter((machine) => machine.active && (!form.sectionId || form.sectionId === otherOptionValue || machine.sectionId === form.sectionId))
+      .filter((machine) => machine.active && machine.department === form.responsibleDepartment && (!form.sectionId || form.sectionId === otherOptionValue || machine.sectionId === form.sectionId))
       .map((machine) => machine.area).filter(Boolean))];
     return [...areas.map((area) => ({ value: area, label: area })), { value: otherOptionValue, label: "Others", meta: "Specify an area" }];
-  }, [form.sectionId, masterData.machines]);
+  }, [form.responsibleDepartment, form.sectionId, masterData.machines]);
   const filteredMachines = useMemo(() => {
-    return masterData.machines.filter((machine) => machine.active && machine.sectionId === form.sectionId && (!form.area || form.area === otherOptionValue || machine.area === form.area));
-  }, [form.area, masterData.machines, form.sectionId]);
+    return masterData.machines.filter((machine) => machine.active && machine.department === form.responsibleDepartment && machine.sectionId === form.sectionId && (!form.area || form.area === otherOptionValue || machine.area === form.area));
+  }, [form.area, form.responsibleDepartment, masterData.machines, form.sectionId]);
   const sectionOptions = useMemo(() => [...activeSections.map((section) => ({ value: section.id, label: section.name })), { value: otherOptionValue, label: "Others", meta: "Specify a section" }], [activeSections]);
   const machineOptions = useMemo(
     () => [
@@ -185,6 +188,14 @@ export function CreateWorkOrderPage() {
           </label>
         </div>
 
+        <label>
+          Responsible department
+          <select value={form.responsibleDepartment} onChange={(event) => setForm({ ...form, responsibleDepartment: event.target.value as WorkOrderDepartment, sectionId: "", customSection: "", area: "", customArea: "", machineId: "", customMachineName: "", issueCategoryId: "", customIssueCategory: "" })}>
+            {workOrderDepartments.map((department) => <option key={department} value={department}>{department}</option>)}
+          </select>
+          <small>Section, machine and issue category options are filtered for this department.</small>
+        </label>
+
         <div className={`form-grid ${rules.shiftGroup !== "hidden" ? "three-columns" : "two-columns"}`}>
           {rules.shiftGroup !== "hidden" ? (
             <label>
@@ -247,13 +258,6 @@ export function CreateWorkOrderPage() {
         ) : null}
 
         <div className="form-grid two-columns">
-          <label>
-            Responsible department
-            <select value={form.responsibleDepartment} onChange={(event) => setForm({ ...form, responsibleDepartment: event.target.value as WorkOrderDepartment, area: "", customArea: "", machineId: "", customMachineName: "", issueCategoryId: "", customIssueCategory: "" })}>
-              {workOrderDepartments.map((department) => <option key={department} value={department}>{department}</option>)}
-            </select>
-          </label>
-
           <label>
             <UserRound size={15} aria-hidden="true" />
             Reported by

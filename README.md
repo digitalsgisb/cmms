@@ -124,6 +124,12 @@ The Apps Script formats the mirror for people rather than exposing raw payloads:
 
 Deleting a work order in CMMS also queues deletion of the matching `WorkOrderID` row in Google Sheets. The deletion queue is durable and is retried through the normal sync worker if Apps Script is temporarily unavailable. The deployed Apps Script must include the `deleteWorkOrder` action from the current `docs/work-orders-apps-script.js`.
 
+### AppSheet Air Leak work orders
+
+The Air Leak App can create duplicate-safe SHE work orders through `POST /api/integrations/appsheet/air-leaks`. Configure its inbound token and return-sync Apps Script URL in **Settings → AppSheet Air Leak Integration**. The AppSheet Bot must send `Air Leak ID`, date, section, picture URL, issue, machine/equipment and issuer. `Air Leak ID` is the external key, so webhook retries return the existing CMMS work order instead of creating a duplicate.
+
+CMMS queues every mapped lifecycle update separately from the general WorkOrders mirror. When the CMMS work order closes, [docs/air-leak-apps-script.js](docs/air-leak-apps-script.js) updates the matching Air Leak row to `Close`, including the close date, assigned technician, proof-photo URL and detailed CMMS status. Existing Production master data is retained as Production; new sections, machines and issue categories are assigned to a department and are only offered for that department's work orders.
+
 These values can also be supplied without the UI:
 
 ```dotenv

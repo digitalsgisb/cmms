@@ -91,7 +91,7 @@ export function PushNotificationControl({ compact = false }: { compact?: boolean
   }
 
   const actionable = state === "enabled" || state === "disabled" || state === "refresh-required";
-  const canSendAdminTest = currentUser?.role === "admin";
+  const canSendAdminTest = Boolean(currentUser && ["executive", "admin", "developer"].includes(currentUser.role));
 
   return (
     <div className={`push-control ${compact ? "compact" : ""}`}>

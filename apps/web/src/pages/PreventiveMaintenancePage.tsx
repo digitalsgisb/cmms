@@ -801,7 +801,7 @@ function PmChecklistExecution({ scheduleId }: { scheduleId: string }) {
   const [remarks, setRemarks] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const isManager = currentUser ? ["executive", "admin", "developer"].includes(currentUser.role) : false;
-  const isAdmin = currentUser ? ["admin", "developer"].includes(currentUser.role) : false;
+  const isAdmin = currentUser ? ["executive", "admin", "developer"].includes(currentUser.role) : false;
 
   async function load() {
     if (!currentUser) return;

@@ -100,6 +100,7 @@ export function workOrderDepartmentForUser(department: string): WorkOrderDepartm
 
 export interface Section {
   id: string;
+  department: WorkOrderDepartment;
   name: string;
   active: boolean;
   createdAt: string;
@@ -108,6 +109,7 @@ export interface Section {
 
 export interface Machine {
   id: string;
+  department: WorkOrderDepartment;
   sectionId: string;
   area: string;
   name: string;
@@ -118,6 +120,7 @@ export interface Machine {
 
 export interface IssueCategory {
   id: string;
+  department: WorkOrderDepartment;
   name: string;
   active: boolean;
   createdAt: string;
@@ -486,18 +489,21 @@ export interface GuestWorkOrderTracking {
 
 export interface UpsertSectionInput {
   actorId: string;
+  department: WorkOrderDepartment;
   name: string;
   active?: boolean;
 }
 
 export interface UpsertMachineInput {
   actorId: string;
+  department: WorkOrderDepartment;
   sectionId: string;
   name: string;
   active?: boolean;
 }
 
 export interface MachineImportRow {
+  department: WorkOrderDepartment;
   sectionName: string;
   areaName: string;
   machineName: string;
@@ -703,8 +709,58 @@ export interface WorkOrderSyncResult {
   settings: WorkOrderSyncSettings;
 }
 
+export interface AirLeakSyncSettings {
+  hasInboundToken: boolean;
+  scriptUrl: string;
+  hasScriptToken: boolean;
+  sheetName: string;
+  configured: boolean;
+  pendingCount: number;
+  failedCount: number;
+  lastSyncAt: string | null;
+  lastError: string | null;
+}
+
+export interface UpdateAirLeakSyncSettingsInput {
+  actorId: string;
+  inboundToken?: string;
+  scriptUrl: string;
+  scriptToken?: string;
+  sheetName: string;
+}
+
+export interface AirLeakSyncResult {
+  configured: boolean;
+  ok: boolean;
+  synced: number;
+  failed: number;
+  message: string;
+  errors: string[];
+  settings: AirLeakSyncSettings;
+}
+
+export interface AppSheetAirLeakInput {
+  airLeakId: string;
+  date: string;
+  section: string;
+  pictureUrl?: string;
+  issue: string;
+  machine: string;
+  issuedBy: string;
+}
+
+export interface AppSheetAirLeakResult {
+  ok: true;
+  created: boolean;
+  workOrderId: string;
+  workOrderNumber: string;
+  status: string;
+  photoImported: boolean;
+}
+
 export interface UpsertIssueCategoryInput {
   actorId: string;
+  department: WorkOrderDepartment;
   name: string;
   active?: boolean;
 }

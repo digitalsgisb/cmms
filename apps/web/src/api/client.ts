@@ -2,6 +2,8 @@ import type { PlantId } from "@sugi-cmms/shared";
 import type {
   AssetDashboardResponse,
   AssetRecord,
+  AirLeakSyncResult,
+  AirLeakSyncSettings,
   AuthSession,
   ClaimWorkOrderInput,
   CreateWorkOrderInput,
@@ -39,6 +41,7 @@ import type {
   StockMovementDetail,
   UpdateSpareSyncSettingsInput,
   UpdateAssetInput,
+  UpdateAirLeakSyncSettingsInput,
   UpdatePmPlanInput,
   UpdateWorkOrderInput,
   UpdateWorkOrderStatusInput,
@@ -48,6 +51,7 @@ import type {
   WorkOrderActivity,
   WorkOrderAttachment,
   WorkOrderDetail,
+  WorkOrderDepartment,
   WorkOrderSyncResult,
   WorkOrderSyncSettings
 } from "@sugi-cmms/shared";
@@ -182,17 +186,17 @@ export const api = {
       body: JSON.stringify(input)
     }),
   masterData: () => request<MasterData>("/api/master-data"),
-  createSection: (input: { actorId: string; name: string; active?: boolean }) =>
+  createSection: (input: { actorId: string; department: WorkOrderDepartment; name: string; active?: boolean }) =>
     request<Section>("/api/master-data/sections", {
       method: "POST",
       body: JSON.stringify(input)
     }),
-  updateSection: (id: string, input: { actorId: string; name: string; active?: boolean }) =>
+  updateSection: (id: string, input: { actorId: string; department: WorkOrderDepartment; name: string; active?: boolean }) =>
     request<Section>(`/api/master-data/sections/${id}`, {
       method: "PATCH",
       body: JSON.stringify(input)
     }),
-  createMachine: (input: { actorId: string; sectionId: string; area: string; name: string; active?: boolean }) =>
+  createMachine: (input: { actorId: string; department: WorkOrderDepartment; sectionId: string; area: string; name: string; active?: boolean }) =>
     request<Machine>("/api/master-data/machines", {
       method: "POST",
       body: JSON.stringify(input)
@@ -202,17 +206,17 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input)
     }),
-  updateMachine: (id: string, input: { actorId: string; sectionId: string; area: string; name: string; active?: boolean }) =>
+  updateMachine: (id: string, input: { actorId: string; department: WorkOrderDepartment; sectionId: string; area: string; name: string; active?: boolean }) =>
     request<Machine>(`/api/master-data/machines/${id}`, {
       method: "PATCH",
       body: JSON.stringify(input)
     }),
-  createIssueCategory: (input: { actorId: string; name: string; active?: boolean }) =>
+  createIssueCategory: (input: { actorId: string; department: WorkOrderDepartment; name: string; active?: boolean }) =>
     request<IssueCategory>("/api/master-data/issue-categories", {
       method: "POST",
       body: JSON.stringify(input)
     }),
-  updateIssueCategory: (id: string, input: { actorId: string; name: string; active?: boolean }) =>
+  updateIssueCategory: (id: string, input: { actorId: string; department: WorkOrderDepartment; name: string; active?: boolean }) =>
     request<IssueCategory>(`/api/master-data/issue-categories/${id}`, {
       method: "PATCH",
       body: JSON.stringify(input)
@@ -324,6 +328,17 @@ export const api = {
     }),
   retryWorkOrderSync: (actorId: string) =>
     request<WorkOrderSyncResult>("/api/work-orders/sync/retry", {
+      method: "POST",
+      body: JSON.stringify({ actorId })
+    }),
+  airLeakSyncSettings: () => request<AirLeakSyncSettings>("/api/integrations/air-leaks/settings"),
+  updateAirLeakSyncSettings: (input: UpdateAirLeakSyncSettingsInput) =>
+    request<AirLeakSyncSettings>("/api/integrations/air-leaks/settings", {
+      method: "PATCH",
+      body: JSON.stringify(input)
+    }),
+  retryAirLeakSync: (actorId: string) =>
+    request<AirLeakSyncResult>("/api/integrations/air-leaks/retry", {
       method: "POST",
       body: JSON.stringify({ actorId })
     }),

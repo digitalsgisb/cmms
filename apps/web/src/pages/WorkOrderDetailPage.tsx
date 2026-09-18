@@ -511,11 +511,11 @@ export function WorkOrderDetailPage() {
       attachments: detail.attachments.filter((attachment) => !["issue", "before", "after"].includes(attachment.kind))
     }
   ];
-  const briefSections = briefMasterData.sections.filter((section) => section.active || section.id === briefDraft?.sectionId);
+  const briefSections = briefMasterData.sections.filter((section) => section.department === briefDraft?.responsibleDepartment && (section.active || section.id === briefDraft?.sectionId));
   const briefMachines = briefMasterData.machines.filter((machine) =>
-    (machine.active || machine.id === briefDraft?.machineId) && machine.sectionId === briefDraft?.sectionId
+    machine.department === briefDraft?.responsibleDepartment && (machine.active || machine.id === briefDraft?.machineId) && machine.sectionId === briefDraft?.sectionId
   );
-  const briefIssueCategories = briefMasterData.issueCategories.filter((category) => category.active || category.id === briefDraft?.issueCategoryId);
+  const briefIssueCategories = briefMasterData.issueCategories.filter((category) => category.department === briefDraft?.responsibleDepartment && (category.active || category.id === briefDraft?.issueCategoryId));
   const briefLeadCandidates = users.filter((user) =>
     user.role === "technician" &&
     (user.plantAccess === "both" || user.plantAccess === detail.plantId) &&
@@ -546,7 +546,7 @@ export function WorkOrderDetailPage() {
         <label>Priority<select value={briefDraft.priority} onChange={(event) => setBriefDraft({ ...briefDraft, priority: event.target.value as WorkOrderPriority })}>{priorityOptions.map((priority) => <option key={priority} value={priority}>{priority[0].toUpperCase() + priority.slice(1)}</option>)}</select></label>
         <label>Work date<input type="date" required value={briefDraft.workDate} onChange={(event) => setBriefDraft({ ...briefDraft, workDate: event.target.value })} /></label>
         <label>Due date<input type="date" value={briefDraft.dueDate} onChange={(event) => setBriefDraft({ ...briefDraft, dueDate: event.target.value })} /></label>
-        <label>Responsible department<select value={briefDraft.responsibleDepartment} onChange={(event) => setBriefDraft({ ...briefDraft, responsibleDepartment: event.target.value as WorkOrderDepartment, shiftGroup: event.target.value === "Production" ? "A" : "N/A" })}>{workOrderDepartments.map((department) => <option key={department} value={department}>{department}</option>)}</select></label>
+        <label>Responsible department<select value={briefDraft.responsibleDepartment} onChange={(event) => setBriefDraft({ ...briefDraft, responsibleDepartment: event.target.value as WorkOrderDepartment, shiftGroup: event.target.value === "Production" ? "A" : "N/A", sectionId: "", machineId: "", machineName: "", area: "", issueCategoryId: otherBriefOption, issueCategoryName: "" })}>{workOrderDepartments.map((department) => <option key={department} value={department}>{department}</option>)}</select></label>
         {briefDraft.responsibleDepartment === "Production" ? <label>Shift<select value={briefDraft.shiftGroup} onChange={(event) => setBriefDraft({ ...briefDraft, shiftGroup: event.target.value as ShiftGroup })}><option value="A">A</option><option value="B">B</option></select></label> : null}
         <label>Section<select value={briefDraft.sectionId} onChange={(event) => setBriefDraft({ ...briefDraft, sectionId: event.target.value, machineId: "", machineName: "", area: "" })}><option value="">No section / office</option>{briefSections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}</select></label>
         <label>Machine / equipment<select value={briefDraft.machineId || otherBriefOption} onChange={(event) => { const machineId = event.target.value === otherBriefOption ? "" : event.target.value; const machine = briefMasterData.machines.find((item) => item.id === machineId); setBriefDraft({ ...briefDraft, machineId, machineName: machine?.name || "", area: machine?.area || "" }); }}><option value={otherBriefOption}>Other / unregistered</option>{briefMachines.map((machine) => <option key={machine.id} value={machine.id}>{machine.name}</option>)}</select></label>

@@ -8,7 +8,8 @@ export const plantTables = [
   "work_order_activities", "work_order_attachments", "notifications",
   "spare_parts", "spare_suppliers", "stock_movements", "spare_sync_attempts",
   "work_order_sync_queue", "work_order_sync_deletions", "pm_checklist_templates",
-  "pm_checklist_items", "pm_plans", "pm_schedules", "pm_results", "pm_result_photos"
+  "pm_checklist_items", "pm_plans", "pm_schedules", "pm_results", "pm_result_photos",
+  "external_work_orders", "air_leak_sync_queue"
 ];
 
 export function migratePlants(db: DatabaseSync) {
@@ -44,6 +45,24 @@ export function migratePlants(db: DatabaseSync) {
         db.exec(`${definition}; INSERT INTO ${table}_plant_migration SELECT * FROM ${table}; DROP TABLE ${table}; ALTER TABLE ${table}_plant_migration RENAME TO ${table};`);
         indexes.forEach((index) => db.exec(index.sql));
       }
+    }
+    // Department-owned master data may legitimately reuse a display name. For
+    // example, Production and SHE can both have a "Floor Carpet 1&2" section.
+    // Older databases enforced uniqueness across the whole plant, so rebuild
+    // these two small master tables once to scope names by department as well.
+    for (const table of ["sections", "issue_categories"]) {
+      const stored = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as { sql: string };
+      if (/UNIQUE\s*\(\s*plantId\s*,\s*department\s*,\s*name\s*\)/i.test(stored.sql)) continue;
+      let definition = stored.sql.replace(new RegExp(`CREATE TABLE ["\\x60]?${table}["\\x60]?`, "i"), `CREATE TABLE ${table}_department_migration`);
+      definition = definition
+        .replace("name TEXT NOT NULL UNIQUE", "name TEXT NOT NULL")
+        .replace(/,\s*UNIQUE\s*\(\s*plantId\s*,\s*name\s*\)\s*\)$/i, ", UNIQUE (plantId, department, name))");
+      if (!/UNIQUE\s*\(\s*plantId\s*,\s*department\s*,\s*name\s*\)/i.test(definition)) {
+        definition = definition.replace(/\)\s*$/, ", UNIQUE (plantId, department, name))");
+      }
+      const indexes = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL").all(table) as Array<{ sql: string }>;
+      db.exec(`${definition}; INSERT INTO ${table}_department_migration SELECT * FROM ${table}; DROP TABLE ${table}; ALTER TABLE ${table}_department_migration RENAME TO ${table};`);
+      indexes.forEach((index) => db.exec(index.sql));
     }
     for (const table of plantTables) {
       db.exec(`
