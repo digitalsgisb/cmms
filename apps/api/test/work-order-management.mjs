@@ -285,22 +285,18 @@ assert.throws(
   () => inPlant(() => m.updateWorkOrderStatus(fairTimingOrder.id, { actorId: technician.id, status: "resolved", note: "Repair complete" })),
   /maintenance actual time/i
 );
-assert.throws(
-  () => inPlant(() => m.updateWorkOrderStatus(fairTimingOrder.id, { actorId: technician.id, status: "resolved", note: "Repair complete", maintenanceActualMinutes: 25 })),
-  /supporting technicians/i
-);
 const resolvedFairTimingOrder = inPlant(() => m.updateWorkOrderStatus(fairTimingOrder.id, {
   actorId: technician.id,
   status: "resolved",
   note: "Repair complete",
-  maintenanceActualMinutes: 25,
-  supportingTechnicianIds: [supportingTechnician.id]
+  maintenanceActualMinutes: 25
 }));
 assert.equal(resolvedFairTimingOrder.maintenanceActualMinutes, 25);
-assert.deepEqual(resolvedFairTimingOrder.supportingTechnicianIds, [supportingTechnician.id]);
-assert.equal(inPlant(() => m.getWorkOrderDetail(fairTimingOrder.id)).supportingTechnicians[0]?.id, supportingTechnician.id);
+assert.deepEqual(resolvedFairTimingOrder.supportingTechnicianIds, []);
+assert.deepEqual(inPlant(() => m.getWorkOrderDetail(fairTimingOrder.id)).supportingTechnicians, []);
 assert(resolvedFairTimingOrder.maintenanceStartedAt);
 assert(resolvedFairTimingOrder.resolvedAt);
+assert(inPlant(() => m.listNotifications(executive.id)).some((item) => item.workOrderId === fairTimingOrder.id && /ready for verification/i.test(item.title)));
 const extendedDowntimeStart = new Date(Date.parse(resolvedFairTimingOrder.resolvedAt) - 2 * 60 * 60 * 1000).toISOString();
 inPlant(() => m.db.prepare("UPDATE work_orders SET createdAt = ? WHERE id = ?").run(extendedDowntimeStart, fairTimingOrder.id));
 assert.throws(
@@ -321,9 +317,9 @@ const reasonUpdatedOrder = inPlant(() => m.updateWorkOrderDowntimeReason(fairTim
 }));
 assert.equal(reasonUpdatedOrder.productionDowntimeReason, "Waiting for technician");
 const closedFairTimingOrder = inPlant(() => m.updateWorkOrderStatus(fairTimingOrder.id, {
-  actorId: requester.id,
+  actorId: executive.id,
   status: "closed",
-  note: "Verified"
+  note: "Executive verified on behalf of production"
 }));
 assert.equal(closedFairTimingOrder.productionDowntimeReason, "Waiting for technician");
 

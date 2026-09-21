@@ -332,8 +332,8 @@ export function TechnicianPage() {
       return;
     }
 
-    if (resolveSupportingTechnicianIds.length < 1 || resolveSupportingTechnicianIds.length > 3) {
-      setResolveError("Select 1 to 3 supporting technicians who worked on this repair.");
+    if (resolveSupportingTechnicianIds.length > 3) {
+      setResolveError("Select no more than 3 supporting technicians who worked on this repair.");
       return;
     }
 
@@ -568,7 +568,7 @@ export function TechnicianPage() {
             </div>
 
             <p className="resolve-modal-copy">
-              Confirm your repair team, then add the actual time, completion photo, and short repair remark.
+              Add supporting teammates if applicable, then enter the actual time, completion photo, and short repair remark.
             </p>
 
             <section className="resolve-requested-issue" aria-label="Issue reported by requester">
@@ -579,7 +579,7 @@ export function TechnicianPage() {
 
             <fieldset className="resolve-team-field">
               <legend><UsersRound size={17} /> Repair team</legend>
-              <p><strong>{technicianName(resolveTarget.assignedToId)}</strong> is the lead. Choose 1–3 technicians who worked with you.</p>
+              <p><strong>{technicianName(resolveTarget.assignedToId)}</strong> is the lead. Supporting teammates are optional; choose up to 3 if applicable.</p>
               <div className="resolve-team-options">
                 {resolveTeamCandidates.map((technician) => {
                   const selected = resolveSupportingTechnicianIds.includes(technician.id);
@@ -590,7 +590,7 @@ export function TechnicianPage() {
                   </label>;
                 })}
               </div>
-              <small className="resolve-team-count">{resolveSupportingTechnicianIds.length ? `${1 + resolveSupportingTechnicianIds.length} of 4 team members recorded` : "Select at least 1 more · 1 of 4 recorded"}</small>
+              <small className="resolve-team-count">{resolveSupportingTechnicianIds.length ? `${1 + resolveSupportingTechnicianIds.length} of 4 team members recorded` : "Lead technician only · 1 person recorded"}</small>
             </fieldset>
 
             <label className="resolve-field">
@@ -631,7 +631,7 @@ export function TechnicianPage() {
                 tone="resolve"
                 busy={submitting && busyAction === "resolved"}
                 busyLabel="Resolving..."
-                disabled={submitting || resolveSupportingTechnicianIds.length < 1 || !resolveNote.trim() || !resolveFiles || resolveFiles.length === 0 || (Number(resolveHours) || 0) * 60 + (Number(resolveMinutes) || 0) < 1}
+                disabled={submitting || !resolveNote.trim() || !resolveFiles || resolveFiles.length === 0 || (Number(resolveHours) || 0) * 60 + (Number(resolveMinutes) || 0) < 1}
               >
                 Confirm Resolve
               </ActionButton>

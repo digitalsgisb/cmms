@@ -3958,9 +3958,6 @@ export function updateWorkOrder(id: string, input: UpdateWorkOrderInput): WorkOr
   if (supportingTechnicianIds.length > 3) {
     throw new Error("Select no more than 3 supporting technicians.");
   }
-  if (["resolved", "closed"].includes(current.status) && (input.assignedToId !== undefined || input.supportingTechnicianIds !== undefined) && supportingTechnicianIds.length < 1) {
-    throw new Error("Completed work orders must record at least 1 supporting technician.");
-  }
   for (const userId of supportingTechnicianIds) {
     const technician = getUser(userId);
     if (technician.role !== "technician" || !userPlants(technician).includes(current.plantId)) {
@@ -4084,8 +4081,8 @@ export function updateWorkOrderStatus(id: string, input: UpdateWorkOrderStatusIn
 
     const supportingTechnicianIds = [...new Set((input.supportingTechnicianIds || []).filter(Boolean))]
       .filter((userId) => userId !== assignedToId);
-    if (supportingTechnicianIds.length < 1 || supportingTechnicianIds.length > 3) {
-      throw new Error("Select 1 to 3 supporting technicians before resolving.");
+    if (supportingTechnicianIds.length > 3) {
+      throw new Error("Select no more than 3 supporting technicians before resolving.");
     }
     for (const userId of supportingTechnicianIds) {
       const technician = getUser(userId);
@@ -4684,14 +4681,16 @@ function notifyUsers(userIds: string[], workOrderId: string, title: string, body
 
 function notifyForStatusChange(workOrder: WorkOrder, status: WorkOrderStatus) {
   if (status === "resolved") {
-    if (workOrder.requesterId !== publicRequesterId) {
-      notifyUsers(
-        [workOrder.requesterId],
-        workOrder.id,
-        `${workOrder.number} ready for verification`,
-        `${workOrder.title} has been resolved. Please review the completed work and verify it.`
-      );
-    }
+    const verifierIds = [
+      ...listExecutives().map((user) => user.id),
+      ...(workOrder.requesterId !== publicRequesterId ? [workOrder.requesterId] : [])
+    ];
+    notifyUsers(
+      verifierIds,
+      workOrder.id,
+      `${workOrder.number} ready for verification`,
+      `${workOrder.title} has been resolved. Please review the completed work and verify it.`
+    );
     return;
   }
 

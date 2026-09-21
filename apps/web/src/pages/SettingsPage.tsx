@@ -12,7 +12,7 @@ const notificationRows = [
   ["Work order opened", "Maintenance team + executive"],
   ["Repair started", "Requester"],
   ["Pending material", "Requester + executive"],
-  ["Repair resolved", "Requester"],
+  ["Repair resolved", "Requester + executive"],
   ["Requester returned", "Assigned technician + executive"]
 ];
 

@@ -96,6 +96,7 @@ export function WorkOrderDetailPage() {
   const [briefError, setBriefError] = useState("");
   const [briefMasterData, setBriefMasterData] = useState<MasterData>({ sections: [], machines: [], issueCategories: [] });
   const [briefDraft, setBriefDraft] = useState<BriefDraft | null>(null);
+  const briefPanelRef = useRef<HTMLFormElement>(null);
   const [previewPhoto, setPreviewPhoto] = useState<{ src: string; alt: string; label: string } | null>(null);
 
   async function loadDetail() {
@@ -196,6 +197,14 @@ export function WorkOrderDetailPage() {
     void openBriefEditor();
   }, [detail?.id, canManageWorkOrder, searchParams, setSearchParams]);
 
+  useEffect(() => {
+    if (!briefEditing || !briefDraft) return;
+    const frame = window.requestAnimationFrame(() => {
+      briefPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [briefEditing]);
+
   async function updateStatus(status: WorkOrderStatus, fallbackNote: string) {
     if (!detail || !currentUser) {
       return;
@@ -276,8 +285,8 @@ export function WorkOrderDetailPage() {
       return;
     }
 
-    if (resolveSupportingTechnicianIds.length < 1 || resolveSupportingTechnicianIds.length > 3) {
-      setResolveError("Select 1 to 3 supporting technicians who worked on this repair.");
+    if (resolveSupportingTechnicianIds.length > 3) {
+      setResolveError("Select no more than 3 supporting technicians who worked on this repair.");
       return;
     }
 
@@ -373,11 +382,6 @@ export function WorkOrderDetailPage() {
       setBriefError("Choose a lead technician before adding supporting technicians.");
       return;
     }
-    if (["resolved", "closed"].includes(detail.status) && briefDraft.supportingTechnicianIds.length < 1) {
-      setBriefError("Completed work orders must record at least 2 technicians: 1 lead and 1 supporting technician.");
-      return;
-    }
-
     setBriefSaving(true);
     setBriefError("");
     try {
@@ -547,7 +551,7 @@ export function WorkOrderDetailPage() {
   );
 
   const workOrderBriefPanel = briefEditing && briefDraft ? (
-    <form className={`section-panel detail-summary-panel work-order-brief-top brief-editor`} onSubmit={saveBrief}>
+    <form ref={briefPanelRef} className={`section-panel detail-summary-panel work-order-brief-top brief-editor`} onSubmit={saveBrief}>
       <div className="brief-editor-heading">
         <div><p className="eyebrow">Executive edit</p><h2>Edit Work Order Brief</h2><span>{detail.number}</span></div>
         <button type="button" className="brief-cancel-button" disabled={briefSaving} onClick={() => { setBriefEditing(false); setBriefDraft(null); setBriefError(""); }}><X size={16} />Cancel</button>
@@ -584,7 +588,7 @@ export function WorkOrderDetailPage() {
           <label>Lead technician<select value={briefDraft.assignedToId} onChange={(event) => setBriefDraft({ ...briefDraft, assignedToId: event.target.value, supportingTechnicianIds: briefDraft.supportingTechnicianIds.filter((id) => id !== event.target.value) })}><option value="">Unassigned</option>{briefLeadCandidates.map((technician) => <option key={technician.id} value={technician.id}>{technician.name}</option>)}</select></label>
           <div className="brief-team-total"><strong>{(briefDraft.assignedToId ? 1 : 0) + briefDraft.supportingTechnicianIds.length}</strong><span>technicians involved</span><small>Maximum 4</small></div>
         </div>
-        <p>Choose up to 3 supporting technicians. Completed jobs must have at least 1 supporting technician.</p>
+        <p>Supporting technicians are optional. Choose up to 3 only when someone else worked on the repair.</p>
         <div className="resolve-team-options brief-team-options">
           {briefSupportingCandidates.map((technician) => {
             const selected = briefDraft.supportingTechnicianIds.includes(technician.id);
@@ -617,7 +621,7 @@ export function WorkOrderDetailPage() {
         {detail.responsibleDepartment === "Production" && detail.shiftGroup !== "N/A" ? <div className="technician-secondary-detail"><dt>Shift</dt><dd>{detail.shiftGroup}</dd></div> : null}
         <div><dt>Issue category</dt><dd>{detail.issueCategoryName || detail.issueCategory?.name || "Other"}</dd></div>
         <div className="technician-secondary-detail"><dt>Lead technician</dt><dd>{detail.assignedTo?.name || "Unassigned"}</dd></div>
-        <div className="technician-secondary-detail"><dt>Supporting team</dt><dd>{detail.supportingTechnicians.length ? detail.supportingTechnicians.map((technician) => technician.name).join(", ") : "Recorded when resolved"}</dd></div>
+        <div className="technician-secondary-detail"><dt>Supporting team</dt><dd>{detail.supportingTechnicians.length ? detail.supportingTechnicians.map((technician) => technician.name).join(", ") : detail.status === "resolved" || detail.status === "closed" ? "Lead technician only" : "Optional"}</dd></div>
         <div className="technician-secondary-detail"><dt>Requester account</dt><dd>{detail.requester.name}</dd></div>
         <div className="technician-secondary-detail"><dt>Updated</dt><dd>{formatDateTime(detail.updatedAt)}</dd></div>
       </dl>
@@ -930,8 +934,8 @@ export function WorkOrderDetailPage() {
 
           {canVerify && !isRequesterOwner && detail.status === "resolved" ? (
             <div className="section-panel verification-panel ready">
-              <h2>Requester Verification</h2>
-              <p>Review the completed work and close it, or return it to maintenance for follow-up.</p>
+              <h2>{currentUser?.role === "executive" ? "Executive Verification" : "Repair Verification"}</h2>
+              <p>Review the completed work and close it on the requester's behalf, or return it to maintenance for follow-up.</p>
               <label className="verification-reason-field">
                 {requiresDowntimeExplanation ? "Why did this take longer? (required)" : "Verification note (optional)"}
                 <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} placeholder={requiresDowntimeExplanation ? "Ask maintenance, then enter the reason" : "Add a verification note"} />
@@ -1015,7 +1019,7 @@ export function WorkOrderDetailPage() {
             </div>
 
             <p className="resolve-modal-copy">
-              Confirm who worked on the machine, then add the repair summary, actual time, and completion photo.
+              Record any supporting teammates if applicable, then add the repair summary, actual time, and completion photo.
             </p>
 
             <section className="resolve-requested-issue" aria-label="Issue reported by requester">
@@ -1026,7 +1030,7 @@ export function WorkOrderDetailPage() {
 
             <fieldset className="resolve-team-field">
               <legend><UsersRound size={17} /> Repair team</legend>
-              <p><strong>{detail.assignedTo?.name || "Lead technician"}</strong> is the lead. Choose 1–3 other technicians who worked with them.</p>
+              <p><strong>{detail.assignedTo?.name || "Lead technician"}</strong> is the lead. Supporting teammates are optional; choose up to 3 if applicable.</p>
               <div className="resolve-team-options">
                 {supportingCandidates.map((technician) => {
                   const selected = resolveSupportingTechnicianIds.includes(technician.id);
@@ -1037,7 +1041,7 @@ export function WorkOrderDetailPage() {
                   </label>;
                 })}
               </div>
-              <small className="resolve-team-count">{resolveSupportingTechnicianIds.length ? `${1 + resolveSupportingTechnicianIds.length} of 4 team members recorded` : "Select at least 1 more · 1 of 4 recorded"}</small>
+              <small className="resolve-team-count">{resolveSupportingTechnicianIds.length ? `${1 + resolveSupportingTechnicianIds.length} of 4 team members recorded` : "Lead technician only · 1 person recorded"}</small>
             </fieldset>
 
             <label className="resolve-field">
@@ -1078,7 +1082,7 @@ export function WorkOrderDetailPage() {
                 tone="resolve"
                 busy={busy && busyAction === "resolved"}
                 busyLabel="Resolving..."
-                disabled={busy || resolveSupportingTechnicianIds.length < 1 || !resolveNote.trim() || !resolveFiles || resolveFiles.length === 0 || (Number(resolveHours) || 0) * 60 + (Number(resolveMinutes) || 0) < 1}
+                disabled={busy || !resolveNote.trim() || !resolveFiles || resolveFiles.length === 0 || (Number(resolveHours) || 0) * 60 + (Number(resolveMinutes) || 0) < 1}
               >
                 Confirm Resolve
               </ActionButton>

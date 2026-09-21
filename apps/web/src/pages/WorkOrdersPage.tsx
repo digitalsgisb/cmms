@@ -122,8 +122,12 @@ export function WorkOrdersPage() {
   }, [workOrders]);
   const requesterMode = currentUser?.role === "requester";
   const canManageWorkOrders = Boolean(currentUser && ["executive", "admin"].includes(currentUser.role));
-  const pendingVerification = requesterMode ? filtered.filter((workOrder) => workOrder.status === "resolved") : [];
-  const visibleWorkOrders = requesterMode ? filtered.filter((workOrder) => workOrder.status !== "resolved") : filtered;
+  const canVerifyAllWorkOrders = Boolean(currentUser && ["executive", "admin", "developer"].includes(currentUser.role));
+  const pendingVerification = requesterMode || canVerifyAllWorkOrders
+    ? filtered.filter((workOrder) => workOrder.status === "resolved" && (canVerifyAllWorkOrders || workOrder.requesterId === currentUser?.id))
+    : [];
+  const pendingVerificationIds = new Set(pendingVerification.map((workOrder) => workOrder.id));
+  const visibleWorkOrders = filtered.filter((workOrder) => !pendingVerificationIds.has(workOrder.id));
   const currentWorkOrders = visibleWorkOrders.filter((workOrder) => !["closed", "cancelled"].includes(workOrder.status));
   const closedWorkOrders = visibleWorkOrders.filter((workOrder) => ["closed", "cancelled"].includes(workOrder.status));
 
@@ -253,12 +257,12 @@ export function WorkOrdersPage() {
       </div>
       {loadError ? <div className="ux-load-error" role="alert"><span>Couldn’t refresh work orders. {loadError} {workOrders.length ? "Showing the last loaded information." : ""}</span><button type="button" className="secondary-action" onClick={() => void loadWorkOrders()}>Try again</button></div> : null}
       {actionError ? <p className="error-line" role="alert">{actionError}</p> : null}
-      {requesterMode ? (
+      {requesterMode || canVerifyAllWorkOrders ? (
         <section className="requester-subsection">
           <div className="subsection-heading">
             <div>
               <h2>Pending Verification</h2>
-              <span>{pendingVerification.length} waiting for requester decision</span>
+              <span>{pendingVerification.length} waiting for {requesterMode ? "your" : "requester or executive"} decision</span>
             </div>
           </div>
           {pendingVerification.length > 0 ? (
@@ -271,6 +275,7 @@ export function WorkOrdersPage() {
                   currentUserId={currentUser?.id}
                   timerNow={timerNow}
                   canManage={canManageWorkOrders}
+                  canVerifyAll={canVerifyAllWorkOrders}
                   onDelete={removeWorkOrder}
                 />
               ))}
@@ -299,6 +304,7 @@ export function WorkOrdersPage() {
               currentUserId={currentUser?.id}
               timerNow={timerNow}
               canManage={canManageWorkOrders}
+              canVerifyAll={canVerifyAllWorkOrders}
               onDelete={removeWorkOrder}
             />
           ))}
@@ -323,6 +329,7 @@ function WorkOrderCard({
   currentUserId,
   timerNow,
   canManage,
+  canVerifyAll,
   onDelete
 }: {
   workOrder: WorkOrder;
@@ -330,9 +337,10 @@ function WorkOrderCard({
   currentUserId?: string;
   timerNow: string;
   canManage: boolean;
+  canVerifyAll: boolean;
   onDelete: (workOrder: WorkOrder) => void;
 }) {
-  const needsVerification = workOrder.status === "resolved" && workOrder.requesterId === currentUserId;
+  const needsVerification = workOrder.status === "resolved" && (canVerifyAll || workOrder.requesterId === currentUserId);
   const timerRunning = !["closed", "cancelled"].includes(workOrder.status);
   const timerEnd = timerRunning ? timerNow : workOrder.closedAt || workOrder.updatedAt;
   const timerLabel = workOrder.status === "cancelled" ? "Cancelled" : "Total time";
