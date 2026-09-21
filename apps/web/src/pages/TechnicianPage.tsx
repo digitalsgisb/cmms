@@ -442,6 +442,10 @@ export function TechnicianPage() {
         </div>
         <h2>{workOrder.title}</h2>
         <p>{workOrder.location} - {workOrder.machineName || workOrder.assetName}</p>
+        <div className="technician-card-issue">
+          <small>Issue reported by requester</small>
+          <strong>{workOrder.issueDescription || workOrder.description}</strong>
+        </div>
         <div className="technician-card-context">
           <span>{workOrderTypeLabels[workOrder.type]}</span>
           {workOrder.assignedToId ? <strong>{visualStatus === "in_progress" ? "In progress by" : "Accepted by"} {technicianName(workOrder.assignedToId)}</strong> : <strong>Waiting for technician</strong>}
@@ -566,6 +570,12 @@ export function TechnicianPage() {
             <p className="resolve-modal-copy">
               Confirm your repair team, then add the actual time, completion photo, and short repair remark.
             </p>
+
+            <section className="resolve-requested-issue" aria-label="Issue reported by requester">
+              <small>Issue reported by requester</small>
+              <strong>{resolveTarget.issueDescription || resolveTarget.description}</strong>
+              <span>{resolveTarget.location} · {resolveTarget.machineName || resolveTarget.assetName}</span>
+            </section>
 
             <fieldset className="resolve-team-field">
               <legend><UsersRound size={17} /> Repair team</legend>

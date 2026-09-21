@@ -7,6 +7,7 @@ import { longProductionDowntimeMinutes, technicianCanAccessWorkOrder, workOrderD
 import { api, mediaUrl } from "../api/client";
 import { PriorityBadge, StatusBadge } from "../components/Badges";
 import { ActionButton } from "../components/ActionButton";
+import { ImageLightbox } from "../components/ImageLightbox";
 import { useCurrentUser } from "../state/UserContext";
 import { formatDate, formatDateTime, formatDuration, formatMinutes, userName } from "../utils/format";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
@@ -95,6 +96,7 @@ export function WorkOrderDetailPage() {
   const [briefError, setBriefError] = useState("");
   const [briefMasterData, setBriefMasterData] = useState<MasterData>({ sections: [], machines: [], issueCategories: [] });
   const [briefDraft, setBriefDraft] = useState<BriefDraft | null>(null);
+  const [previewPhoto, setPreviewPhoto] = useState<{ src: string; alt: string; label: string } | null>(null);
 
   async function loadDetail() {
     if (!id) {
@@ -659,6 +661,12 @@ export function WorkOrderDetailPage() {
             <span>{workOrderTypeLabels[detail.type]}</span>
           </div>
           {isTechnician ? (
+            <div className="technician-command-issue">
+              <small>Issue reported by requester</small>
+              <strong>{detail.issueDescription || detail.description}</strong>
+            </div>
+          ) : null}
+          {isTechnician ? (
             <div className="technician-command-summary" aria-label="Current job summary">
               <div><small>Current status</small><strong>{workOrderStatusLabels[visualStatus]}</strong></div>
               <div><small>Assigned technician</small><strong>{detail.assignedTo?.name || "Waiting for acceptance"}</strong></div>
@@ -791,11 +799,11 @@ export function WorkOrderDetailPage() {
                   {group.attachments.length ? (
                     <div className="attachment-grid">
                       {group.attachments.map((attachment) => (
-                        <a key={attachment.id} className="attachment-tile" href={mediaUrl(attachment.url)} target="_blank" rel="noreferrer">
+                        <button key={attachment.id} type="button" className="attachment-tile" onClick={() => setPreviewPhoto({ src: mediaUrl(attachment.url), alt: `${group.title}: ${attachment.originalName}`, label: `${group.title} · ${attachment.originalName}` })} aria-label={`View ${attachment.originalName}`}>
                           <img src={mediaUrl(attachment.url)} alt={`${group.title}: ${attachment.originalName}`} />
                           <span>{attachment.kind.replace("_", " ")}</span>
                           <small>{attachment.originalName}</small>
-                        </a>
+                        </button>
                       ))}
                     </div>
                   ) : <p className="detail-images-empty">No {group.title.toLowerCase()} photo yet.</p>}
@@ -1010,6 +1018,12 @@ export function WorkOrderDetailPage() {
               Confirm who worked on the machine, then add the repair summary, actual time, and completion photo.
             </p>
 
+            <section className="resolve-requested-issue" aria-label="Issue reported by requester">
+              <small>Issue reported by requester</small>
+              <strong>{detail.issueDescription || detail.description}</strong>
+              <span>{detail.location} · {detail.machineName || detail.assetName}</span>
+            </section>
+
             <fieldset className="resolve-team-field">
               <legend><UsersRound size={17} /> Repair team</legend>
               <p><strong>{detail.assignedTo?.name || "Lead technician"}</strong> is the lead. Choose 1–3 other technicians who worked with them.</p>
@@ -1073,6 +1087,7 @@ export function WorkOrderDetailPage() {
         </div>,
         document.body
       ) : null}
+      {previewPhoto ? <ImageLightbox {...previewPhoto} onClose={() => setPreviewPhoto(null)} /> : null}
     </section>
   );
 }

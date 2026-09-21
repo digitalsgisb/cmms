@@ -1781,16 +1781,21 @@ button:disabled {
 .image-lightbox-close {
   position: fixed;
   top: max(14px, calc(env(safe-area-inset-top) + 10px));
-  right: max(14px, calc(env(safe-area-inset-right) + 14px));
+  left: max(14px, calc(env(safe-area-inset-left) + 14px));
   z-index: 1;
-  display: grid;
-  width: 46px;
-  height: 46px;
-  place-items: center;
+  display: inline-flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   border: 0;
-  border-radius: 50%;
+  border-radius: 999px;
   color: #221d20;
   background: #fff;
+  padding: 0 17px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 900;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
 }
 
@@ -4494,6 +4499,17 @@ tbody tr:hover {
   gap: 6px;
 }
 
+button.attachment-tile {
+  min-width: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  cursor: zoom-in;
+}
+
 .attachment-tile img {
   width: 100%;
   aspect-ratio: 4 / 3;
@@ -4588,6 +4604,37 @@ tbody tr:hover {
   color: var(--muted);
   font-weight: 700;
   line-height: 1.5;
+}
+
+.resolve-requested-issue {
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(179, 106, 0, 0.24);
+  border-left: 5px solid #c47a0b;
+  border-radius: 10px;
+  color: #3d3020;
+  background: linear-gradient(135deg, #fff7df, #fffdf7);
+  padding: 13px 14px;
+}
+
+.resolve-requested-issue small {
+  color: #98620f;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.resolve-requested-issue strong {
+  font-size: 15px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.resolve-requested-issue span {
+  color: #79684e;
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .resolve-field {
@@ -5166,6 +5213,31 @@ tbody tr:hover {
 .technician-detail-page .technician-detail-tools-panel { display: grid; gap: 12px; animation: technicianQueueSwap 280ms ease both; }
 .technician-detail-page .detail-summary-panel { background: linear-gradient(145deg, #fff, #fffafa); }
 
+.technician-card-issue {
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-left: 4px solid #ffd477;
+  border-radius: 9px;
+  background: rgba(16, 13, 14, .16);
+  padding: 10px 11px;
+}
+
+.technician-card-issue small {
+  color: rgba(255, 255, 255, .72);
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.technician-card-issue strong {
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
 .work-order-command-copy { min-width: 0; flex: 1 1 auto; }
 .technician-work-order-command {
   border-color: rgba(255, 255, 255, .2);
@@ -5184,6 +5256,33 @@ tbody tr:hover {
 .technician-work-order-command.technician-status-resolved,
 .technician-work-order-command.technician-status-closed { background-color: #187c45; }
 .technician-work-order-command.technician-status-cancelled { background-color: #563943; }
+
+.technician-command-issue {
+  display: grid;
+  gap: 5px;
+  margin-top: 16px;
+  border: 1px solid rgba(255, 255, 255, .24);
+  border-left: 5px solid #ffd477;
+  border-radius: 10px;
+  background: rgba(13, 10, 11, .2);
+  padding: 12px 14px;
+  backdrop-filter: blur(8px);
+}
+
+.technician-command-issue small {
+  color: rgba(255, 255, 255, .72);
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.technician-command-issue strong {
+  color: #fff;
+  font-size: 15px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
 
 .technician-command-summary {
   display: grid;

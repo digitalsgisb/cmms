@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 
@@ -29,7 +29,8 @@ export function ImageLightbox({ src, alt, label, onClose }: ImageLightboxProps) 
   return createPortal(
     <div className="image-lightbox" role="dialog" aria-modal="true" aria-label={label || alt} onClick={onClose}>
       <button type="button" className="image-lightbox-close" onClick={onClose} aria-label="Close photo viewer" autoFocus>
-        <X size={24} />
+        <ArrowLeft size={21} />
+        <span>Back</span>
       </button>
       <figure onClick={(event) => event.stopPropagation()}>
         <img src={src} alt={alt} />
