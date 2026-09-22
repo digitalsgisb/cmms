@@ -28,6 +28,7 @@ import type {
   MachineImportRow,
   MasterData,
   NotificationRecord,
+  UsageDashboard,
   AssignPmTemplateInput,
   PmChecklistItem,
   PmChecklistPhoto,
@@ -159,6 +160,14 @@ export function migrate() {
       userId TEXT NOT NULL,
       expiresAt TEXT NOT NULL,
       createdAt TEXT NOT NULL,
+      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS app_opens (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      plantId TEXT NOT NULL,
+      openedAt TEXT NOT NULL,
       FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
     );
 
@@ -547,6 +556,8 @@ export function migrate() {
     CREATE INDEX IF NOT EXISTS idx_work_order_sync_status ON work_order_sync_queue(status, queuedAt);
     CREATE INDEX IF NOT EXISTS idx_work_order_sync_deletions_status ON work_order_sync_deletions(status, queuedAt);
     CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(userId, expiresAt);
+    CREATE INDEX IF NOT EXISTS idx_app_opens_user_date ON app_opens(userId, openedAt);
+    CREATE INDEX IF NOT EXISTS idx_app_opens_date ON app_opens(openedAt);
     CREATE INDEX IF NOT EXISTS idx_air_leak_sync_status ON air_leak_sync_queue(status, queuedAt);
   `);
 
@@ -1402,6 +1413,46 @@ export function createAuthSession(username: string, password: string): AuthSessi
   db.prepare("INSERT INTO auth_sessions (tokenHash, userId, expiresAt, createdAt) VALUES (?, ?, ?, ?)")
     .run(sessionTokenHash(token), user.id, expiresAt, createdAt);
   return { user, token, expiresAt };
+}
+
+export function recordAppOpen(id: string, userId: string, plantId: string) {
+  if (!/^[a-zA-Z0-9_-]{16,100}$/.test(id)) throw new Error("Invalid app-open identifier.");
+  getUser(userId);
+  db.prepare("INSERT OR IGNORE INTO app_opens (id, userId, plantId, openedAt) VALUES (?, ?, ?, ?)")
+    .run(id, userId, plantId, now());
+}
+
+export function getUsageDashboard(actorId: string): UsageDashboard {
+  const actor = getUser(actorId);
+  if (actor.role !== "developer") throw new Error("Developer access is required.");
+
+  const generatedAt = now();
+  const users = rows<UsageDashboard["users"][number]>(db.prepare(`
+    SELECT u.id AS userId, u.username, u.name, u.role, u.department,
+      SUM(CASE WHEN date(o.openedAt, 'localtime') = date('now', 'localtime') THEN 1 ELSE 0 END) AS opensToday,
+      SUM(CASE WHEN julianday(o.openedAt) >= julianday('now', '-7 days') THEN 1 ELSE 0 END) AS opensLast7Days,
+      SUM(CASE WHEN julianday(o.openedAt) >= julianday('now', '-30 days') THEN 1 ELSE 0 END) AS opensLast30Days,
+      COUNT(o.id) AS opensAllTime,
+      MAX(o.openedAt) AS lastOpenedAt
+    FROM users u
+    LEFT JOIN app_opens o ON o.userId = u.id
+    WHERE u.active = 1 AND u.id <> ?
+    GROUP BY u.id, u.username, u.name, u.role, u.department
+    ORDER BY CASE WHEN MAX(o.openedAt) IS NULL THEN 1 ELSE 0 END, MAX(o.openedAt) DESC, u.name
+  `).all(publicRequesterId));
+
+  return {
+    generatedAt,
+    totals: {
+      activeUsersToday: users.filter((user) => user.opensToday > 0).length,
+      activeUsersLast7Days: users.filter((user) => user.opensLast7Days > 0).length,
+      opensToday: users.reduce((total, user) => total + user.opensToday, 0),
+      opensLast7Days: users.reduce((total, user) => total + user.opensLast7Days, 0),
+      opensLast30Days: users.reduce((total, user) => total + user.opensLast30Days, 0),
+      opensAllTime: users.reduce((total, user) => total + user.opensAllTime, 0)
+    },
+    users
+  };
 }
 
 export function authenticateSession(token: string): User {

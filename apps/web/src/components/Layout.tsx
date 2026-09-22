@@ -1,4 +1,5 @@
 import {
+  Activity,
   Bell,
   Boxes,
   ChartNoAxesCombined,
@@ -142,6 +143,7 @@ export function Layout() {
       { match: "/preventive-maintenance", label: "Preventive Maintenance" },
       { match: "/performance", label: "Performance" },
       { match: "/reports", label: "Reports" },
+      { match: "/developer/usage", label: "User Sessions" },
       { match: "/users", label: "Users" },
       { match: "/profile", label: "Profile" },
       { match: "/settings", label: "Settings" }
@@ -555,6 +557,12 @@ export function Layout() {
               </span>
             )
           ))}
+          {currentUser.role === "developer" ? (
+            <NavLink to="/developer/usage" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} onClick={() => setMobileNavOpen(false)}>
+              <Activity size={18} aria-hidden="true" />
+              <span>User Sessions</span>
+            </NavLink>
+          ) : null}
         </nav>
 
         <div className="sidebar-credit">

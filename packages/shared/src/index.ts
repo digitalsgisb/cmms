@@ -206,6 +206,32 @@ export interface AuthSession {
   expiresAt: string;
 }
 
+export interface UserUsageSummary {
+  userId: string;
+  username: string;
+  name: string;
+  role: UserRole;
+  department: string;
+  opensToday: number;
+  opensLast7Days: number;
+  opensLast30Days: number;
+  opensAllTime: number;
+  lastOpenedAt: string | null;
+}
+
+export interface UsageDashboard {
+  generatedAt: string;
+  totals: {
+    activeUsersToday: number;
+    activeUsersLast7Days: number;
+    opensToday: number;
+    opensLast7Days: number;
+    opensLast30Days: number;
+    opensAllTime: number;
+  };
+  users: UserUsageSummary[];
+}
+
 export interface WorkOrder {
   plantId: PlantId;
   id: string;

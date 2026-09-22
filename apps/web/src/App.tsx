@@ -12,6 +12,7 @@ import { PreventiveMaintenancePage } from "./pages/PreventiveMaintenancePage";
 import { PublicRequesterPage } from "./pages/PublicRequesterPage";
 import { GuestTrackingPage } from "./pages/GuestTrackingPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { SessionTrackerPage } from "./pages/SessionTrackerPage";
 import { SparePartsPage } from "./pages/SparePartsPage";
 import { TechnicianPage } from "./pages/TechnicianPage";
 import { TechnicianHistoryPage } from "./pages/TechnicianHistoryPage";
@@ -68,9 +69,16 @@ export function App() {
         <Route path="/users" element={<RestrictedFeature name="Users"><AdminPage /></RestrictedFeature>} />
         <Route path="/profile" element={<TechnicianProfilePage />} />
         <Route path="/settings" element={<RestrictedFeature name="Settings"><SettingsPage /></RestrictedFeature>} />
+        <Route path="/developer/usage" element={<DeveloperFeature><SessionTrackerPage /></DeveloperFeature>} />
       </Route>
     </Routes>
   );
+}
+
+function DeveloperFeature({ children }: { children: React.ReactNode }) {
+  const { currentUser } = useCurrentUser();
+  if (currentUser?.role === "developer") return children;
+  return <Navigate to="/" replace />;
 }
 
 function HomePage() {

@@ -19,6 +19,11 @@ interface UserContextValue {
 
 const UserContext = createContext<UserContextValue | null>(null);
 const sessionUserKey = "sugi-cmms-auth-user-id-v2";
+const appOpenId = crypto.randomUUID();
+
+function recordAppOpen(user: User) {
+  void api.recordAppOpen(`${appOpenId}_${user.id}`).catch((error) => console.warn("Unable to record app open.", error));
+}
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [sessionError, setSessionError] = useState("");
@@ -46,6 +51,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     const user = await api.restoreSession();
     setCurrentUserId(user.id);
     setUsers([user]);
+    recordAppOpen(user);
     await refreshUsers();
     return user;
   }
@@ -58,6 +64,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   async function login(username: string, password: string) {
     const user = await api.login(username, password);
     setCurrentUserId(user.id);
+    recordAppOpen(user);
     setUsers((current) => {
       const exists = current.some((item) => item.id === user.id);
       return exists ? current.map((item) => (item.id === user.id ? user : item)) : [user, ...current];

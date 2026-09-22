@@ -46,6 +46,7 @@ import type {
   UpdateWorkOrderInput,
   UpdateWorkOrderStatusInput,
   UpdateWorkOrderSyncSettingsInput,
+  UsageDashboard,
   User,
   WorkOrder,
   WorkOrderActivity,
@@ -163,6 +164,8 @@ export const api = {
       return user;
     }
   },
+  recordAppOpen: (id: string) => request<void>("/api/usage/app-open", { method: "POST", body: JSON.stringify({ id }) }),
+  usageDashboard: () => request<UsageDashboard>("/api/usage/dashboard"),
   hasSession: () => Boolean(localStorage.getItem(authTokenKey)),
   clearSession: () => { void request<void>("/api/auth/logout", { method: "POST" }).catch(() => {}); localStorage.removeItem(authTokenKey); sessionStorage.removeItem("cmms-user-plant-access"); },
   users: () => request<User[]>(window.location.pathname === "/users" ? "/api/users?manage=1" : "/api/users"),

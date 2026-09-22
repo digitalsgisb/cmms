@@ -29,6 +29,73 @@
   --shadow-soft: 0 12px 28px rgba(63, 7, 16, 0.08);
 }
 
+/* Developer-only account usage */
+.session-tracker-page {
+  display: grid;
+  gap: 18px;
+  padding-bottom: 28px;
+}
+
+.session-tracker-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  border-radius: 20px;
+  color: #fff;
+  background: linear-gradient(135deg, #511019 0%, #851923 58%, #ad3540 100%);
+  padding: 26px 28px;
+  box-shadow: 0 18px 42px rgba(81, 16, 25, 0.2);
+}
+
+.session-tracker-hero .eyebrow { display: flex; align-items: center; gap: 7px; margin: 0 0 8px; color: #f4c9ce; }
+.session-tracker-hero h1 { margin: 0; font-size: clamp(27px, 4vw, 40px); letter-spacing: -0.03em; }
+.session-tracker-hero > div > p:last-child { max-width: 700px; margin: 9px 0 0; color: rgba(255,255,255,.78); line-height: 1.55; }
+.session-tracker-hero .secondary-action { flex: 0 0 auto; color: #fff; border-color: rgba(255,255,255,.3); background: rgba(255,255,255,.1); }
+
+.session-metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; }
+.session-metric { display: flex; gap: 13px; min-width: 0; border: 1px solid #eadcdf; border-radius: 16px; background: #fff; padding: 17px; box-shadow: 0 8px 24px rgba(65,22,30,.06); }
+.session-metric > span { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 42px; border-radius: 12px; color: var(--maroon); background: #f6e9eb; }
+.session-metric div { display: grid; gap: 2px; min-width: 0; }
+.session-metric small { color: var(--muted); font-weight: 800; }
+.session-metric strong { color: var(--ink); font-size: 28px; line-height: 1.1; }
+.session-metric p { margin: 0; color: #89767c; font-size: 11px; }
+
+.session-users-panel { overflow: hidden; border: 1px solid #eadcdf; border-radius: 18px; background: #fff; box-shadow: 0 10px 30px rgba(65,22,30,.06); }
+.session-users-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 20px 22px; border-bottom: 1px solid #eee3e5; }
+.session-users-heading .eyebrow { margin: 0 0 3px; }
+.session-users-heading h2 { margin: 0; font-size: 20px; }
+.session-user-search { display: flex; align-items: center; gap: 8px; width: min(340px, 100%); min-height: 42px; border: 1px solid #dacbd0; border-radius: 11px; color: #89767c; background: #faf7f8; padding: 0 12px; }
+.session-user-search input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; }
+.session-table-wrap { overflow-x: auto; }
+.session-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.session-table th { color: #7d6970; background: #faf7f8; padding: 11px 14px; text-align: left; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+.session-table td { border-top: 1px solid #f0e7e9; padding: 13px 14px; color: #463a3f; white-space: nowrap; }
+.session-table td:first-child { min-width: 210px; white-space: normal; }
+.session-table td:first-child strong, .session-table td:first-child span { display: block; }
+.session-table td:first-child span { margin-top: 2px; color: #8a777e; font-size: 11px; }
+.session-role { display: inline-flex; border-radius: 999px; color: #6c2630; background: #f5e5e8; padding: 4px 8px; font-size: 10px; font-weight: 900; text-transform: capitalize; }
+.session-role.role-technician { color: #1d5c65; background: #e2f1f2; }
+.session-role.role-requester { color: #5c526e; background: #eeebf5; }
+.session-role.role-developer { color: #765315; background: #f8edcf; }
+.session-never { color: #a49197; font-style: italic; }
+.session-empty { margin: 0; padding: 24px; color: var(--muted); text-align: center; }
+.session-generated { margin: 0; border-top: 1px solid #eee3e5; padding: 12px 22px; color: #8a777e; background: #faf7f8; font-size: 11px; }
+
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
+.is-spinning { animation: session-spin .8s linear infinite; }
+@keyframes session-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 980px) {
+  .session-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 620px) {
+  .session-tracker-hero, .session-users-heading { align-items: stretch; flex-direction: column; }
+  .session-tracker-hero .secondary-action, .session-user-search { width: 100%; }
+  .session-metric-grid { grid-template-columns: 1fr; }
+}
+
 /* Guest work-order tracker */
 .guest-tracker-shell { min-height: 100dvh; color: #30282c; background: linear-gradient(180deg,#f7fbfa 0,#f5f1f3 54%,#fff 100%); }
 .guest-tracker-topbar { position: sticky; top: 0; z-index: 40; display: flex; min-height: 70px; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid rgba(26,117,91,.12); background: rgba(255,255,255,.94); padding: 10px clamp(15px,4vw,40px); backdrop-filter: blur(14px); }

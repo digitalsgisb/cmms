@@ -74,6 +74,8 @@ APP_PUBLIC_URL=http://cmms-server-ip:3300
 
 `DEVELOPER_PASSWORD` enables developer sign-in. `ADMIN_PASSWORD` replaces the seeded admin password on startup. `USER_PASSWORDS_JSON` applies per-user passwords (minimum 12 characters) using usernames as keys. Do not leave the original local-development passwords active on a production network.
 
+The developer account also has a private **User Sessions** page. It records one authenticated app open per browser/PWA load and reports each active account's totals for today, 7 days, 30 days, all time, and its latest open time. The navigation link, page, and API report are restricted to the `developer` role; admin and executive accounts cannot read the data. Guest request-form visits are not included because they cannot be reliably attributed to an account.
+
 Admins can create, edit, reset passwords for, and remove sign-in accounts from **Users → People**. Passwords are stored as one-way hashes and are never displayed; an admin can set a replacement password instead. Changing a password or role revokes that account's existing sessions. Removing an account immediately revokes its sessions and hides it from active-user lists while retaining its historical work orders, PM records, uploads, and stock activity.
 
 ### PWA push notifications

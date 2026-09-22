@@ -40,6 +40,7 @@ import {
   getPmPhoto,
   getAssetDashboard,
   getGuestTrackingLink,
+  getUsageDashboard,
   getGuestWorkOrderTracking,
   getPmScheduleDetail,
   getWorkOrderDetail,
@@ -67,6 +68,7 @@ import {
   pullSparePartsFromSheet,
   publicRequesterIdForUploads,
   retrySpareSync,
+  recordAppOpen,
   revokeAuthSession,
   revokeUserSessions,
   flushWorkOrderSyncQueue,
@@ -519,6 +521,19 @@ app.use("/uploads", (request, response, next) => {
 
 app.get("/api/auth/me", (request, response) => {
   response.json(request.cmmsUser);
+});
+
+app.post("/api/usage/app-open", (request, response) => {
+  recordAppOpen(String(request.body.id || ""), request.cmmsUser!.id, String(request.header("x-cmms-plant") || "unknown"));
+  response.status(204).send();
+});
+
+app.get("/api/usage/dashboard", (request, response) => {
+  if (request.cmmsUser?.role !== "developer") {
+    response.status(403).json({ error: "Developer access is required." });
+    return;
+  }
+  response.json(getUsageDashboard(request.cmmsUser.id));
 });
 
 app.post("/api/users/:id/avatar", upload.single("avatar"), (request, response) => {
