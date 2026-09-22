@@ -154,6 +154,10 @@ export function TechnicianPage() {
       : [],
     [resolveTarget, users]
   );
+  const resolveLeadTechnician = useMemo(
+    () => resolveTarget ? users.find((user) => user.id === resolveTarget.assignedToId) || null : null,
+    [resolveTarget, users]
+  );
   useEffect(() => {
     if (!workOrdersReady || hasSelectedInitialQueueTabRef.current) return;
     const hasAssignedWork = liveWorkOrders.some((workOrder) =>
@@ -581,6 +585,11 @@ export function TechnicianPage() {
               <legend><UsersRound size={17} /> Repair team</legend>
               <p><strong>{technicianName(resolveTarget.assignedToId)}</strong> is the lead. Supporting teammates are optional; choose up to 3 if applicable.</p>
               <div className="resolve-team-options">
+                {resolveLeadTechnician ? <label className="selected lead-technician">
+                  <input type="checkbox" checked disabled aria-label={`${resolveLeadTechnician.name}, lead technician, automatically included`} />
+                  <span><strong>{resolveLeadTechnician.name}</strong><small>Lead technician · automatically included</small></span>
+                  <CheckCircle2 size={16} />
+                </label> : null}
                 {resolveTeamCandidates.map((technician) => {
                   const selected = resolveSupportingTechnicianIds.includes(technician.id);
                   return <label key={technician.id} className={selected ? "selected" : ""}>

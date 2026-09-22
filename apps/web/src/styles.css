@@ -13294,6 +13294,11 @@ body,
   cursor: not-allowed;
 }
 
+.resolve-team-options label.lead-technician:has(input:disabled) {
+  opacity: 1;
+  cursor: default;
+}
+
 .resolve-team-options input {
   width: 17px;
   height: 17px;

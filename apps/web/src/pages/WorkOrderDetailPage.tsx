@@ -1032,6 +1032,11 @@ export function WorkOrderDetailPage() {
               <legend><UsersRound size={17} /> Repair team</legend>
               <p><strong>{detail.assignedTo?.name || "Lead technician"}</strong> is the lead. Supporting teammates are optional; choose up to 3 if applicable.</p>
               <div className="resolve-team-options">
+                {detail.assignedTo ? <label className="selected lead-technician">
+                  <input type="checkbox" checked disabled aria-label={`${detail.assignedTo.name}, lead technician, automatically included`} />
+                  <span><strong>{detail.assignedTo.name}</strong><small>Lead technician · automatically included</small></span>
+                  <Check size={16} />
+                </label> : null}
                 {supportingCandidates.map((technician) => {
                   const selected = resolveSupportingTechnicianIds.includes(technician.id);
                   return <label key={technician.id} className={selected ? "selected" : ""}>
