@@ -12,10 +12,10 @@
   "categories": ["business", "productivity", "utilities"],
   "icons": [
     {
-      "src": "/brand/sugi_logo.png",
-      "sizes": "2000x2000",
-      "type": "image/png",
-      "purpose": "any"
+      "src": "/icons/cmms-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
     }
   ],
   "shortcuts": [
@@ -26,9 +26,9 @@
       "url": "/technician",
       "icons": [
         {
-          "src": "/brand/sugi_logo.png",
-          "sizes": "2000x2000",
-          "type": "image/png"
+          "src": "/icons/cmms-icon.svg",
+          "sizes": "any",
+          "type": "image/svg+xml"
         }
       ]
     },
@@ -39,9 +39,9 @@
       "url": "/spare-parts",
       "icons": [
         {
-          "src": "/brand/sugi_logo.png",
-          "sizes": "2000x2000",
-          "type": "image/png"
+          "src": "/icons/cmms-icon.svg",
+          "sizes": "any",
+          "type": "image/svg+xml"
         }
       ]
     },
@@ -52,9 +52,9 @@
       "url": "/preventive-maintenance",
       "icons": [
         {
-          "src": "/brand/sugi_logo.png",
-          "sizes": "2000x2000",
-          "type": "image/png"
+          "src": "/icons/cmms-icon.svg",
+          "sizes": "any",
+          "type": "image/svg+xml"
         }
       ]
     }

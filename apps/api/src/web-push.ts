@@ -48,8 +48,8 @@ export async function sendPushToUser(
       ? (notification.title.toLowerCase().includes("ready for verification") ? "/requester?view=verify" : "/requester")
       : notification.workOrderId ? `/work-orders/${encodeURIComponent(notification.workOrderId)}` : "/",
     tag: notification.workOrderId ? `work-order-${notification.workOrderId}` : "sugi-cmms",
-    icon: "/brand/sugi_logo.png",
-    badge: "/brand/sugi_logo.png"
+    icon: "/icons/cmms-icon.svg",
+    badge: "/icons/cmms-icon.svg"
   });
 
   await Promise.all(subscriptions.map(async (subscription) => {
