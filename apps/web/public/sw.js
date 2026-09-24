@@ -1,6 +1,6 @@
-const CACHE_NAME = "sugi-cmms-shell-v11";
+const CACHE_NAME = "sugi-cmms-shell-v12";
 const APP_SHELL_URL = "/";
-const SHELL_ASSETS = [APP_SHELL_URL, "/manifest.webmanifest", "/requester.webmanifest", "/icons/cmms-icon.svg"];
+const SHELL_ASSETS = [APP_SHELL_URL, "/manifest.webmanifest", "/requester.webmanifest", "/brand/sugi_logo.png", "/brand/sugi_logo_white.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -43,8 +43,8 @@ self.addEventListener("push", (event) => {
 
   event.waitUntil(self.registration.showNotification(payload.title || "Sugi CMMS", {
     body: payload.body || "A CMMS update is available.",
-    icon: payload.icon || "/icons/cmms-icon.svg",
-    badge: payload.badge || "/icons/cmms-icon.svg",
+    icon: payload.icon || "/brand/sugi_logo.png",
+    badge: payload.badge || "/brand/sugi_logo.png",
     tag: payload.tag || "sugi-cmms",
     data: { url: payload.url || "/" }
   }));

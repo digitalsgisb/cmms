@@ -34,9 +34,12 @@ export function createRequesterPosterPdf({ requesterUrl, qrDataUrl, logoDataUrl 
   pdf.circle(196, 2, 54, "F");
   pdf.setFillColor(brass);
   pdf.rect(0, 61, 210, 3, "F");
-  pdf.addImage(logoDataUrl, "PNG", 18, 12, 72, 26, undefined, "FAST");
+  pdf.addImage(logoDataUrl, "PNG", 18, 9, 34, 34, undefined, "FAST");
   pdf.setTextColor(255, 255, 255);
   pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(12);
+  pdf.text("SUGIHARA GRAND", 53, 23);
+  pdf.text("INDUSTRIES SDN. BHD.", 53, 29);
   pdf.setFontSize(13);
   pdf.text("MAINTENANCE COMMAND", 18, 51);
   pdf.setFont("helvetica", "normal");
@@ -98,6 +101,6 @@ export function createRequesterPosterPdf({ requesterUrl, qrDataUrl, logoDataUrl 
 }
 
 export async function downloadRequesterPosterPdf(requesterUrl: string, qrDataUrl: string) {
-  const logoDataUrl = await loadAssetDataUrl("/brand/sugi_mark_white.png");
+  const logoDataUrl = await loadAssetDataUrl("/brand/sugi_logo_white.png");
   createRequesterPosterPdf({ requesterUrl, qrDataUrl, logoDataUrl }).save("SUGI-CMMS-Work-Order-QR-Poster.pdf");
 }

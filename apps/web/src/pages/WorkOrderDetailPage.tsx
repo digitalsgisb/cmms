@@ -86,6 +86,7 @@ export function WorkOrderDetailPage() {
   const [resolveError, setResolveError] = useState("");
   const [busy, setBusy] = useState(false);
   const [busyAction, setBusyAction] = useState("");
+  const [showDeleteAction, setShowDeleteAction] = useState(false);
   const [timerNow, setTimerNow] = useState(() => new Date().toISOString());
   const [guestTrackingPath, setGuestTrackingPath] = useState("");
   const [guestLinkCopied, setGuestLinkCopied] = useState(false);
@@ -691,10 +692,6 @@ export function WorkOrderDetailPage() {
                 <Pencil size={17} aria-hidden="true" />
                 {briefLoading ? "Loading..." : "Edit Brief"}
               </button>
-              <button className="secondary-action work-order-delete-link" type="button" disabled={busy} onClick={removeWorkOrder}>
-                <Trash2 size={17} aria-hidden="true" />
-                {busyAction === "delete" ? "Deleting..." : "Delete"}
-              </button>
             </>
           ) : null}
         </div>
@@ -1004,6 +1001,27 @@ export function WorkOrderDetailPage() {
           ) : null}
         </aside>
       </div>
+
+      {canManageWorkOrder ? (
+        <section className="work-order-danger-zone" aria-label="Work order management">
+          {showDeleteAction ? (
+            <div className="work-order-delete-confirmation">
+              <p>Delete {detail.number} and its uploaded images permanently?</p>
+              <div>
+                <button type="button" className="secondary-action" onClick={() => setShowDeleteAction(false)}>Cancel</button>
+                <button type="button" className="delete-work-order-button" disabled={busy} onClick={removeWorkOrder}>
+                  <Trash2 size={15} aria-hidden="true" />
+                  {busyAction === "delete" ? "Deleting..." : "Delete permanently"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button type="button" className="work-order-delete-reveal" onClick={() => setShowDeleteAction(true)}>
+              <Trash2 size={15} aria-hidden="true" /> Delete work order
+            </button>
+          )}
+        </section>
+      ) : null}
 
       {resolveDialogOpen ? createPortal(
         <div className="modal-backdrop">

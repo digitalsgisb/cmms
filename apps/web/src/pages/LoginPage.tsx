@@ -42,7 +42,7 @@ export function LoginPage() {
   return (
     <main className="login-shell">
       <section className="login-brand-panel">
-        <img src="/brand/sugi_mark_white.png" alt="Sugihara Grand Industries" />
+        <img src="/brand/sugi_logo_white.png" alt="Sugihara Grand Industries" />
         <div>
           <p className="hero-eyebrow">
             <span aria-hidden="true" />

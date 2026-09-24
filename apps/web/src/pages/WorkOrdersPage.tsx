@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Clock3, Eye, Layers3, Pencil, Plus, Search, Trash2, Wrench } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, Eye, Layers3, Pencil, Plus, Search, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent, MouseEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
@@ -49,7 +49,6 @@ export function WorkOrdersPage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const [actionError, setActionError] = useState("");
   const [search, setSearch] = useState(params.get("q") || "");
   const [status, setStatus] = useState<WorkOrderStatusFilter>(statusOptions.includes(params.get("status") as WorkOrderStatusFilter) ? params.get("status") as WorkOrderStatusFilter : "all");
   const [scope, setScope] = useState<"all" | "department" | "mine">(params.get("scope") === "mine" ? "mine" : params.get("scope") === "all" ? "all" : workOrderDepartmentForUser(currentUser?.department || "") ? "department" : "all");
@@ -130,23 +129,6 @@ export function WorkOrdersPage() {
   const visibleWorkOrders = filtered.filter((workOrder) => !pendingVerificationIds.has(workOrder.id));
   const currentWorkOrders = visibleWorkOrders.filter((workOrder) => !["closed", "cancelled"].includes(workOrder.status));
   const closedWorkOrders = visibleWorkOrders.filter((workOrder) => ["closed", "cancelled"].includes(workOrder.status));
-
-  async function removeWorkOrder(workOrder: WorkOrder) {
-    if (!currentUser || !["executive", "admin"].includes(currentUser.role)) {
-      return;
-    }
-
-    const confirmed = window.confirm(`Delete ${workOrder.number}? This permanently removes the work order and uploaded images.`);
-    if (!confirmed) {
-      return;
-    }
-
-    setActionError("");
-    try {
-      await api.deleteWorkOrder(workOrder.id, { actorId: currentUser.id });
-      setWorkOrders((current) => current.filter((item) => item.id !== workOrder.id));
-    } catch (error) { setActionError(error instanceof Error ? error.message : "Couldn’t delete this work order."); }
-  }
 
   function selectSummaryStatus(nextStatus: Exclude<WorkOrderStatusFilter, "all">) {
     setStatus((current) => current === nextStatus ? "all" : nextStatus);
@@ -256,7 +238,6 @@ export function WorkOrdersPage() {
         <button className="secondary-action" type="button" onClick={() => { setSearch(""); setStatus("all"); setMonth(""); setSectionId("all"); setMachineId("all"); setScope("all"); }}>Reset filters</button>
       </div>
       {loadError ? <div className="ux-load-error" role="alert"><span>Couldn’t refresh work orders. {loadError} {workOrders.length ? "Showing the last loaded information." : ""}</span><button type="button" className="secondary-action" onClick={() => void loadWorkOrders()}>Try again</button></div> : null}
-      {actionError ? <p className="error-line" role="alert">{actionError}</p> : null}
       {requesterMode || canVerifyAllWorkOrders ? (
         <section className="requester-subsection">
           <div className="subsection-heading">
@@ -276,7 +257,6 @@ export function WorkOrdersPage() {
                   timerNow={timerNow}
                   canManage={canManageWorkOrders}
                   canVerifyAll={canVerifyAllWorkOrders}
-                  onDelete={removeWorkOrder}
                 />
               ))}
             </div>
@@ -305,7 +285,6 @@ export function WorkOrdersPage() {
               timerNow={timerNow}
               canManage={canManageWorkOrders}
               canVerifyAll={canVerifyAllWorkOrders}
-              onDelete={removeWorkOrder}
             />
           ))}
         </div> : closedWorkOrders.length === 0 ? <p className="quiet-panel">{loading ? "Loading work orders…" : loadError && workOrders.length === 0 ? "Work orders are unavailable. Try loading them again." : workOrders.length ? "No matching work orders. Try a different search or reset the filters above." : "No work orders yet. Create a work order to report your first issue."}</p> : null}
@@ -316,7 +295,6 @@ export function WorkOrdersPage() {
           workOrders={closedWorkOrders}
           users={users}
           canManage={canManageWorkOrders}
-          onDelete={removeWorkOrder}
         />
       ) : null}
     </section>
@@ -329,8 +307,7 @@ function WorkOrderCard({
   currentUserId,
   timerNow,
   canManage,
-  canVerifyAll,
-  onDelete
+  canVerifyAll
 }: {
   workOrder: WorkOrder;
   users: User[];
@@ -338,7 +315,6 @@ function WorkOrderCard({
   timerNow: string;
   canManage: boolean;
   canVerifyAll: boolean;
-  onDelete: (workOrder: WorkOrder) => void;
 }) {
   const needsVerification = workOrder.status === "resolved" && (canVerifyAll || workOrder.requesterId === currentUserId);
   const timerRunning = !["closed", "cancelled"].includes(workOrder.status);
@@ -382,10 +358,6 @@ function WorkOrderCard({
             <Pencil size={15} aria-hidden="true" />
             Edit
           </Link>
-          <button className="delete-work-order-button" type="button" onClick={() => onDelete(workOrder)}>
-            <Trash2 size={15} aria-hidden="true" />
-            Delete
-          </button>
         </div>
       ) : null}
     </article>
@@ -395,13 +367,11 @@ function WorkOrderCard({
 function ClosedWorkOrderHistory({
   workOrders,
   users,
-  canManage,
-  onDelete
+  canManage
 }: {
   workOrders: WorkOrder[];
   users: User[];
   canManage: boolean;
-  onDelete: (workOrder: WorkOrder) => void;
 }) {
   const navigate = useNavigate();
   function openClosedWorkOrder(event: MouseEvent | KeyboardEvent, workOrder: WorkOrder) {
@@ -457,7 +427,6 @@ function ClosedWorkOrderHistory({
                   {canManage ? (
                     <>
                       <Link to={`/work-orders/${workOrder.id}?edit=brief`} aria-label={`Edit brief for ${workOrder.number}`}><Pencil size={16} /></Link>
-                      <button type="button" onClick={() => onDelete(workOrder)} aria-label={`Delete ${workOrder.number}`}><Trash2 size={16} /></button>
                     </>
                   ) : null}
                 </td>
