@@ -221,16 +221,23 @@ assert.equal(airLeak.created, true);
 assert.equal(inPlant(() => m.getWorkOrder(airLeak.workOrderId)).area, sheSection.name);
 const duplicateAirLeak = inPlant(() => m.upsertAppSheetAirLeak({
   airLeakId: "ALD-TEST-001",
-  date: "2026-09-17",
+  date: "2026-09-18",
   section: "Luggage Mat",
-  machine: "Compressed air line",
-  issuedBy: "Safety Tester",
-  issue: "Retry of the same finding"
+  machine: "T00S 5D PANEL",
+  issuedBy: "Zulkifli",
+  issue: "Hose joint air leak"
 }));
 assert.equal(duplicateAirLeak.created, false);
 assert.equal(duplicateAirLeak.workOrderId, airLeak.workOrderId);
 assert.equal(inPlant(() => m.getWorkOrder(airLeak.workOrderId)).responsibleDepartment, "SHE");
-assert.equal(inPlant(() => m.getWorkOrder(airLeak.workOrderId)).area, "Luggage Mat");
+const synchronizedAirLeak = inPlant(() => m.getWorkOrderDetail(airLeak.workOrderId));
+assert.equal(synchronizedAirLeak.area, "Luggage Mat");
+assert.equal(synchronizedAirLeak.machineName, "T00S 5D PANEL");
+assert.equal(synchronizedAirLeak.assetName, "T00S 5D PANEL");
+assert.equal(synchronizedAirLeak.issueDescription, "Hose joint air leak");
+assert.equal(synchronizedAirLeak.reportedByName, "Zulkifli");
+assert.equal(synchronizedAirLeak.workDate, "2026-09-18");
+assert.equal(synchronizedAirLeak.activities[0]?.message, "AppSheet Air Leak details synchronized.");
 const deletedAirLeak = await inPlant(() => m.deleteAppSheetAirLeak("ALD-TEST-001"));
 assert.equal(deletedAirLeak.deleted, true);
 assert.throws(() => inPlant(() => m.getWorkOrder(airLeak.workOrderId)), /not found/i);

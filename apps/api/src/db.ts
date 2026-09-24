@@ -3909,30 +3909,11 @@ export function upsertAppSheetAirLeak(input: AppSheetAirLeakInput): AppSheetAirL
   const externalId = input.airLeakId.trim();
   const issue = input.issue.trim();
   const sectionName = input.section.trim();
+  const machineName = input.machine.trim();
+  const issuedBy = input.issuedBy.trim();
   if (!externalId || !issue) throw new Error("Air Leak ID and issue are required.");
   if (externalId.length > 100) throw new Error("Air Leak ID is too long.");
 
-  const existing = row<{ workOrderId: string } | undefined>(db.prepare(`
-    SELECT workOrderId FROM scoped_external_work_orders
-    WHERE source = 'appsheet-air-leak' AND externalId = ?
-  `).get(externalId));
-  if (existing) {
-    if (sectionName) {
-      db.prepare("UPDATE work_orders SET area = ?, updatedAt = ? WHERE id = ?")
-        .run(sectionName, now(), existing.workOrderId);
-    }
-    const workOrder = getWorkOrder(existing.workOrderId);
-    return {
-      ok: true,
-      created: false,
-      workOrderId: workOrder.id,
-      workOrderNumber: workOrder.number,
-      status: workOrderStatusLabels[workOrder.status],
-      photoImported: false
-    };
-  }
-
-  const machineName = input.machine.trim();
   const section = sectionName ? row<Section | undefined>(db.prepare(`
     SELECT * FROM scoped_sections
     WHERE department = 'SHE' AND active = 1 AND lower(name) = lower(?)
@@ -3946,6 +3927,68 @@ export function upsertAppSheetAirLeak(input: AppSheetAirLeakInput): AppSheetAirL
     ORDER BY CASE WHEN sectionId = ? THEN 0 ELSE 1 END, name
     LIMIT 1
   `).get(machineName, section?.id || null, section?.id || null, section?.id || null)) : undefined;
+
+  const existing = row<{ workOrderId: string } | undefined>(db.prepare(`
+    SELECT workOrderId FROM scoped_external_work_orders
+    WHERE source = 'appsheet-air-leak' AND externalId = ?
+  `).get(externalId));
+  if (existing) {
+    const current = getWorkOrder(existing.workOrderId);
+    const nextMachineName = machine?.name || machineName || current.machineName;
+    const nextLocation = section?.name || sectionName || current.location;
+    const nextArea = sectionName || current.area;
+    const nextWorkDate = input.date.trim() ? normalizeExternalWorkDate(input.date) : current.workDate;
+    const nextReportedBy = issuedBy || current.reportedByName;
+    const nextSectionId = sectionName ? section?.id || null : current.sectionId;
+    const nextMachineId = machineName ? machine?.id || null : current.machineId;
+    const detailsChanged = current.machineName !== nextMachineName ||
+      current.location !== nextLocation ||
+      current.area !== nextArea ||
+      current.workDate !== nextWorkDate ||
+      current.reportedByName !== nextReportedBy ||
+      current.issueDescription !== issue ||
+      current.sectionId !== nextSectionId ||
+      current.machineId !== nextMachineId;
+    if (detailsChanged) {
+      const timestamp = now();
+      db.prepare(`
+        UPDATE work_orders
+        SET title = ?, description = ?, assetName = ?, location = ?, workDate = ?, sectionId = ?, machineId = ?,
+            area = ?, machineName = ?, reportedByName = ?, issueDescription = ?, updatedAt = ?
+        WHERE id = ?
+      `).run(
+        `Air leak ${externalId} - ${nextMachineName}`,
+        issue,
+        nextMachineName,
+        nextLocation,
+        nextWorkDate,
+        nextSectionId,
+        nextMachineId,
+        nextArea,
+        nextMachineName,
+        nextReportedBy,
+        issue,
+        timestamp,
+        existing.workOrderId
+      );
+      db.prepare(`
+        UPDATE external_work_orders SET updatedAt = ?
+        WHERE workOrderId = ?
+      `).run(timestamp, existing.workOrderId);
+      addActivity(existing.workOrderId, publicRequesterId, "edited", null, "AppSheet Air Leak details synchronized.");
+      enqueueWorkOrderSync(existing.workOrderId, true);
+    }
+    const workOrder = getWorkOrder(existing.workOrderId);
+    return {
+      ok: true,
+      created: false,
+      workOrderId: workOrder.id,
+      workOrderNumber: workOrder.number,
+      status: workOrderStatusLabels[workOrder.status],
+      photoImported: false
+    };
+  }
+
   const issueCategory = row<IssueCategory | undefined>(db.prepare(`
     SELECT * FROM scoped_issue_categories
     WHERE department = 'SHE' AND active = 1 AND lower(name) = 'air leak'
@@ -3963,7 +4006,7 @@ export function upsertAppSheetAirLeak(input: AppSheetAirLeakInput): AppSheetAirL
     machineId: machine?.id || null,
     area: sectionName || machine?.area || "General",
     machineName: machine?.name || machineName || "Not specified",
-    reportedByName: input.issuedBy.trim() || "Safety Department",
+    reportedByName: issuedBy || "Safety Department",
     reportedByDepartment: "SHE",
     responsibleDepartment: "SHE",
     issueCategoryId: issueCategory?.id || null,
