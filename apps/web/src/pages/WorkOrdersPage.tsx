@@ -120,7 +120,7 @@ export function WorkOrdersPage() {
     };
   }, [workOrders]);
   const requesterMode = currentUser?.role === "requester";
-  const canManageWorkOrders = Boolean(currentUser && ["executive", "admin"].includes(currentUser.role));
+  const canManageWorkOrders = Boolean(currentUser && ["executive", "admin", "developer"].includes(currentUser.role));
   const canVerifyAllWorkOrders = Boolean(currentUser && ["executive", "admin", "developer"].includes(currentUser.role));
   const pendingVerification = requesterMode || canVerifyAllWorkOrders
     ? filtered.filter((workOrder) => workOrder.status === "resolved" && (canVerifyAllWorkOrders || workOrder.requesterId === currentUser?.id))

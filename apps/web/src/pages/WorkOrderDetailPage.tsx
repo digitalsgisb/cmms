@@ -179,7 +179,8 @@ export function WorkOrderDetailPage() {
   useLiveRefresh(["work-orders"], refreshDetailQuietly, { enabled: Boolean(id) });
 
   const canMaintain = currentUser ? ["technician", "executive", "admin", "developer"].includes(currentUser.role) : false;
-  const canManageWorkOrder = currentUser ? ["executive", "admin"].includes(currentUser.role) : false;
+  const canEditWorkOrder = currentUser ? ["executive", "admin", "developer"].includes(currentUser.role) : false;
+  const canDeleteWorkOrder = currentUser ? ["executive", "admin"].includes(currentUser.role) : false;
   const canVerify =
     currentUser && detail
       ? currentUser.id === detail.requesterId || ["executive", "admin", "developer"].includes(currentUser.role)
@@ -187,7 +188,7 @@ export function WorkOrderDetailPage() {
   const isRequesterOwner = Boolean(currentUser && detail && currentUser.id === detail.requesterId && currentUser.role === "requester");
 
   useEffect(() => {
-    if (!detail || !canManageWorkOrder || searchParams.get("edit") !== "brief" || autoOpenedBriefId.current === detail.id) {
+    if (!detail || !canEditWorkOrder || searchParams.get("edit") !== "brief" || autoOpenedBriefId.current === detail.id) {
       return;
     }
 
@@ -196,7 +197,7 @@ export function WorkOrderDetailPage() {
     nextSearchParams.delete("edit");
     setSearchParams(nextSearchParams, { replace: true });
     void openBriefEditor();
-  }, [detail?.id, canManageWorkOrder, searchParams, setSearchParams]);
+  }, [detail?.id, canEditWorkOrder, searchParams, setSearchParams]);
 
   useEffect(() => {
     if (!briefEditing || !briefDraft) return;
@@ -324,7 +325,7 @@ export function WorkOrderDetailPage() {
   }
 
   async function openBriefEditor() {
-    if (!detail || !canManageWorkOrder) return;
+    if (!detail || !canEditWorkOrder) return;
     setBriefLoading(true);
     setBriefError("");
     try {
@@ -372,7 +373,7 @@ export function WorkOrderDetailPage() {
 
   async function saveBrief(event: FormEvent) {
     event.preventDefault();
-    if (!detail || !currentUser || !briefDraft || !canManageWorkOrder) return;
+    if (!detail || !currentUser || !briefDraft || !canEditWorkOrder) return;
     const selectedMachine = briefMasterData.machines.find((machine) => machine.id === briefDraft.machineId);
     const machineName = selectedMachine?.name || briefDraft.machineName.trim();
     if (!machineName) {
@@ -460,7 +461,7 @@ export function WorkOrderDetailPage() {
   }
 
   async function removeWorkOrder() {
-    if (!detail || !currentUser || !canManageWorkOrder) return;
+    if (!detail || !currentUser || !canDeleteWorkOrder) return;
     if (!window.confirm(`Delete ${detail.number}? This permanently removes the work order and uploaded images.`)) return;
 
     setBusy(true);
@@ -608,7 +609,7 @@ export function WorkOrderDetailPage() {
           <h2>{isTechnician ? "Job Information" : "Work Order Brief"}</h2>
           <span>{detail.number}</span>
         </div>
-        <div className="detail-heading-actions"><span>{formatDateTime(detail.createdAt)}</span>{canManageWorkOrder && !isTechnician ? <button type="button" disabled={briefLoading} onClick={() => void openBriefEditor()}><Pencil size={15} />{briefLoading ? "Loading…" : "Edit Brief"}</button> : null}</div>
+        <div className="detail-heading-actions"><span>{formatDateTime(detail.createdAt)}</span>{canEditWorkOrder && !isTechnician ? <button type="button" disabled={briefLoading} onClick={() => void openBriefEditor()}><Pencil size={15} />{briefLoading ? "Loading…" : "Edit Brief"}</button> : null}</div>
       </div>
       <p className="detail-description">{detail.description}</p>
       <dl className="detail-grid">
@@ -686,7 +687,7 @@ export function WorkOrderDetailPage() {
             <ArrowLeft size={17} aria-hidden="true" />
             Back
           </Link>
-          {canManageWorkOrder ? (
+          {canEditWorkOrder ? (
             <>
               <button className="secondary-action work-order-edit-link" type="button" disabled={briefLoading} onClick={() => void openBriefEditor()}>
                 <Pencil size={17} aria-hidden="true" />
@@ -1002,7 +1003,7 @@ export function WorkOrderDetailPage() {
         </aside>
       </div>
 
-      {canManageWorkOrder ? (
+      {canDeleteWorkOrder ? (
         <section className="work-order-danger-zone" aria-label="Work order management">
           {showDeleteAction ? (
             <div className="work-order-delete-confirmation">

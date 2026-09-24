@@ -41,7 +41,7 @@ export function EditWorkOrderPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const canEdit = Boolean(currentUser && ["executive", "admin"].includes(currentUser.role));
+  const canEdit = Boolean(currentUser && ["executive", "admin", "developer"].includes(currentUser.role));
 
   useEffect(() => {
     if (!id || !canEdit) {
@@ -164,7 +164,7 @@ export function EditWorkOrderPage() {
       <div className="edit-permission-note">
         <ShieldCheck size={18} aria-hidden="true" />
         <div>
-          <strong>Executive and admin control</strong>
+          <strong>Executive, admin, and developer control</strong>
           <span>The original work-order number and activity history stay unchanged.</span>
         </div>
       </div>

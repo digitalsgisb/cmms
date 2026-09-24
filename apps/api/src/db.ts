@@ -623,6 +623,18 @@ export function migrate() {
     'Other'
   ) WHERE issueCategoryName IS NULL OR issueCategoryName = ''`).run();
   db.prepare("UPDATE work_orders SET area = COALESCE(NULLIF(area, ''), location, '') WHERE area IS NULL OR area = ''").run();
+  db.prepare(`
+    UPDATE work_orders
+    SET area = location
+    WHERE (area = 'General' OR area = '')
+      AND trim(location) <> ''
+      AND location <> 'SHE'
+      AND EXISTS (
+        SELECT 1 FROM external_work_orders
+        WHERE external_work_orders.workOrderId = work_orders.id
+          AND external_work_orders.source = 'appsheet-air-leak'
+      )
+  `).run();
   db.prepare("UPDATE work_orders SET type = 'maintenance' WHERE type = 'standard_maintenance'").run();
 
   const machineColumns = rows<{ name: string }>(db.prepare("PRAGMA table_info(machines)").all());
@@ -1738,6 +1750,15 @@ function requireWorkOrderManager(actorId: string) {
   const actor = getUser(actorId);
   if (!["executive", "admin"].includes(actor.role)) {
     throw new Error("Executive or admin access is required to manage work orders.");
+  }
+
+  return actor;
+}
+
+function requireWorkOrderEditor(actorId: string) {
+  const actor = getUser(actorId);
+  if (!["executive", "admin", "developer"].includes(actor.role)) {
+    throw new Error("Executive, admin, or developer access is required to edit work orders.");
   }
 
   return actor;
@@ -3887,6 +3908,7 @@ function normalizeExternalWorkDate(value: string) {
 export function upsertAppSheetAirLeak(input: AppSheetAirLeakInput): AppSheetAirLeakResult {
   const externalId = input.airLeakId.trim();
   const issue = input.issue.trim();
+  const sectionName = input.section.trim();
   if (!externalId || !issue) throw new Error("Air Leak ID and issue are required.");
   if (externalId.length > 100) throw new Error("Air Leak ID is too long.");
 
@@ -3895,6 +3917,10 @@ export function upsertAppSheetAirLeak(input: AppSheetAirLeakInput): AppSheetAirL
     WHERE source = 'appsheet-air-leak' AND externalId = ?
   `).get(externalId));
   if (existing) {
+    if (sectionName) {
+      db.prepare("UPDATE work_orders SET area = ?, updatedAt = ? WHERE id = ?")
+        .run(sectionName, now(), existing.workOrderId);
+    }
     const workOrder = getWorkOrder(existing.workOrderId);
     return {
       ok: true,
@@ -3906,7 +3932,6 @@ export function upsertAppSheetAirLeak(input: AppSheetAirLeakInput): AppSheetAirL
     };
   }
 
-  const sectionName = input.section.trim();
   const machineName = input.machine.trim();
   const section = sectionName ? row<Section | undefined>(db.prepare(`
     SELECT * FROM scoped_sections
@@ -3936,7 +3961,7 @@ export function upsertAppSheetAirLeak(input: AppSheetAirLeakInput): AppSheetAirL
     sectionId: section?.id || null,
     location: section?.name || sectionName || "SHE",
     machineId: machine?.id || null,
-    area: machine?.area || "General",
+    area: sectionName || machine?.area || "General",
     machineName: machine?.name || machineName || "Not specified",
     reportedByName: input.issuedBy.trim() || "Safety Department",
     reportedByDepartment: "SHE",
@@ -3964,7 +3989,7 @@ export function upsertAppSheetAirLeak(input: AppSheetAirLeakInput): AppSheetAirL
 
 export function updateWorkOrder(id: string, input: UpdateWorkOrderInput): WorkOrder {
   const current = getWorkOrder(id);
-  requireWorkOrderManager(input.actorId);
+  requireWorkOrderEditor(input.actorId);
 
   const section = input.sectionId ? getSection(input.sectionId) : null;
   const machine = input.machineId ? getMachine(input.machineId) : null;

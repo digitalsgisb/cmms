@@ -136,12 +136,15 @@ const updateBody = {
 
 assert.throws(
   () => inPlant(() => m.updateWorkOrder(workOrder.id, m.validateUpdateWorkOrderInput({ ...updateBody, actorId: technician.id }))),
-  /Executive or admin/i
+  /Executive, admin, or developer/i
 );
-assert.throws(
-  () => inPlant(() => m.updateWorkOrder(workOrder.id, m.validateUpdateWorkOrderInput({ ...updateBody, actorId: developer.id }))),
-  /Executive or admin/i
-);
+
+const developerUpdated = inPlant(() => m.updateWorkOrder(workOrder.id, m.validateUpdateWorkOrderInput({
+  ...updateBody,
+  actorId: developer.id,
+  issueDescription: "Issue edited by developer"
+})));
+assert.equal(developerUpdated.issueDescription, "Issue edited by developer");
 
 const updated = inPlant(() => m.updateWorkOrder(workOrder.id, m.validateUpdateWorkOrderInput(updateBody)));
 assert.equal(updated.number, workOrder.number);
@@ -214,18 +217,20 @@ const airLeak = inPlant(() => m.upsertAppSheetAirLeak({
   issuedBy: "Safety Tester",
   issue: "Air leak found during inspection"
 }));
+assert.equal(airLeak.created, true);
+assert.equal(inPlant(() => m.getWorkOrder(airLeak.workOrderId)).area, sheSection.name);
 const duplicateAirLeak = inPlant(() => m.upsertAppSheetAirLeak({
   airLeakId: "ALD-TEST-001",
   date: "2026-09-17",
-  section: sheSection.name,
+  section: "Luggage Mat",
   machine: "Compressed air line",
   issuedBy: "Safety Tester",
   issue: "Retry of the same finding"
 }));
-assert.equal(airLeak.created, true);
 assert.equal(duplicateAirLeak.created, false);
 assert.equal(duplicateAirLeak.workOrderId, airLeak.workOrderId);
 assert.equal(inPlant(() => m.getWorkOrder(airLeak.workOrderId)).responsibleDepartment, "SHE");
+assert.equal(inPlant(() => m.getWorkOrder(airLeak.workOrderId)).area, "Luggage Mat");
 const deletedAirLeak = await inPlant(() => m.deleteAppSheetAirLeak("ALD-TEST-001"));
 assert.equal(deletedAirLeak.deleted, true);
 assert.throws(() => inPlant(() => m.getWorkOrder(airLeak.workOrderId)), /not found/i);
