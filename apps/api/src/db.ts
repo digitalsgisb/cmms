@@ -80,7 +80,7 @@ import type {
   UpdateWorkOrderSyncSettingsInput,
   WorkOrderType
 } from "@sugi-cmms/shared";
-import { longProductionDowntimeMinutes, technicianCanAccessWorkOrder, workOrderDepartmentForUser, workOrderStatusLabels } from "@sugi-cmms/shared";
+import { longProductionDowntimeMinutes, requesterCanVerifyWorkOrder, technicianCanAccessWorkOrder, workOrderDepartmentForUser, workOrderStatusLabels } from "@sugi-cmms/shared";
 import { productionAssets2026 } from "./production-assets-2026.js";
 import { emitNotificationCreated } from "./notification-events.js";
 
@@ -4157,8 +4157,12 @@ export function updateWorkOrderStatus(id: string, input: UpdateWorkOrderStatusIn
   const current = getWorkOrder(id);
   const actor = getUser(input.actorId);
   const elevated = ["executive", "admin", "developer"].includes(actor.role);
-  if (actor.role === "requester" && (current.requesterId !== actor.id || !["closed", "returned", "cancelled"].includes(input.status))) {
-    throw new Error("Requesters may only close, return, or cancel their own work orders.");
+  if (actor.role === "requester" && !(
+    (input.status === "cancelled" && current.requesterId === actor.id) ||
+    (["closed", "returned"].includes(input.status) &&
+      (current.requesterId === actor.id || requesterCanVerifyWorkOrder(actor, current)))
+  )) {
+    throw new Error("Requesters may only verify resolved work orders for their department or manage their own requests.");
   }
   if (actor.role === "requester" && input.status === "cancelled" &&
       (!['open', 'acknowledged'].includes(current.status) || Boolean(current.maintenanceStartedAt))) {
@@ -4802,6 +4806,9 @@ function notifyForStatusChange(workOrder: WorkOrder, status: WorkOrderStatus) {
   if (status === "resolved") {
     const verifierIds = [
       ...listExecutives().map((user) => user.id),
+      ...listUsers("requester")
+        .filter((user) => user.id !== publicRequesterId && requesterCanVerifyWorkOrder(user, workOrder))
+        .map((user) => user.id),
       ...(workOrder.requesterId !== publicRequesterId ? [workOrder.requesterId] : [])
     ];
     notifyUsers(

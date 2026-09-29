@@ -76,6 +76,7 @@ const supportingTechnician = createUser("technician", "supporting-technician");
 const kaizenTechnician = createUser("technician", "kaizen-technician", "Kaizen");
 const requester = createUser("requester", "requester");
 const secondRequester = createUser("requester", "requester-two", "SHE");
+const sheColleague = createUser("requester", "she-colleague", "SHE");
 m.recordAppOpen("test-open-requester-0001", requester.id, "port-klang");
 m.recordAppOpen("test-open-requester-0001", requester.id, "port-klang");
 const usageDashboard = m.getUsageDashboard(developer.id);
@@ -198,6 +199,10 @@ const customCategoryOrder = inPlant(() => m.createWorkOrder(m.validateCreateWork
   issueDescription: "Custom category issue"
 })));
 assert.equal(customCategoryOrder.issueCategoryName, "Access control");
+assert.equal(inPlant(() => m.listWorkOrders(sheColleague).find((order) => order.id === customCategoryOrder.id)?.responsibleDepartment), "SHE");
+assert.throws(() => inPlant(() => m.updateWorkOrderStatus(customCategoryOrder.id, {
+  actorId: sheColleague.id, status: "cancelled", note: "Not my request"
+})), /own requests/i);
 assert.throws(() => inPlant(() => m.createWorkOrder(m.validateCreateWorkOrderInput({
   requesterId: secondRequester.id,
   type: "maintenance",
@@ -315,6 +320,27 @@ assert.deepEqual(inPlant(() => m.getWorkOrderDetail(fairTimingOrder.id)).support
 assert(resolvedFairTimingOrder.maintenanceStartedAt);
 assert(resolvedFairTimingOrder.resolvedAt);
 assert(inPlant(() => m.listNotifications(executive.id)).some((item) => item.workOrderId === fairTimingOrder.id && /ready for verification/i.test(item.title)));
+inPlant(() => m.claimWorkOrder(customCategoryOrder.id, technician.id));
+inPlant(() => m.addAttachment({
+  workOrderId: customCategoryOrder.id, uploadedBy: technician.id, filename: "she-after.jpg",
+  originalName: "she-after.jpg", mimeType: "image/jpeg", size: 10,
+  url: "/test/she-after.jpg", kind: "after"
+}));
+inPlant(() => m.updateWorkOrderStatus(customCategoryOrder.id, {
+  actorId: technician.id, status: "in_progress", note: "Repair started"
+}));
+const resolvedSheOrder = inPlant(() => m.updateWorkOrderStatus(customCategoryOrder.id, {
+  actorId: technician.id, status: "resolved", note: "Repair complete", maintenanceActualMinutes: 10
+}));
+assert.equal(resolvedSheOrder.status, "resolved");
+assert(inPlant(() => m.listNotifications(sheColleague.id)).some((item) => item.workOrderId === customCategoryOrder.id && /ready for verification/i.test(item.title)));
+assert.throws(() => inPlant(() => m.updateWorkOrderStatus(customCategoryOrder.id, {
+  actorId: requester.id, status: "closed", note: "Wrong department"
+})), /department or manage their own/i);
+const sheVerifiedOrder = inPlant(() => m.updateWorkOrderStatus(customCategoryOrder.id, {
+  actorId: sheColleague.id, status: "closed", note: "SHE checked the repair"
+}));
+assert.equal(sheVerifiedOrder.status, "closed");
 const extendedDowntimeStart = new Date(Date.parse(resolvedFairTimingOrder.resolvedAt) - 2 * 60 * 60 * 1000).toISOString();
 inPlant(() => m.db.prepare("UPDATE work_orders SET createdAt = ? WHERE id = ?").run(extendedDowntimeStart, fairTimingOrder.id));
 assert.throws(

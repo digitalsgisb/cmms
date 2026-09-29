@@ -98,6 +98,15 @@ export function workOrderDepartmentForUser(department: string): WorkOrderDepartm
   return aliases[value] || null;
 }
 
+export function requesterCanVerifyWorkOrder(
+  requester: Pick<User, "id" | "role" | "department">,
+  workOrder: Pick<WorkOrder, "requesterId" | "responsibleDepartment" | "status">
+): boolean {
+  return requester.role === "requester" && workOrder.status === "resolved" &&
+    (workOrder.requesterId === requester.id ||
+      workOrderDepartmentForUser(requester.department) === workOrder.responsibleDepartment);
+}
+
 export interface Section {
   id: string;
   department: WorkOrderDepartment;

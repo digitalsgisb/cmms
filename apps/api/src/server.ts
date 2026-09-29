@@ -1,6 +1,6 @@
 import { plantContext, userPlants } from "./plant-context.js";
 import { db } from "./db.js";
-import type { PlantId } from "@sugi-cmms/shared";
+import { requesterCanVerifyWorkOrder, type PlantId } from "@sugi-cmms/shared";
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import multer from "multer";
@@ -322,7 +322,10 @@ function authorizeRequest(request: Request, response: Response, next: NextFuncti
   if (request.cmmsUser!.role === "requester" && scopedWorkOrderMatch && request.method !== "GET") {
     try {
       const workOrder = getWorkOrderDetail(decodeURIComponent(scopedWorkOrderMatch[1]));
-      if (workOrder.requesterId !== request.cmmsUser!.id) {
+      const isVerification = /^\/work-orders\/[^/]+\/status$/.test(request.path) &&
+        ["closed", "returned"].includes(String(request.body?.status || "")) &&
+        requesterCanVerifyWorkOrder(request.cmmsUser!, workOrder);
+      if (workOrder.requesterId !== request.cmmsUser!.id && !isVerification) {
         response.status(403).json({ error: "You can only access work orders issued from your requester account." });
         return;
       }
