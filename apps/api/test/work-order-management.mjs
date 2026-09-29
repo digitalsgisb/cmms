@@ -199,6 +199,8 @@ const customCategoryOrder = inPlant(() => m.createWorkOrder(m.validateCreateWork
   issueDescription: "Custom category issue"
 })));
 assert.equal(customCategoryOrder.issueCategoryName, "Access control");
+assert(inPlant(() => m.listNotifications(sheColleague.id)).some((item) => item.workOrderId === customCategoryOrder.id && /new SHE work order/i.test(item.title)));
+assert(!inPlant(() => m.listNotifications(requester.id)).some((item) => item.workOrderId === customCategoryOrder.id && /new SHE work order/i.test(item.title)));
 assert.equal(inPlant(() => m.listWorkOrders(sheColleague).find((order) => order.id === customCategoryOrder.id)?.responsibleDepartment), "SHE");
 assert.throws(() => inPlant(() => m.updateWorkOrderStatus(customCategoryOrder.id, {
   actorId: sheColleague.id, status: "cancelled", note: "Not my request"

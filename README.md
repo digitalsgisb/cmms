@@ -80,6 +80,8 @@ Admins can create, edit, reset passwords for, and remove sign-in accounts from *
 
 ### PWA push notifications
 
+New SHE work orders also notify active SHE requester accounts for the selected plant. Department requesters can add follow-up notes and evidence to SHE jobs and verify them after resolution. Safety Digital uses a dedicated SHE requester account to display and act on these work orders; set its role to `requester`, department to `SHE`, and the appropriate plant access in **Users → People**.
+
 Generate one VAPID key pair and add it to `.env`. Keep the same keys across deployments; replacing them invalidates existing device subscriptions.
 
 ```powershell

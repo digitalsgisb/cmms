@@ -1,6 +1,6 @@
 import { plantContext, userPlants } from "./plant-context.js";
 import { db } from "./db.js";
-import { requesterCanVerifyWorkOrder, type PlantId } from "@sugi-cmms/shared";
+import { requesterCanVerifyWorkOrder, workOrderDepartmentForUser, type PlantId } from "@sugi-cmms/shared";
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import multer from "multer";
@@ -325,7 +325,12 @@ function authorizeRequest(request: Request, response: Response, next: NextFuncti
       const isVerification = /^\/work-orders\/[^/]+\/status$/.test(request.path) &&
         ["closed", "returned"].includes(String(request.body?.status || "")) &&
         requesterCanVerifyWorkOrder(request.cmmsUser!, workOrder);
-      if (workOrder.requesterId !== request.cmmsUser!.id && !isVerification) {
+      const isDepartmentComment = /^\/work-orders\/[^/]+\/comments$/.test(request.path) &&
+        request.method === "POST" && workOrderDepartmentForUser(request.cmmsUser!.department) === workOrder.responsibleDepartment;
+      const isDepartmentEvidence = /^\/work-orders\/[^/]+\/attachments$/.test(request.path) &&
+        request.method === "POST" &&
+        workOrderDepartmentForUser(request.cmmsUser!.department) === workOrder.responsibleDepartment;
+      if (workOrder.requesterId !== request.cmmsUser!.id && !isVerification && !isDepartmentComment && !isDepartmentEvidence) {
         response.status(403).json({ error: "You can only access work orders issued from your requester account." });
         return;
       }
@@ -1032,6 +1037,13 @@ app.post("/api/work-orders/:id/attachments", upload.array("attachments", 10), (r
   const files = request.files as Express.Multer.File[];
   const uploadedBy = request.cmmsUser!.id;
   const kind = String(request.body.kind || "general");
+  const workOrder = getWorkOrderDetail(request.params.id);
+  if (request.cmmsUser!.role === "requester" && workOrder.requesterId !== uploadedBy &&
+      !["issue", "return_evidence"].includes(kind)) {
+    for (const file of files) rmSync(file.path, { force: true });
+    response.status(403).json({ error: "Department requesters may only add issue or return evidence." });
+    return;
+  }
 
   const saved = saveWorkOrderAttachments(
     request.params.id,

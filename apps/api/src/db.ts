@@ -3888,6 +3888,16 @@ export function createWorkOrder(input: CreateWorkOrderInput): WorkOrder {
     `New work order ${number}`,
     `${title} at ${sectionName}`
   );
+  if (responsibleDepartment === "SHE") {
+    notifyUsers(
+      listUsers("requester")
+        .filter((user) => user.id !== publicRequesterId && workOrderDepartmentForUser(user.department) === "SHE")
+        .map((user) => user.id),
+      id,
+      `New SHE work order ${number}`,
+      `${title} at ${sectionName}`
+    );
+  }
   enqueueWorkOrderSync(id, true);
 
   return getWorkOrder(id);
