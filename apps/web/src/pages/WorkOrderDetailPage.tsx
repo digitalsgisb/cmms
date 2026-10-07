@@ -77,6 +77,7 @@ export function WorkOrderDetailPage() {
   const [comment, setComment] = useState("");
   const [uploadKind, setUploadKind] = useState<WorkOrderAttachment["kind"]>("general");
   const [files, setFiles] = useState<FileList | null>(null);
+  const [photoError, setPhotoError] = useState("");
   const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
   const [resolveNote, setResolveNote] = useState("");
   const [resolveHours, setResolveHours] = useState("");
@@ -179,7 +180,7 @@ export function WorkOrderDetailPage() {
   useLiveRefresh(["work-orders"], refreshDetailQuietly, { enabled: Boolean(id) });
 
   const canMaintain = currentUser ? ["technician", "executive", "admin", "developer"].includes(currentUser.role) : false;
-  const canEditWorkOrder = currentUser ? ["executive", "admin", "developer"].includes(currentUser.role) : false;
+  const canEditWorkOrder = currentUser ? ["technician", "executive", "admin", "developer"].includes(currentUser.role) : false;
   const canDeleteWorkOrder = currentUser ? ["executive", "admin"].includes(currentUser.role) : false;
   const canVerify =
     currentUser && detail
@@ -460,6 +461,30 @@ export function WorkOrderDetailPage() {
     }
   }
 
+  async function replacePhoto(attachment: WorkOrderAttachment, file: File) {
+    if (!detail || !canMaintain || busy) return;
+    setPhotoError("");
+    if (!file.type.startsWith("image/") || file.size > 8 * 1024 * 1024) {
+      setPhotoError("Choose an image no larger than 8 MB.");
+      return;
+    }
+    setBusy(true);
+    setBusyAction(`replace-${attachment.id}`);
+    try {
+      const replacement = await api.replaceAttachment(detail.id, attachment.id, file);
+      updateDetailWithoutJump((current) => ({
+        ...current,
+        attachments: current.attachments.map((item) => item.id === replacement.id ? replacement : item)
+      }));
+      void refreshDetailQuietly().catch(console.error);
+    } catch (error) {
+      setPhotoError(error instanceof Error ? error.message : "Unable to replace this photo.");
+    } finally {
+      setBusy(false);
+      setBusyAction("");
+    }
+  }
+
   async function removeWorkOrder() {
     if (!detail || !currentUser || !canDeleteWorkOrder) return;
     if (!window.confirm(`Delete ${detail.number}? This permanently removes the work order and uploaded images.`)) return;
@@ -555,7 +580,7 @@ export function WorkOrderDetailPage() {
   const workOrderBriefPanel = briefEditing && briefDraft ? (
     <form ref={briefPanelRef} className={`section-panel detail-summary-panel work-order-brief-top brief-editor`} onSubmit={saveBrief}>
       <div className="brief-editor-heading">
-        <div><p className="eyebrow">Executive edit</p><h2>Edit Work Order Brief</h2><span>{detail.number}</span></div>
+        <div><p className="eyebrow">Event details</p><h2>Edit Work Order Brief</h2><span>{detail.number}</span></div>
         <button type="button" className="brief-cancel-button" disabled={briefSaving} onClick={() => { setBriefEditing(false); setBriefDraft(null); setBriefError(""); }}><X size={16} />Cancel</button>
       </div>
 
@@ -568,7 +593,7 @@ export function WorkOrderDetailPage() {
       <label className="brief-editor-description">Maintenance repair notes<textarea rows={4} value={briefDraft.completionNote} onChange={(event) => setBriefDraft({ ...briefDraft, completionNote: event.target.value })} placeholder="What was repaired, replaced, adjusted, or tested?" /><small>The same completion note recorded when maintenance resolves the work order.</small></label>
 
       <div className="brief-editor-grid">
-        <label>Work order type<select value={briefDraft.type} onChange={(event) => setBriefDraft({ ...briefDraft, type: event.target.value as WorkOrderType, assignedToId: "", supportingTechnicianIds: [] })}>{Object.entries(workOrderTypeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <label>Work order type<select value={briefDraft.type} onChange={(event) => setBriefDraft({ ...briefDraft, type: event.target.value as WorkOrderType, assignedToId: "", supportingTechnicianIds: [] })}>{Object.entries(workOrderTypeLabels).filter(([value]) => !currentUser || technicianCanAccessWorkOrder(currentUser, { type: value as WorkOrderType })).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label>Priority<select value={briefDraft.priority} onChange={(event) => setBriefDraft({ ...briefDraft, priority: event.target.value as WorkOrderPriority })}>{priorityOptions.map((priority) => <option key={priority} value={priority}>{priority[0].toUpperCase() + priority.slice(1)}</option>)}</select></label>
         <label>Work date<input type="date" required value={briefDraft.workDate} onChange={(event) => setBriefDraft({ ...briefDraft, workDate: event.target.value })} /></label>
         <label>Due date<input type="date" value={briefDraft.dueDate} onChange={(event) => setBriefDraft({ ...briefDraft, dueDate: event.target.value })} /></label>
@@ -691,7 +716,7 @@ export function WorkOrderDetailPage() {
             <>
               <button className="secondary-action work-order-edit-link" type="button" disabled={briefLoading} onClick={() => void openBriefEditor()}>
                 <Pencil size={17} aria-hidden="true" />
-                {briefLoading ? "Loading..." : "Edit Brief"}
+                {briefLoading ? "Loading..." : "Edit Event"}
               </button>
             </>
           ) : null}
@@ -790,6 +815,8 @@ export function WorkOrderDetailPage() {
                 <span>Compare the condition before and after maintenance · {detail.attachments.length} uploaded</span>
               </div>
             </div>
+            {canMaintain ? <p className="photo-replacement-help">Use Replace photo to correct an uploaded before or after picture. Images must be no larger than 8 MB.</p> : null}
+            {photoError ? <p role="alert" className="photo-replacement-error">{photoError}</p> : null}
             <div className="repair-photo-groups">
               {imageGroups.filter((group) => group.key !== "updates" || group.attachments.length > 0).map((group) => (
                 <section key={group.key} className={`repair-photo-group photo-group-${group.key}`}>
@@ -801,11 +828,24 @@ export function WorkOrderDetailPage() {
                   {group.attachments.length ? (
                     <div className="attachment-grid">
                       {group.attachments.map((attachment) => (
-                        <button key={attachment.id} type="button" className="attachment-tile" onClick={() => setPreviewPhoto({ src: mediaUrl(attachment.url), alt: `${group.title}: ${attachment.originalName}`, label: `${group.title} · ${attachment.originalName}` })} aria-label={`View ${attachment.originalName}`}>
-                          <img src={mediaUrl(attachment.url)} alt={`${group.title}: ${attachment.originalName}`} />
-                          <span>{attachment.kind.replace("_", " ")}</span>
-                          <small>{attachment.originalName}</small>
-                        </button>
+                        <div key={attachment.id} className="attachment-photo-card">
+                          <button type="button" className="attachment-tile" onClick={() => setPreviewPhoto({ src: mediaUrl(attachment.url), alt: `${group.title}: ${attachment.originalName}`, label: `${group.title} · ${attachment.originalName}` })} aria-label={`View ${attachment.originalName}`}>
+                            <img src={mediaUrl(attachment.url)} alt={`${group.title}: ${attachment.originalName}`} />
+                            <span>{attachment.kind.replace("_", " ")}</span>
+                            <small>{attachment.originalName}</small>
+                          </button>
+                          {canMaintain && ["issue", "before", "after"].includes(attachment.kind) ? (
+                            <label className={`photo-replace-control ${busy ? "disabled" : ""}`}>
+                              <ImagePlus size={15} />
+                              <span>{busyAction === `replace-${attachment.id}` ? "Replacing…" : "Replace photo"}</span>
+                              <input type="file" accept="image/*" disabled={busy} aria-label={`Replace ${group.title.toLowerCase()} photo ${attachment.originalName}`} onChange={(event) => {
+                                const file = event.target.files?.[0];
+                                event.target.value = "";
+                                if (file) void replacePhoto(attachment, file);
+                              }} />
+                            </label>
+                          ) : null}
+                        </div>
                       ))}
                     </div>
                   ) : <p className="detail-images-empty">No {group.title.toLowerCase()} photo yet.</p>}

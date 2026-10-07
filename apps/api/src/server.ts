@@ -12,6 +12,8 @@ import type { MachineImportRow, WorkOrderDepartment } from "@sugi-cmms/shared";
 import type { User } from "@sugi-cmms/shared";
 import {
   addAttachment,
+  getReplaceableAttachment,
+  replaceAttachment,
   addPmResultPhoto,
   addComment,
   adjustSparePart,
@@ -1052,6 +1054,39 @@ app.post("/api/work-orders/:id/attachments", upload.array("attachments", 10), (r
     files
   );
   response.status(201).json(saved);
+});
+
+app.put("/api/work-orders/:id/attachments/:attachmentId", (request, response, next) => {
+  if (!["technician", "executive", "admin", "developer"].includes(request.cmmsUser!.role)) {
+    response.status(403).json({ error: "Technician access or above is required to replace photos." });
+    return;
+  }
+  getReplaceableAttachment(request.params.id, request.params.attachmentId, request.cmmsUser!.id);
+  next();
+}, pmProofUpload.single("attachment"), (request, response) => {
+  if (!request.file) throw new Error("Select a replacement image.");
+  const previous = getReplaceableAttachment(request.params.id, request.params.attachmentId, request.cmmsUser!.id);
+  const targetDir = path.join(uploadsRoot, "work-orders", request.params.id);
+  mkdirSync(targetDir, { recursive: true });
+  const filename = `${randomUUID()}${path.extname(request.file.originalname) || ".jpg"}`;
+  const targetPath = path.join(targetDir, filename);
+  writeFileSync(targetPath, request.file.buffer);
+  let saved;
+  try {
+    saved = replaceAttachment(request.params.id, request.params.attachmentId, request.cmmsUser!.id, {
+      filename, originalName: request.file.originalname, mimeType: request.file.mimetype,
+      size: request.file.size, url: `/uploads/work-orders/${request.params.id}/${filename}`
+    });
+  } catch (error) {
+    rmSync(targetPath, { force: true });
+    throw error;
+  }
+  // The new file and database record are committed before removing the old image.
+  const previousPath = path.resolve(targetDir, previous.filename);
+  if (path.dirname(previousPath) === path.resolve(targetDir)) {
+    try { rmSync(previousPath, { force: true }); } catch (error) { console.error("Unable to remove replaced photo", error); }
+  }
+  response.json(saved);
 });
 
 app.get("/api/notifications", (request, response) => {

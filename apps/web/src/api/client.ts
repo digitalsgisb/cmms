@@ -446,6 +446,14 @@ export const api = {
       body: formData
     });
   },
+  replaceAttachment: (id: string, attachmentId: string, file: File) => {
+    const formData = new FormData();
+    formData.append("attachment", file);
+    return request<WorkOrderAttachment>(`/api/work-orders/${id}/attachments/${attachmentId}`, {
+      method: "PUT",
+      body: formData
+    });
+  },
   uploadRequesterAttachments: (id: string, files: FileList | File[]) => {
     const formData = new FormData();
     formData.append("token", sessionStorage.getItem(`cmms-guest-upload:${id}`) || "");

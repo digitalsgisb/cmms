@@ -154,7 +154,8 @@ export type ActivityAction =
   | "returned"
   | "cancelled"
   | "commented"
-  | "attachment_added";
+  | "attachment_added"
+  | "attachment_replaced";
 
 export interface User {
   plantAccess: PlantAccess;

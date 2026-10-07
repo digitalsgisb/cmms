@@ -1757,8 +1757,8 @@ function requireWorkOrderManager(actorId: string) {
 
 function requireWorkOrderEditor(actorId: string) {
   const actor = getUser(actorId);
-  if (!["executive", "admin", "developer"].includes(actor.role)) {
-    throw new Error("Executive, admin, or developer access is required to edit work orders.");
+  if (!["technician", "executive", "admin", "developer"].includes(actor.role)) {
+    throw new Error("Technician access or above is required to edit work orders.");
   }
 
   return actor;
@@ -4042,7 +4042,13 @@ export function upsertAppSheetAirLeak(input: AppSheetAirLeakInput): AppSheetAirL
 
 export function updateWorkOrder(id: string, input: UpdateWorkOrderInput): WorkOrder {
   const current = getWorkOrder(id);
-  requireWorkOrderEditor(input.actorId);
+  const actor = requireWorkOrderEditor(input.actorId);
+  if (!userPlants(actor).includes(current.plantId) || !userCanAccessWorkOrder(actor, current)) {
+    throw new Error("You do not have access to this work order.");
+  }
+  if (actor.role === "technician" && !technicianCanAccessWorkOrder(actor, { ...current, type: input.type })) {
+    throw new Error("You cannot move a work order to another technician team.");
+  }
 
   const section = input.sectionId ? getSection(input.sectionId) : null;
   const machine = input.machineId ? getMachine(input.machineId) : null;
@@ -4433,6 +4439,44 @@ export function addAttachment(input: {
   return row<WorkOrderAttachment>(
     db.prepare("SELECT * FROM scoped_work_order_attachments WHERE id = ?").get(id)
   );
+}
+
+export function getReplaceableAttachment(workOrderId: string, attachmentId: string, actorId: string): WorkOrderAttachment {
+  const actor = getUser(actorId);
+  if (!["technician", "executive", "admin", "developer"].includes(actor.role)) {
+    throw new Error("Technician access or above is required to replace photos.");
+  }
+  const detail = getWorkOrderDetail(workOrderId);
+  if (!userPlants(actor).includes(detail.plantId) || !userCanAccessWorkOrder(actor, detail)) {
+    throw new Error("You do not have access to this work order.");
+  }
+  const attachment = detail.attachments.find((item) => item.id === attachmentId);
+  if (!attachment) throw new Error("Attachment not found.");
+  if (!["issue", "before", "after"].includes(attachment.kind)) {
+    throw new Error("Only before and after photos can be replaced.");
+  }
+  return attachment;
+}
+
+export function replaceAttachment(workOrderId: string, attachmentId: string, actorId: string,
+  file: Pick<WorkOrderAttachment, "filename" | "originalName" | "mimeType" | "size" | "url">
+): WorkOrderAttachment {
+  const previous = getReplaceableAttachment(workOrderId, attachmentId, actorId);
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.prepare(`UPDATE work_order_attachments
+      SET uploadedBy = ?, filename = ?, originalName = ?, mimeType = ?, size = ?, url = ?
+      WHERE id = ? AND workOrderId = ?`)
+      .run(actorId, file.filename, file.originalName, file.mimeType, file.size, file.url, attachmentId, workOrderId);
+    addActivity(workOrderId, actorId, "attachment_replaced", null,
+      `Replaced ${previous.kind === "after" ? "after" : "before"} photo ${previous.originalName} with ${file.originalName}.`);
+    enqueueWorkOrderSync(workOrderId);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  return row<WorkOrderAttachment>(db.prepare("SELECT * FROM scoped_work_order_attachments WHERE id = ?").get(attachmentId));
 }
 
 export function listRequesterWorkOrders(): PublicRequesterWorkOrder[] {

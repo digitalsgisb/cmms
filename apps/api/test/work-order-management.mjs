@@ -136,9 +136,19 @@ const updateBody = {
 };
 
 assert.throws(
-  () => inPlant(() => m.updateWorkOrder(workOrder.id, m.validateUpdateWorkOrderInput({ ...updateBody, actorId: technician.id }))),
-  /Executive, admin, or developer/i
+  () => inPlant(() => m.updateWorkOrder(workOrder.id, m.validateUpdateWorkOrderInput({ ...updateBody, actorId: requester.id }))),
+  /Technician access or above/i
 );
+assert.throws(
+  () => inPlant(() => m.updateWorkOrder(workOrder.id, m.validateUpdateWorkOrderInput({ ...updateBody, actorId: kaizenTechnician.id }))),
+  /access/i
+);
+const technicianUpdated = inPlant(() => m.updateWorkOrder(workOrder.id, m.validateUpdateWorkOrderInput({
+  ...updateBody, actorId: technician.id, issueDescription: "Issue edited by technician"
+})));
+assert.equal(technicianUpdated.issueDescription, "Issue edited by technician");
+assert.equal(technicianUpdated.number, workOrder.number);
+assert.equal(technicianUpdated.status, workOrder.status);
 
 const developerUpdated = inPlant(() => m.updateWorkOrder(workOrder.id, m.validateUpdateWorkOrderInput({
   ...updateBody,

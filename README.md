@@ -31,6 +31,10 @@ Default local URLs:
 
 Work Orders and Spare Parts follow existing role permissions. Technicians can access assigned PM work; executives can manage PM and view Assets, Performance and Reports. Admin and developer accounts manage users and settings. API sessions expire after 30 days; an HttpOnly session cookie also authenticates photos and live updates. Dashboard and TV data now require sign-in.
 
+Technicians, executives, admins and developers can replace uploaded before and after pictures from **Work order → Repair photos → Replace photo**, including on resolved and closed events. Issue pictures shown in the Before group can also be replaced. Existing plant and technician-team access rules apply; requester accounts cannot replace pictures. Each replacement accepts one image up to 8 MB, preserves the attachment category and work-order status/timing, and records the actor and filenames in history. The old file is removed after the replacement succeeds. Run `pnpm test:photos` to check replacement permissions, uploads and completed events.
+
+These roles can also use **Edit Event** on the work-order detail page on mobile and desktop to change event details, including the brief, repair summary and maintenance team. The mobile editor uses a single-column layout and touch-sized controls. Changes preserve the work-order number, lifecycle status and timing and are recorded in history. Technicians can edit events within their plant and team access and cannot move events to another technician team.
+
 ### Port Klang and Sendayan
 
 Role and plant access are separate. In **Users → People**, set each account's **Plant access** to **Port Klang**, **Sendayan**, or **Both plants**. Existing records and ordinary users migrate to Port Klang; existing admins and developers receive both plants. Changing plant access revokes the user's sessions, so they must sign in again. An administrator with access to only one plant cannot grant access to the other plant or manage its users.

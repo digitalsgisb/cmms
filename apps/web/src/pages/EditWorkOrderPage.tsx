@@ -2,7 +2,7 @@ import { AlertCircle, ArrowLeft, CalendarDays, Factory, Save, ShieldCheck, UserR
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import type { MasterData, ShiftGroup, WorkOrderDepartment, WorkOrderPriority, WorkOrderType } from "@sugi-cmms/shared";
-import { workOrderDepartments, workOrderTypeLabels } from "@sugi-cmms/shared";
+import { technicianCanAccessWorkOrder, workOrderDepartments, workOrderTypeLabels } from "@sugi-cmms/shared";
 import { api } from "../api/client";
 import { SearchableSelect } from "../components/SearchableSelect";
 import { useCurrentUser } from "../state/UserContext";
@@ -41,7 +41,7 @@ export function EditWorkOrderPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const canEdit = Boolean(currentUser && ["executive", "admin", "developer"].includes(currentUser.role));
+  const canEdit = Boolean(currentUser && ["technician", "executive", "admin", "developer"].includes(currentUser.role));
 
   useEffect(() => {
     if (!id || !canEdit) {
@@ -164,7 +164,7 @@ export function EditWorkOrderPage() {
       <div className="edit-permission-note">
         <ShieldCheck size={18} aria-hidden="true" />
         <div>
-          <strong>Executive, admin, and developer control</strong>
+          <strong>Technician access and above</strong>
           <span>The original work-order number and activity history stay unchanged.</span>
         </div>
       </div>
@@ -174,7 +174,7 @@ export function EditWorkOrderPage() {
           <label>
             Work order type
             <select value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value as WorkOrderType })}>
-              {Object.entries(workOrderTypeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              {Object.entries(workOrderTypeLabels).filter(([value]) => !currentUser || technicianCanAccessWorkOrder(currentUser, { type: value as WorkOrderType })).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </label>
           <label>
