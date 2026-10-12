@@ -64,7 +64,7 @@ export const authSessionEndedEvent = "cmms:auth-session-ended";
 export function selectedPlant(): PlantId | "all" {
   const access = sessionStorage.getItem("cmms-user-plant-access");
   if (localStorage.getItem(authTokenKey) && (access === "port-klang" || access === "sendayan")) return access;
-  if (window.location.pathname === "/requester") {
+  if (window.location.pathname === "/report-issue") {
     return new URLSearchParams(window.location.search).get("plant") === "sendayan" ? "sendayan" : "port-klang";
   }
   const guestPlant = null;

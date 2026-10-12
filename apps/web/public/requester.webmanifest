@@ -1,9 +1,9 @@
 {
-  "id": "/requester",
+  "id": "/report-issue",
   "name": "Sugi CMMS Requester",
   "short_name": "Sugi Request",
   "description": "Guest work order requests and secure production requester tracking for Sugi CMMS.",
-  "start_url": "/requester",
+  "start_url": "/report-issue",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
@@ -23,7 +23,7 @@
       "name": "Issue Work Order",
       "short_name": "Issue",
       "description": "Open requester work order form.",
-      "url": "/requester",
+      "url": "/report-issue",
       "icons": [
         {
           "src": "/icons/cmms-icon.svg",

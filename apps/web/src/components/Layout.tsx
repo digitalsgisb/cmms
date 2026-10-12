@@ -279,7 +279,7 @@ export function Layout() {
   }
 
   if (currentUser.role === "requester") {
-    return <Navigate to="/requester" replace />;
+    return <Navigate to="/report-issue" replace />;
   }
 
   if (currentUser.role === "technician") {

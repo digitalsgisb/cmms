@@ -116,7 +116,7 @@ export function AdminPage() {
   const [qrSvg, setQrSvg] = useState("");
   const [posterBusy, setPosterBusy] = useState(false);
   const [adminError, setAdminError] = useState("");
-  const defaultRequesterUrl = `${window.location.origin}/requester?plant=${selectedPlant()}`;
+  const defaultRequesterUrl = `${window.location.origin}/report-issue?plant=${selectedPlant()}`;
   const [requesterUrl, setRequesterUrl] = useState(defaultRequesterUrl);
   const canAdmin = Boolean(currentUser && ["executive", "admin", "developer"].includes(currentUser.role));
   const qrTargetUrl = requesterUrl.trim() || defaultRequesterUrl;

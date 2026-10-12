@@ -146,7 +146,7 @@ export function GuestTrackingPage() {
 
   if (loading) return <div className="guest-tracker-loading"><Clock3 size={22} />Opening your tracker…</div>;
   if (!tracking) {
-    return <main className="guest-tracker-error"><AlertTriangle size={30} /><h1>Tracking link unavailable</h1><p>{error}</p><Link to="/requester"><Send size={17} />Create a new request</Link></main>;
+    return <main className="guest-tracker-error"><AlertTriangle size={30} /><h1>Tracking link unavailable</h1><p>{error}</p><Link to="/report-issue"><Send size={17} />Create a new request</Link></main>;
   }
 
   const { workOrder, activities } = tracking;
@@ -159,8 +159,8 @@ export function GuestTrackingPage() {
 
   return <div className="guest-tracker-shell">
     <header className="guest-tracker-topbar">
-      <Link to="/requester" className="guest-tracker-brand"><span><img src="/brand/sugi_logo_white.png" alt="" /></span><div><small>SUGI CMMS</small><strong>Guest Work Order Tracker</strong></div></Link>
-      <Link to="/requester"><Home size={16} />New request</Link>
+      <Link to="/report-issue" className="guest-tracker-brand"><span><img src="/brand/sugi_logo_white.png" alt="" /></span><div><small>SUGI CMMS</small><strong>Guest Work Order Tracker</strong></div></Link>
+      <Link to="/report-issue"><Home size={16} />New request</Link>
     </header>
 
     <main className="guest-tracker-main">

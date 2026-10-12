@@ -48,7 +48,7 @@ To set up Sendayan:
 3. Import Sendayan's spare-parts master list. The same part number can exist in both plants with independent balances and movement history.
 4. In **Preventive Maintenance**, choose **New PM plan**, assign a Sendayan technician, then create and connect its checklists.
 5. Configure Sendayan's Google Sheets/webhook settings while Sendayan is selected. Existing settings and environment-variable integration defaults remain Port Klang-only; use separate spreadsheet destinations/tabs for Sendayan to keep external stock balances separate.
-6. Use `/requester?plant=sendayan` for Sendayan's guest request form/QR and `/requester?plant=port-klang` for Port Klang. The selected plant is visible on the form. Private tracking links remain specific to one work order.
+6. Use `/report-issue?plant=sendayan` for Sendayan's guest request form/QR and `/report-issue?plant=port-klang` for Port Klang. The selected plant is visible on the form. Private tracking links remain specific to one work order.
 
 The migration preserves existing IDs, work-order numbers, stock balances and history. New Sendayan work orders include `SDN` in their number; counters are independent by plant. Sendayan starts without copied operational records. PM schedules are generated for the current and next year for each plant. Existing photo URLs now require an authorized session or a valid guest tracking token, including when opened from a spreadsheet.
 
@@ -393,7 +393,10 @@ The printed SHE poster QR encodes `https://cmms.sugidigital.org/requester?plant=
 That exact GET URL now returns a temporary HTTP 302 redirect to `https://she.sugidigital.org/report`,
 with `Cache-Control: no-store`. The redirect is registered before the frontend fallback and
 matches only the CMMS hostname, exact path, and the single Port Klang query parameter.
-Other requester URLs, tracking links, and CMMS APIs retain their existing behavior.
+New CMMS posters use `https://cmms.sugidigital.org/report-issue?plant=port-klang`
+or `/report-issue?plant=sendayan`. Generate replacements from **Users → QR** after deployment.
+Other `/requester` form links return HTTP 410 (QR code retired) without redirecting to the new
+CMMS form. Existing private tracking links and CMMS APIs retain their existing behavior.
 
 Deploy the SHE Digital reporting portal first, then rebuild and restart CMMS with
 `docker compose up -d --build --force-recreate` in its deployment checkout. Scan the existing

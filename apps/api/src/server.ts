@@ -125,6 +125,11 @@ app.get("/requester", (request, response, next) => {
   response.redirect(302, "https://she.sugidigital.org/report");
 });
 
+app.get("/requester", (_request, response) => {
+  response.set("Cache-Control", "no-store");
+  response.status(410).type("html").send('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>QR code retired</title><body><h1>QR code retired</h1><p>This QR code no longer opens the CMMS request form. Please scan the new official CMMS QR code or contact your administrator.</p></body></html>');
+});
+
 const port = Number(process.env.PORT || 3300);
 const liveClients = new Set<Response>();
 const uploadsTempDir = path.join(uploadsRoot, "tmp");
@@ -589,7 +594,7 @@ app.get("/api/dashboard-summary", (_request, response) => {
 
 app.get("/api/system/public-config", (_request, response) => {
   const publicUrl = (process.env.APP_PUBLIC_URL || "").trim().replace(/\/$/, "");
-  response.json({ requesterUrl: publicUrl ? `${publicUrl}/requester` : "" });
+  response.json({ requesterUrl: publicUrl ? `${publicUrl}/report-issue` : "" });
 });
 
 app.get("/api/tv/work-orders", (_request, response) => {

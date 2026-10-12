@@ -31,18 +31,19 @@ export function App() {
   const location = useLocation();
 
   useEffect(() => {
-    const publicTitle = location.pathname === "/login" ? "Sign in" : location.pathname.startsWith("/requester/track") ? "Track your request" : location.pathname === "/requester" ? "Report an issue" : "";
+    const publicTitle = location.pathname === "/login" ? "Sign in" : location.pathname.startsWith("/requester/track") ? "Track your request" : location.pathname === "/report-issue" ? "Report an issue" : "";
     if (publicTitle) document.title = `${publicTitle} · SUGI CMMS`;
     const manifestLink = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
     if (manifestLink) {
-      manifestLink.href = location.pathname.startsWith("/requester") ? "/requester.webmanifest" : "/manifest.webmanifest";
+      manifestLink.href = (location.pathname === "/report-issue" || location.pathname.startsWith("/requester/track")) ? "/requester.webmanifest" : "/manifest.webmanifest";
     }
   }, [location.pathname]);
 
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/requester" element={<PublicRequesterPage />} />
+      <Route path="/report-issue" element={<PublicRequesterPage />} />
+      <Route path="/requester" element={<main className="guest-tracker-error"><h1>QR code retired</h1><p>This QR code no longer opens the CMMS request form. Please scan the new official CMMS QR code or contact your administrator.</p></main>} />
       <Route path="/requester/track/:id" element={<GuestTrackingPage />} />
       <Route path="/tv" element={<AuthenticatedTv />} />
       <Route element={<Layout />}>

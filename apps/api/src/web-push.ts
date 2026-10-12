@@ -45,7 +45,7 @@ export async function sendPushToUser(
     title: notification.title,
     body: notification.body,
     url: user.role === "requester"
-      ? (notification.title.toLowerCase().includes("ready for verification") ? "/requester?view=verify" : "/requester")
+      ? (notification.title.toLowerCase().includes("ready for verification") ? "/report-issue?view=verify" : "/report-issue")
       : notification.workOrderId ? `/work-orders/${encodeURIComponent(notification.workOrderId)}` : "/",
     tag: notification.workOrderId ? `work-order-${notification.workOrderId}` : "sugi-cmms",
     icon: "/icons/cmms-icon.svg",

@@ -82,7 +82,7 @@ export function LoginPage() {
             <ArrowRight size={18} aria-hidden="true" />
           </button>
 
-          <p className="ux-form-help">Need to report an issue? <Link to="/requester">Submit a guest request</Link></p>
+          <p className="ux-form-help">Need to report an issue? <Link to="/report-issue">Submit a guest request</Link></p>
         </form>
       </section>
     </main>
@@ -91,7 +91,7 @@ export function LoginPage() {
 
 function preferredLandingPath(user: User, from: string) {
   if (user.role === "requester") {
-    return "/requester";
+    return "/report-issue";
   }
 
   if (user.role === "executive") {
