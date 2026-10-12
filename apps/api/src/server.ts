@@ -112,6 +112,19 @@ const localEnvFile = path.basename(process.cwd()) === "api"
 if (process.env.NODE_ENV !== "test" && existsSync(localEnvFile)) loadEnvFile(localEnvFile);
 
 const app = express();
+
+// Retired SHE environmental poster QR: retain its printed URL and send scans to SHE Digital.
+app.get("/requester", (request, response, next) => {
+  if (request.method !== "GET" || request.path !== "/requester" ||
+      request.hostname.toLowerCase() !== "cmms.sugidigital.org" ||
+      request.query.plant !== "port-klang" || Object.keys(request.query).length !== 1) {
+    next();
+    return;
+  }
+  response.set("Cache-Control", "no-store");
+  response.redirect(302, "https://she.sugidigital.org/report");
+});
+
 const port = Number(process.env.PORT || 3300);
 const liveClients = new Set<Response>();
 const uploadsTempDir = path.join(uploadsRoot, "tmp");

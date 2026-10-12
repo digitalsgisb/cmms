@@ -386,3 +386,19 @@ The app is split into three layers:
 - `apps/web`: React PWA interface for requesters, technicians, executives, and TV dashboard.
 
 The first real feature is Work Orders. Other CMMS areas are included as placeholder pages so the system already has a proper product shape.
+
+## Retired SHE environmental poster QR
+
+The printed SHE poster QR encodes `https://cmms.sugidigital.org/requester?plant=port-klang`.
+That exact GET URL now returns a temporary HTTP 302 redirect to `https://she.sugidigital.org/report`,
+with `Cache-Control: no-store`. The redirect is registered before the frontend fallback and
+matches only the CMMS hostname, exact path, and the single Port Klang query parameter.
+Other requester URLs, tracking links, and CMMS APIs retain their existing behavior.
+
+Deploy the SHE Digital reporting portal first, then rebuild and restart CMMS with
+`docker compose up -d --build --force-recreate` in its deployment checkout. Scan the existing
+poster on a phone and confirm the Environment / Hiyari Hatto / Kaizen chooser opens.
+The CMMS hostname must remain reachable to serve the redirect. Keep the CMMS backend running
+if SHE Digital should automatically issue Kaizen work orders for water leakage.
+If the CMMS service is fully retired later, move this exact redirect to the hostname's edge
+or reverse proxy before shutting it down; automatic CMMS work orders will then need another backend.
