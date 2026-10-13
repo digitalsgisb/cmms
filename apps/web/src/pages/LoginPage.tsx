@@ -67,7 +67,7 @@ export function LoginPage() {
         <form className="login-form" onSubmit={submit}>
           <label className="login-field">
             Username
-            <input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="Enter your username" autoComplete="username" autoCapitalize="none" spellCheck={false} required autoFocus />
+            <input value={username} onChange={(event) => setUsername(event.target.value.toLowerCase())} placeholder="Enter your username" autoComplete="username" autoCapitalize="none" spellCheck={false} required autoFocus />
           </label>
 
           <label className="login-field">

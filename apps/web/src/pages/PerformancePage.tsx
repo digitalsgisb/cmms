@@ -1,5 +1,6 @@
 import type {
   PmDashboardResponse,
+  Section,
   SpareInventoryResponse,
   WorkOrder
 } from "@sugi-cmms/shared";
@@ -21,6 +22,8 @@ import {
   Wrench
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { workOrderStatusLabels } from "@sugi-cmms/shared";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
 import {
   Area,
@@ -44,10 +47,12 @@ import {
 } from "recharts";
 import { api } from "../api/client";
 import { useCurrentUser } from "../state/UserContext";
-import { PlantSelector } from "../components/PlantSelector";
 
 type Period = "daily" | "monthly" | "yearly";
 type Focus = "all" | "work-orders" | "spares" | "pm";
+type OrderView = "not-closed" | "all" | "closed" | "resolved" | "maintenance" | "kaizen";
+
+const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 const colors = {
   maroon: "#851923",
@@ -141,7 +146,17 @@ function chartTooltipStyle() {
 export function PerformancePage() {
   const { currentUser } = useCurrentUser();
   const [period, setPeriod] = useState<Period>("daily");
-  const [focus, setFocus] = useState<Focus>("all");
+  const [params, setParams] = useSearchParams();
+  const focus = focusOptions.find((option) => option.id === params.get("focus"))?.id ?? "all";
+  const setFocus = (value: Focus) => setParams((previous) => {
+    const next = new URLSearchParams(previous);
+    if (value === "all") next.delete("focus"); else next.set("focus", value);
+    return next;
+  });
+  const [sectionId, setSectionId] = useState("all");
+  const [sections, setSections] = useState<Section[]>([]);
+  const [orderView, setOrderView] = useState<OrderView>("not-closed");
+  const [tableRange, setTableRange] = useState<"all" | "period">("all");
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [inventory, setInventory] = useState<SpareInventoryResponse | null>(null);
   const [pm, setPm] = useState<PmDashboardResponse | null>(null);
@@ -151,39 +166,64 @@ export function PerformancePage() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [live, setLive] = useState(true);
   const [reportDate] = useState(() => new Date());
+  const [selectedMonth, setSelectedMonth] = useState(() => reportDate.getMonth());
+  const [selectedYear, setSelectedYear] = useState(() => reportDate.getFullYear());
+  const now = useMemo(() => period === "monthly" ? new Date(selectedYear, selectedMonth, 1) : reportDate, [period, selectedYear, selectedMonth, reportDate]);
+  const reportYear = now.getFullYear();
+  const monthLabel = `${monthNames[selectedMonth]} ${selectedYear}`;
+  const reportingLabel = period === "monthly" ? monthLabel : period === "daily" ? reportDate.toLocaleDateString("en-MY", { day: "numeric", month: "long", year: "numeric" }) : String(reportYear);
+  const availableYears = useMemo(() => {
+    const years = new Set([selectedYear, ...Array.from({ length: 6 }, (_, index) => reportDate.getFullYear() - index)]);
+    for (const item of workOrders) {
+      for (const value of [item.createdAt, item.closedAt, item.resolvedAt]) {
+        if (!value) continue;
+        const year = new Date(value).getFullYear();
+        if (Number.isFinite(year)) years.add(year);
+      }
+    }
+    return [...years].sort((a, b) => b - a);
+  }, [workOrders, selectedYear, reportDate]);
 
   const loadPerformance = useCallback(async (soft = false) => {
     if (!currentUser) return;
     soft ? setRefreshing(true) : setLoading(true);
-    const year = new Date().getFullYear();
-    const [workResult, inventoryResult, pmResult] = await Promise.allSettled([
+    const [workResult, inventoryResult, pmResult, masterResult] = await Promise.allSettled([
       api.workOrders(),
       api.spareInventory(),
-      api.pmDashboard(currentUser.id, year)
+      api.pmDashboard(currentUser.id, reportYear),
+      api.masterData()
     ]);
     if (workResult.status === "fulfilled") setWorkOrders(workResult.value);
     if (inventoryResult.status === "fulfilled") setInventory(inventoryResult.value);
     if (pmResult.status === "fulfilled") setPm(pmResult.value);
-    const failed = [workResult, inventoryResult, pmResult].some((result) => result.status === "rejected");
+    if (masterResult.status === "fulfilled") setSections(masterResult.value.sections);
+    const failed = [workResult, inventoryResult, pmResult, masterResult].some((result) => result.status === "rejected");
     setLoadError(failed ? "Some performance data could not load. Figures may be incomplete or out of date." : "");
     if (!failed) setLastUpdated(new Date());
     setLoading(false);
     setRefreshing(false);
-  }, [currentUser]);
+  }, [currentUser, reportYear]);
 
   useEffect(() => {
     loadPerformance().catch(console.error);
   }, [loadPerformance]);
 
-  useLiveRefresh(["work-orders", "spare-parts", "pm"], () => loadPerformance(true), {
+  useLiveRefresh(["work-orders", "spare-parts", "pm", "master-data"], () => loadPerformance(true), {
     enabled: live && Boolean(currentUser),
     fallbackMs: 30000
   });
 
-  const now = reportDate;
+  const sectionWorkOrders = useMemo(
+    () => workOrders.filter((item) => sectionId === "all" || item.sectionId === sectionId),
+    [workOrders, sectionId]
+  );
+  const periodWorkOrders = useMemo(
+    () => workOrders.filter((item) => inPeriod(item.createdAt, period, now) || (item.status === "closed" && inPeriod(item.closedAt || item.updatedAt, period, now)) || (item.status === "resolved" && inPeriod(item.resolvedAt || item.updatedAt, period, now))),
+    [workOrders, period, now]
+  );
   const scopedWorkOrders = useMemo(
-    () => workOrders.filter((item) => inPeriod(item.createdAt, period, now) || (item.status === "closed" && inPeriod(item.updatedAt, period, now))),
-    [workOrders, period, now.getDate(), now.getMonth(), now.getFullYear()]
+    () => periodWorkOrders.filter((item) => sectionId === "all" || item.sectionId === sectionId),
+    [periodWorkOrders, sectionId]
   );
   const scopedPm = useMemo(
     () => (pm?.schedules ?? []).filter((item) => inPeriod(`${item.scheduledDate}T00:00:00`, period, now)),
@@ -195,12 +235,15 @@ export function PerformancePage() {
   );
 
   const woStats = useMemo(() => {
-    const valid = scopedWorkOrders.filter((item) => item.status !== "cancelled");
+    const valid = scopedWorkOrders;
     const closed = valid.filter((item) => item.status === "closed");
-    const open = valid.filter((item) => !["closed", "resolved"].includes(item.status));
+    const open = sectionWorkOrders.filter((item) => item.status !== "closed");
+    const resolved = valid.filter((item) => item.status === "resolved");
     return {
       total: valid.length,
       closed: closed.length,
+      resolved: resolved.length,
+      resolvedRate: percent(resolved.length, valid.length),
       rate: percent(closed.length, valid.length),
       standardRate: closureRate(valid, "maintenance"),
       kaizenRate: closureRate(valid, "kaizen"),
@@ -208,7 +251,36 @@ export function PerformancePage() {
       pendingMaterial: open.filter((item) => item.status === "pending_material").length,
       open
     };
-  }, [scopedWorkOrders]);
+  }, [scopedWorkOrders, sectionWorkOrders]);
+
+  const tableOrders = useMemo(() => {
+    const records = tableRange === "all" ? sectionWorkOrders : scopedWorkOrders;
+    return records.filter((item) => {
+      if (orderView === "not-closed") return item.status !== "closed";
+      if (orderView === "closed" || orderView === "resolved") return item.status === orderView;
+      if (orderView === "maintenance" || orderView === "kaizen") return item.type === orderView;
+      return true;
+    }).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }, [sectionWorkOrders, scopedWorkOrders, tableRange, orderView]);
+
+  const sectionAnalysis = useMemo(() => sections.map((section) => {
+    const records = periodWorkOrders.filter((item) => item.sectionId === section.id);
+    return { section, total: records.length, closed: records.filter((item) => item.status === "closed").length,
+      resolved: records.filter((item) => item.status === "resolved").length,
+      outstanding: workOrders.filter((item) => item.sectionId === section.id && item.status !== "closed").length };
+  }), [sections, periodWorkOrders, workOrders]);
+
+  function showOrders(view: OrderView) {
+    setOrderView(view);
+    setTableRange("period");
+    setFocus("work-orders");
+    window.setTimeout(() => document.getElementById("performance-work-orders")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  }
+
+  function showArea(area: Focus, target: string) {
+    setFocus(area);
+    window.setTimeout(() => document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  }
 
   const pmStats = useMemo(() => {
     const completed = scopedPm.filter((item) => ["submitted", "verified"].includes(item.status)).length;
@@ -230,8 +302,8 @@ export function PerformancePage() {
   const throughputData = useMemo(() => {
     const labels = bucketLabels(period);
     return labels.map((label, index) => {
-      const created = scopedWorkOrders.filter((item) => bucketIndex(item.createdAt, period) === index);
-      const closed = scopedWorkOrders.filter((item) => item.status === "closed" && bucketIndex(item.updatedAt, period) === index);
+      const created = scopedWorkOrders.filter((item) => inPeriod(item.createdAt, period, now) && bucketIndex(item.createdAt, period) === index);
+      const closed = scopedWorkOrders.filter((item) => item.status === "closed" && inPeriod(item.closedAt || item.updatedAt, period, now) && bucketIndex(item.closedAt || item.updatedAt, period) === index);
       return {
         label,
         standard: created.filter((item) => item.type === "maintenance").length,
@@ -240,7 +312,7 @@ export function PerformancePage() {
         closeRate: percent(closed.length, created.length)
       };
     });
-  }, [scopedWorkOrders, period]);
+  }, [scopedWorkOrders, period, now]);
 
   const pmTrendData = useMemo(() => {
     const labels = bucketLabels(period);
@@ -317,7 +389,7 @@ export function PerformancePage() {
   const exceptions = useMemo(() => {
     const rows: Array<{ area: string; item: string; severity: "Critical" | "Watch"; owner: string; action: string }> = [];
     woStats.open
-      .filter((item) => item.priority === "critical" || item.status === "pending_material")
+      .filter((item) => item.status !== "cancelled" && (item.priority === "critical" || item.status === "pending_material"))
       .slice(0, 2)
       .forEach((item) => rows.push({
         area: "Work order",
@@ -344,8 +416,8 @@ export function PerformancePage() {
       owner: item.technicianName,
       action: "Recover and verify today"
     }));
-    return rows;
-  }, [woStats.open, inventory, scopedPm]);
+    return rows.filter((row) => focus === "all" || (focus === "work-orders" && row.area === "Work order") || (focus === "spares" && row.area === "Spare part") || (focus === "pm" && row.area === "PM"));
+  }, [woStats.open, inventory, scopedPm, focus]);
 
   const meetingRows = [
     {
@@ -388,19 +460,31 @@ export function PerformancePage() {
   return (
     <section className="performance-page page-stack">
       {loadError ? <div className="ux-load-error" role="alert"><span>{loadError}</span><button className="secondary-action" type="button" onClick={() => void loadPerformance(true)}>Try again</button></div> : null}
-      <div className="analytics-plant-filter"><span>Viewing</span><PlantSelector allowCombined compact /></div>
       <header className="performance-hero">
         <div className="performance-hero-copy">
           <div className="performance-eyebrow"><Sparkles size={14} /> {activePeriod.eyebrow}</div>
-          <h1>{activePeriod.title}</h1>
+          <h1>{period === "monthly" ? `${monthLabel} performance` : activePeriod.title}</h1>
           <p>{activePeriod.subtitle}</p>
           <div className="performance-period-tabs" data-period={period} role="tablist" aria-label="Performance reporting period">
             {(["daily", "monthly", "yearly"] as Period[]).map((item) => (
-              <button key={item} type="button" role="tab" aria-selected={period === item} className={period === item ? "active" : ""} onClick={() => setPeriod(item)}>
+              <button key={item} type="button" role="tab" aria-selected={period === item} className={period === item ? "active" : ""} onClick={() => { setPeriod(item); if (item === "monthly") setTableRange("period"); }}>
                 {item[0].toUpperCase() + item.slice(1)}
               </button>
             ))}
           </div>
+          {period === "monthly" ? <div className="performance-month-picker">
+            <div className="performance-month-heading">
+              <strong aria-live="polite">{monthLabel}</strong>
+              <label htmlFor="performance-report-year">Year
+                <select id="performance-report-year" value={selectedYear} onChange={(event) => { setSelectedYear(Number(event.target.value)); setTableRange("period"); }}>
+                  {availableYears.map((year) => <option key={year} value={year}>{year}</option>)}
+                </select>
+              </label>
+            </div>
+            <div className="performance-month-buttons" role="group" aria-label="Choose reporting month">
+              {monthNames.map((month, index) => <button key={month} type="button" className={selectedMonth === index ? "active" : ""} aria-label={`${month} ${selectedYear}`} aria-pressed={selectedMonth === index} onClick={() => { setSelectedMonth(index); setTableRange("period"); }}>{month.slice(0, 3)}</button>)}
+            </div>
+          </div> : null}
         </div>
         <div className="performance-live-card">
           <div>
@@ -419,12 +503,16 @@ export function PerformancePage() {
       </header>
 
       <div className="performance-kpi-grid" aria-busy={loading}>
-        <Kpi icon={Wrench} label="WO closure" value={`${woStats.rate}%`} note={`${woStats.closed} of ${woStats.total} closed`} tone="maroon" />
-        <Kpi icon={TrendingUp} label="Standard maintenance" value={`${woStats.standardRate}%`} note="Close rate" tone="teal" />
-        <Kpi icon={Sparkles} label="KAIZEN" value={`${woStats.kaizenRate}%`} note="Improvement close rate" tone="gold" />
-        <Kpi icon={PackageCheck} label="Parts availability" value={`${partsAvailability}%`} note={`${inventory?.summary.outOfStock ?? 0} stock-outs`} tone="green" />
-        <Kpi icon={ShieldCheck} label="PM compliance" value={`${pmStats.compliance}%`} note={`${pmStats.overdue} overdue`} tone="navy" />
-        <Kpi icon={AlertTriangle} label="Active exceptions" value={String(exceptions.length)} note="Require meeting action" tone={exceptions.length > 0 ? "red" : "green"} />
+        {showWorkOrders ? <>
+          <Kpi icon={Wrench} label="WO Closure (Close)" value={`${woStats.rate}%`} note={`${woStats.closed} of ${woStats.total} closed`} tone="maroon" onClick={() => showOrders("closed")} />
+          <Kpi icon={CheckCircle2} label="WO Resolved (Resolved)" value={`${woStats.resolvedRate}%`} note={`${woStats.resolved} of ${woStats.total} resolved`} tone="teal" onClick={() => showOrders("resolved")} />
+          <Kpi icon={Activity} label="Total work orders" value={String(woStats.total)} note="Created, closed or resolved in period" tone="navy" onClick={() => showOrders("all")} />
+          <Kpi icon={TrendingUp} label="Standard maintenance" value={`${woStats.standardRate}%`} note="Close rate" tone="teal" onClick={() => showOrders("maintenance")} />
+          <Kpi icon={Sparkles} label="KAIZEN" value={`${woStats.kaizenRate}%`} note="Improvement close rate" tone="gold" onClick={() => showOrders("kaizen")} />
+        </> : null}
+        {showSpares ? <Kpi icon={PackageCheck} label="Parts availability" value={`${partsAvailability}%`} note={`${inventory?.summary.outOfStock ?? 0} stock-outs`} tone="green" onClick={() => showArea("spares", "performance-spares")} /> : null}
+        {showPm ? <Kpi icon={ShieldCheck} label="PM compliance" value={`${pmStats.compliance}%`} note={`${pmStats.overdue} overdue`} tone="navy" onClick={() => showArea("pm", "performance-pm")} /> : null}
+        <Kpi icon={AlertTriangle} label="Active exceptions" value={String(exceptions.length)} note="Require meeting action" tone={exceptions.length > 0 ? "red" : "green"} onClick={() => showArea(focus, "performance-exceptions")} />
       </div>
 
       <div className="performance-focus-bar">
@@ -443,6 +531,49 @@ export function PerformancePage() {
         {showWorkOrders ? (
           <section className="performance-section">
             <SectionHeading icon={Wrench} eyebrow="Work order performance" title="Delivery, response and close-out" note={`${woStats.total} work orders in view`} />
+            <div className="performance-order-controls">
+              <label htmlFor="performance-section">Section
+                <select id="performance-section" value={sectionId} onChange={(event) => setSectionId(event.target.value)}>
+                  <option value="all">All sections</option>
+                  {sections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
+                </select>
+              </label>
+              <p>Work order metrics for {reportingLabel} use the selected section. Not closed includes resolved and cancelled orders.</p>
+            </div>
+            <div className="performance-table-card">
+              <div className="performance-card-heading"><div><strong>Work order analysis by section · {reportingLabel}</strong><span>Period totals and outstanding work from all dates. Select a section to view its work orders.</span></div></div>
+              <div className="performance-table-scroll"><table>
+                <thead><tr><th>Section</th><th>Total work orders</th><th>WO Closure (Close)</th><th>WO Resolved (Resolved)</th><th>Not closed · all dates</th></tr></thead>
+                <tbody>{sectionAnalysis.map((row) => <tr key={row.section.id}>
+                  <td><button className="performance-section-link" type="button" onClick={() => setSectionId(row.section.id)} aria-pressed={sectionId === row.section.id}>{row.section.name}</button></td>
+                  <td>{row.total}</td><td>{row.closed} ({percent(row.closed, row.total)}%)</td><td>{row.resolved} ({percent(row.resolved, row.total)}%)</td><td className={row.outstanding ? "performance-outstanding-count" : ""}>{row.outstanding}</td>
+                </tr>)}</tbody>
+              </table></div>
+            </div>
+            <div className="performance-table-card" id="performance-work-orders">
+              <div className="performance-card-heading"><div><strong>{orderView === "not-closed" ? "Not closed work orders" : "Work order details"}</strong><span>{tableOrders.length} work orders · {tableRange === "all" ? "All dates, including older outstanding work" : reportingLabel} · oldest first</span></div></div>
+              <div className="performance-order-controls">
+                <label htmlFor="performance-order-status">Show
+                  <select id="performance-order-status" value={orderView} onChange={(event) => setOrderView(event.target.value as OrderView)}>
+                    <option value="not-closed">Not closed · all other statuses</option><option value="all">All work orders</option><option value="closed">WO Closure (Close)</option><option value="resolved">WO Resolved (Resolved)</option><option value="maintenance">Standard maintenance</option><option value="kaizen">KAIZEN</option>
+                  </select>
+                </label>
+                <label htmlFor="performance-order-range">Dates
+                  <select id="performance-order-range" value={tableRange} onChange={(event) => setTableRange(event.target.value as "all" | "period")}>
+                    <option value="all">All dates</option><option value="period">{reportingLabel}</option>
+                  </select>
+                </label>
+              </div>
+              <div className="performance-table-scroll"><table>
+                <thead><tr><th>Work order ID</th><th>Date</th><th>Section</th><th>Issue</th><th>Status</th></tr></thead>
+                <tbody>{tableOrders.length ? tableOrders.map((item) => <tr key={item.id} className={item.status !== "closed" ? "performance-unclosed-row" : ""}>
+                  <td><Link to={`/work-orders/${item.id}`}>{item.number}</Link></td>
+                  <td>{new Date(item.workDate || item.createdAt).toLocaleDateString("en-MY", { day: "2-digit", month: "short", year: "numeric" })}</td>
+                  <td>{sections.find((section) => section.id === item.sectionId)?.name || item.area || "Unassigned"}</td>
+                  <td>{item.issueDescription || item.description || item.title}</td><td>{workOrderStatusLabels[item.status]}{item.status !== "closed" ? <small className="performance-not-closed-label">Not closed</small> : null}</td>
+                </tr>) : <tr><td colSpan={5}><div className="performance-clear-state"><CheckCircle2 size={18} />No work orders match this view.</div></td></tr>}</tbody>
+              </table></div>
+            </div>
             <div className="performance-chart-grid performance-chart-grid-wide">
               <ChartCard title="Created vs closed" subtitle="Standard and KAIZEN intake with close-out rate" className="chart-wide">
                 <ResponsiveContainer width="100%" height="100%">
@@ -476,7 +607,7 @@ export function PerformancePage() {
                   <span><i style={{ background: colors.gold }} />KAIZEN <strong>{woStats.kaizenRate}%</strong></span>
                 </div>
               </ChartCard>
-              <ChartCard title="Open backlog by priority" subtitle={`${woStats.pendingMaterial} jobs waiting for material`}>
+              <ChartCard title="Not closed backlog by priority" subtitle={`All dates · ${woStats.pendingMaterial} jobs waiting for material`}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={priorityData} layout="vertical" margin={{ top: 4, right: 12, left: 5, bottom: 0 }}>
                     <CartesianGrid stroke="#eee6e7" strokeDasharray="3 5" horizontal={false} />
@@ -493,7 +624,7 @@ export function PerformancePage() {
         ) : null}
 
         {showSpares ? (
-          <section className="performance-section">
+          <section className="performance-section" id="performance-spares">
             <SectionHeading icon={Boxes} eyebrow="Spare part performance" title="Availability, movement and working capital" note={inventory ? money(inventory.summary.totalValue) : "—"} />
             <div className="performance-chart-grid">
               <ChartCard title="Stock movement" subtitle="Issues compared with replenishment" className="chart-wide">
@@ -532,7 +663,7 @@ export function PerformancePage() {
         ) : null}
 
         {showPm ? (
-          <section className="performance-section">
+          <section className="performance-section" id="performance-pm">
             <SectionHeading icon={ShieldCheck} eyebrow="Preventive maintenance" title="Compliance, schedule recovery and load" note={`${pmStats.completed}/${pmStats.total} completed`} />
             <div className="performance-chart-grid performance-chart-grid-wide">
               <ChartCard title="PM execution trend" subtitle="Scheduled work, completion and overdue exposure" className="chart-wide">
@@ -609,7 +740,7 @@ export function PerformancePage() {
           </section>
         ) : null}
 
-        <section className="performance-section performance-exceptions-section">
+        <section className="performance-section performance-exceptions-section" id="performance-exceptions">
           <SectionHeading icon={AlertTriangle} eyebrow="Exception management" title="Leave the meeting with owners and actions" note={`${exceptions.length} active items`} />
           <div className="performance-table-card">
             <div className="performance-table-scroll">
@@ -629,8 +760,8 @@ export function PerformancePage() {
   );
 }
 
-function Kpi({ icon: Icon, label, value, note, tone }: { icon: typeof Clock3; label: string; value: string; note: string; tone: string }) {
-  return <article className={`performance-kpi tone-${tone}`}><span><Icon size={19} /></span><div><small>{label}</small><strong>{value}</strong><p>{note}</p></div></article>;
+function Kpi({ icon: Icon, label, value, note, tone, onClick }: { icon: typeof Clock3; label: string; value: string; note: string; tone: string; onClick: () => void }) {
+  return <button type="button" className={`performance-kpi tone-${tone}`} onClick={onClick} aria-label={`View ${label}: ${value}`}><span><Icon size={19} /></span><div><small>{label}</small><strong>{value}</strong><p>{note}</p></div></button>;
 }
 
 function SectionHeading({ icon: Icon, eyebrow, title, note }: { icon: typeof Clock3; eyebrow: string; title: string; note: string }) {

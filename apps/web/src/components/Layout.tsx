@@ -19,7 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import type { NotificationRecord } from "@sugi-cmms/shared";
 import { api, mediaUrl, selectedPlant } from "../api/client";
 import { PushNotificationControl } from "./PushNotificationControl";
@@ -28,7 +28,6 @@ import { formatShortDate } from "../utils/format";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
 const navItems = [
-  { to: "/performance", label: "Performance", icon: ChartNoAxesCombined },
   { to: "/reports", label: "Reports", icon: Boxes },
   { to: "/users", label: "Users", icon: Users },
   { to: "/settings", label: "Settings", icon: Settings }
@@ -86,9 +85,16 @@ export function Layout() {
   const workOrdersActive = location.pathname.startsWith("/work-orders") || (!isRequester && location.pathname.startsWith("/technician"));
   const sparePartsActive = location.pathname.startsWith("/spare-parts");
   const preventiveActive = location.pathname.startsWith("/preventive-maintenance");
+  const performanceActive = location.pathname === "/performance";
+  const performanceFocus = new URLSearchParams(location.search).get("focus") || "all";
+  const [performanceOpen, setPerformanceOpen] = useState(performanceActive);
   const [workOrdersOpen, setWorkOrdersOpen] = useState(workOrdersActive);
   const [sparePartsOpen, setSparePartsOpen] = useState(sparePartsActive);
   const [preventiveOpen, setPreventiveOpen] = useState(preventiveActive);
+
+  useEffect(() => {
+    if (performanceActive) setPerformanceOpen(true);
+  }, [performanceActive, location.search]);
 
   async function loadNotifications() {
     if (!currentUser) {
@@ -542,6 +548,24 @@ export function Layout() {
             <Factory size={18} aria-hidden="true" />
             <span>Assets</span>
           </NavLink> : <span className="nav-item locked" aria-disabled="true"><Factory size={18} aria-hidden="true" /><span>Assets</span><LockKeyhole className="nav-lock" size={14} aria-hidden="true" /></span>}
+
+          {hasDeveloperAccess ? <div className={`nav-group ${performanceOpen ? "open" : ""}`}>
+            <Link to="/performance" className={`nav-item nav-parent ${performanceActive ? "active" : ""}`} aria-expanded={performanceOpen} onClick={(event) => {
+              if (performanceActive) { event.preventDefault(); setPerformanceOpen((open) => !open); }
+              else setPerformanceOpen(true);
+            }}>
+              <ChartNoAxesCombined size={18} aria-hidden="true" /><span>Performance</span>
+              {performanceOpen ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
+            </Link>
+            <div className="nav-subitems" aria-hidden={!performanceOpen}>
+              {[
+                { focus: "all", label: "Overview" },
+                { focus: "work-orders", label: "Work Order Performance" },
+                { focus: "spares", label: "Spare Part Performance" },
+                { focus: "pm", label: "PM Performance" }
+              ].map((item) => <Link key={item.focus} to={item.focus === "all" ? "/performance" : `/performance?focus=${item.focus}`} tabIndex={performanceOpen ? 0 : -1} className={performanceActive && performanceFocus === item.focus ? "active" : ""} aria-current={performanceActive && performanceFocus === item.focus ? "page" : undefined} onClick={() => setMobileNavOpen(false)}>{item.label}</Link>)}
+            </div>
+          </div> : <span className="nav-item locked" aria-disabled="true"><ChartNoAxesCombined size={18} aria-hidden="true" /><span>Performance</span><LockKeyhole className="nav-lock" size={14} aria-hidden="true" /></span>}
 
           {navItems.map((item) => (
             (hasDeveloperAccess || (currentUser.role === "executive" && ["/performance", "/reports"].includes(item.to)) || (item.to === "/settings" && currentUser.plantAccess === "both")) ? (
