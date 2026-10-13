@@ -9086,12 +9086,12 @@ button.attachment-tile {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 245px;
-  gap: 28px;
+  gap: 20px;
   overflow: hidden;
-  min-height: 250px;
+  min-height: 0;
   align-items: center;
   border-radius: 22px;
-  padding: clamp(28px, 4vw, 46px);
+  padding: clamp(18px, 2vw, 26px);
   color: #fff;
   background:
     radial-gradient(circle at 83% 10%, rgba(225, 184, 103, 0.38), transparent 25rem),
@@ -9128,31 +9128,32 @@ button.attachment-tile {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  margin-top: 20px;
+  flex: 1 1 320px;
+  gap: 10px;
+  margin-top: 0;
   border: 1px solid rgba(255, 255, 255, .3);
   border-left: 4px solid #f5d697;
   border-radius: 12px;
-  padding: 16px 18px;
+  padding: 10px 12px;
   background: rgba(255, 255, 255, .12);
 }
 
 .performance-department-picker > div { display: grid; gap: 5px; min-width: 0; }
-.performance-department-picker strong { color: #fff; font-size: 16px; }
+.performance-department-picker strong { color: #fff; font-size: 13px; }
 .performance-department-picker > div > span { color: rgba(255, 255, 255, .8); font-size: 12px; line-height: 1.5; }
-.performance-department-picker label { display: grid; gap: 6px; flex: 1 1 220px; max-width: 320px; min-width: 0; }
+.performance-department-picker label { display: grid; gap: 4px; flex: 1 1 160px; max-width: 260px; min-width: 0; }
 .performance-department-picker label > span { color: #f5d697; font-size: 12px; font-weight: 800; }
 .performance-department-picker select {
   width: 100%;
   min-width: 0;
-  min-height: 48px;
+  min-height: 40px;
   border: 1px solid #fff;
   border-radius: 9px;
-  padding: 10px 14px;
+  padding: 8px 12px;
   background: #fff;
   color: #6b111a;
   font: inherit;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 800;
 }
 .performance-department-picker select:focus-visible { outline: 3px solid #f5d697; outline-offset: 3px; }
@@ -9170,20 +9171,20 @@ button.attachment-tile {
 .performance-header-icon {
   display: grid;
   flex: 0 0 auto;
-  width: 62px;
-  height: 62px;
+  width: 44px;
+  height: 44px;
   place-items: center;
   border: 1px solid rgba(255, 255, 255, .3);
-  border-radius: 18px;
+  border-radius: 13px;
   color: #fff;
   background: rgba(255, 255, 255, .12);
   animation: performanceIconReveal 900ms cubic-bezier(.22, 1, .36, 1) both;
 }
 
 .performance-report-label {
-  margin: 14px 0 8px;
+  margin: 8px 0 6px;
   color: #f5d697;
-  font-size: clamp(18px, 2.2vw, 25px);
+  font-size: 18px;
   font-weight: 800;
   animation: performanceHeaderCopyEnter 450ms cubic-bezier(.22, 1, .36, 1) both;
 }
@@ -9192,12 +9193,12 @@ button.attachment-tile {
   display: flex;
   align-items: flex-end;
   gap: 5px;
-  height: 22px;
-  margin-top: 16px;
+  height: 12px;
+  margin-top: 8px;
 }
 
 .performance-header-signal span {
-  width: 26px;
+  width: 18px;
   height: 100%;
   border-radius: 4px;
   background: linear-gradient(0deg, rgba(255, 255, 255, .3), #f5d697);
@@ -9251,8 +9252,8 @@ button.attachment-tile {
 
 .performance-hero h1 {
   max-width: 760px;
-  margin: 12px 0 9px;
-  font-size: clamp(33px, 4.5vw, 58px);
+  margin: 4px 0 2px;
+  font-size: clamp(25px, 2.8vw, 36px);
   line-height: 1.08;
   overflow-wrap: anywhere;
   letter-spacing: -0.045em;
@@ -9262,15 +9263,23 @@ button.attachment-tile {
   max-width: 690px;
   margin: 0;
   color: rgba(255, 255, 255, 0.7);
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.performance-header-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
 }
 
 .performance-period-tabs {
   position: relative;
   display: inline-flex;
   gap: 4px;
-  margin-top: 24px;
+  margin-top: 0;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 10px;
   padding: 4px;
@@ -9327,8 +9336,8 @@ button.attachment-tile {
 }
 
 .performance-month-picker {
-  margin-top: 18px;
-  padding: 16px;
+  margin-top: 12px;
+  padding: 10px 12px;
   border: 1px solid rgba(255, 255, 255, .25);
   border-radius: 12px;
   background: rgba(52, 4, 12, .22);
@@ -9340,11 +9349,11 @@ button.attachment-tile {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .performance-month-heading > strong {
-  font-size: 22px;
+  font-size: 16px;
   color: #fff;
 }
 
@@ -9373,8 +9382,8 @@ button.attachment-tile {
 }
 
 .performance-month-buttons button {
-  min-height: 40px;
-  padding: 8px 4px;
+  min-height: 34px;
+  padding: 6px 4px;
   border: 1px solid rgba(255, 255, 255, .25);
   border-radius: 8px;
   background: rgba(255, 255, 255, .08);
@@ -9997,9 +10006,11 @@ button.attachment-tile {
 #performance-work-orders th:first-child,
 #performance-work-orders td:first-child { min-width: 180px; }
 #performance-work-orders th:nth-child(2),
-#performance-work-orders td:nth-child(2) { min-width: 105px; }
-#performance-work-orders th:nth-child(4),
-#performance-work-orders td:nth-child(4) { min-width: 200px; }
+#performance-work-orders td:nth-child(2),
+#performance-work-orders th:nth-child(3),
+#performance-work-orders td:nth-child(3) { min-width: 115px; }
+#performance-work-orders th:nth-child(5),
+#performance-work-orders td:nth-child(5) { min-width: 200px; }
 
 .performance-table-card td strong {
   color: var(--performance-ink);
@@ -10100,8 +10111,8 @@ button.attachment-tile {
 
 @media (max-width: 760px) {
   .performance-page { gap: 13px; }
-  .performance-hero { grid-template-columns: 1fr; gap: 18px; min-height: 0; border-radius: 16px; padding: 22px 18px; }
-  .performance-hero h1 { font-size: 32px; }
+  .performance-hero { grid-template-columns: 1fr; gap: 14px; min-height: 0; border-radius: 16px; padding: 18px 16px; }
+  .performance-hero h1 { font-size: 26px; }
   .performance-header-intro { align-items: flex-start; gap: 12px; }
   .performance-header-icon { width: 46px; height: 46px; border-radius: 13px; }
   .performance-eyebrow { letter-spacing: .06em; font-size: 10px; }

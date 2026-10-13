@@ -123,6 +123,16 @@ function inPeriod(value: string, period: Period, date: Date) {
   return item.getFullYear() === date.getFullYear();
 }
 
+function workOrderDate(item: WorkOrder) {
+  return item.workDate ? `${item.workDate.slice(0, 10)}T00:00:00` : item.createdAt;
+}
+
+function reportingDate(item: WorkOrder) {
+  if (item.status === "closed") return item.closedAt;
+  if (item.status === "resolved") return item.resolvedAt;
+  return workOrderDate(item);
+}
+
 function bucketLabels(period: Period) {
   if (period === "daily") return ["00:00", "03:00", "06:00", "09:00", "12:00", "15:00", "18:00", "21:00"];
   if (period === "monthly") return ["Week 1", "Week 2", "Week 3", "Week 4", "Week 5"];
@@ -178,9 +188,9 @@ export function PerformancePage() {
   const setSectionId = (value: string) => updateReport({ section: value });
   const [sections, setSections] = useState<Section[]>([]);
   const viewParam = params.get("view");
-  const orderView: OrderView = ["all", "closed", "resolved", "maintenance", "kaizen"].includes(viewParam || "") ? viewParam as OrderView : "not-closed";
-  const setOrderView = (value: OrderView) => updateReport({ view: value });
-  const tableRange = params.get("range") === "period" ? "period" : "all";
+  const orderView: OrderView = ["not-closed", "all", "closed", "resolved", "maintenance", "kaizen"].includes(viewParam || "") ? viewParam as OrderView : "closed";
+  const setOrderView = (value: OrderView) => updateReport({ view: value, range: value === "not-closed" ? "all" : "period" });
+  const tableRange = orderView === "not-closed" || params.get("range") === "all" ? "all" : "period";
   const setTableRange = (value: "all" | "period") => updateReport({ range: value });
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [inventory, setInventory] = useState<SpareInventoryResponse | null>(null);
@@ -201,7 +211,7 @@ export function PerformancePage() {
   const availableYears = useMemo(() => {
     const years = new Set([selectedYear, ...Array.from({ length: 6 }, (_, index) => reportDate.getFullYear() - index)]);
     for (const item of workOrders) {
-      for (const value of [item.createdAt, item.closedAt, item.resolvedAt]) {
+      for (const value of [item.closedAt, item.resolvedAt, item.workDate, item.createdAt]) {
         if (!value) continue;
         const year = new Date(value).getFullYear();
         if (Number.isFinite(year)) years.add(year);
@@ -252,7 +262,10 @@ export function PerformancePage() {
     [departmentWorkOrders, sectionId]
   );
   const periodWorkOrders = useMemo(
-    () => departmentWorkOrders.filter((item) => inPeriod(item.createdAt, period, now) || (item.status === "closed" && inPeriod(item.closedAt || item.updatedAt, period, now)) || (item.status === "resolved" && inPeriod(item.resolvedAt || item.updatedAt, period, now))),
+    () => departmentWorkOrders.filter((item) => {
+      const date = reportingDate(item);
+      return Boolean(date && inPeriod(date, period, now));
+    }),
     [departmentWorkOrders, period, now]
   );
   const scopedWorkOrders = useMemo(
@@ -294,7 +307,7 @@ export function PerformancePage() {
       if (orderView === "closed" || orderView === "resolved") return item.status === orderView;
       if (orderView === "maintenance" || orderView === "kaizen") return item.type === orderView;
       return true;
-    }).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    }).sort((a, b) => (orderView === "not-closed" ? workOrderDate(a) : reportingDate(a) || workOrderDate(a)).localeCompare(orderView === "not-closed" ? workOrderDate(b) : reportingDate(b) || workOrderDate(b)));
   }, [sectionWorkOrders, scopedWorkOrders, tableRange, orderView]);
 
   const sectionAnalysis = useMemo(() => departmentSections.map((section) => {
@@ -334,8 +347,11 @@ export function PerformancePage() {
   const throughputData = useMemo(() => {
     const labels = bucketLabels(period);
     return labels.map((label, index) => {
-      const created = scopedWorkOrders.filter((item) => inPeriod(item.createdAt, period, now) && bucketIndex(item.createdAt, period) === index);
-      const closed = scopedWorkOrders.filter((item) => item.status === "closed" && inPeriod(item.closedAt || item.updatedAt, period, now) && bucketIndex(item.closedAt || item.updatedAt, period) === index);
+      const created = scopedWorkOrders.filter((item) => {
+        const date = reportingDate(item);
+        return date && bucketIndex(date, period) === index;
+      });
+      const closed = created.filter((item) => item.status === "closed");
       return {
         label,
         standard: created.filter((item) => item.type === "maintenance").length,
@@ -505,8 +521,10 @@ export function PerformancePage() {
           </div>
           <div className="performance-report-label" key={reportingLabel} aria-live="polite">{reportingLabel}</div>
           <p>{activeHeader.subtitle}</p>
+          <div className="performance-header-signal" aria-hidden="true"><span /><span /><span /><span /><span /></div>
+          <div className="performance-header-controls">
           {showWorkOrders ? <div className="performance-department-picker">
-            <div><strong>Work order department</strong><span>{focus === "all" ? "Choose the department for work order metrics below." : "Choose which department’s work orders to analyse."}</span></div>
+            <div><strong>Work order department</strong></div>
             <label htmlFor="performance-department"><span>Department</span>
               <select id="performance-department" value={department} onChange={(event) => updateReport({ department: event.target.value, section: "all" })}>
                 <option value="Production">Production</option>
@@ -515,13 +533,13 @@ export function PerformancePage() {
               </select>
             </label>
           </div> : null}
-          <div className="performance-header-signal" aria-hidden="true"><span /><span /><span /><span /><span /></div>
           <div className="performance-period-tabs" data-period={period} role="tablist" aria-label="Performance reporting period">
             {(["daily", "monthly", "yearly"] as Period[]).map((item) => (
               <button key={item} type="button" role="tab" aria-selected={period === item} className={period === item ? "active" : ""} onClick={() => updateReport({ period: item, ...(item === "monthly" ? { range: "period" } : {}) })}>
                 {item[0].toUpperCase() + item.slice(1)}
               </button>
             ))}
+          </div>
           </div>
           {period === "monthly" ? <div className="performance-month-picker">
             <div className="performance-month-heading">
@@ -557,7 +575,7 @@ export function PerformancePage() {
         {showWorkOrders ? <>
           <Kpi icon={Wrench} label="WO Closure (Close)" value={`${woStats.rate}%`} note={`${woStats.closed} of ${woStats.total} closed`} tone="maroon" onClick={() => showOrders("closed")} />
           <Kpi icon={CheckCircle2} label="WO Resolved (Resolved)" value={`${woStats.resolvedRate}%`} note={`${woStats.resolved} of ${woStats.total} resolved`} tone="teal" onClick={() => showOrders("resolved")} />
-          <Kpi icon={Activity} label="Total work orders" value={String(woStats.total)} note="Created, closed or resolved in period" tone="navy" onClick={() => showOrders("all")} />
+          <Kpi icon={Activity} label="Total work orders" value={String(woStats.total)} note="Closed, resolved or open in reporting period" tone="navy" onClick={() => showOrders("all")} />
           <Kpi icon={TrendingUp} label="Standard maintenance" value={`${woStats.standardRate}%`} note="Close rate" tone="teal" onClick={() => showOrders("maintenance")} />
           <Kpi icon={Sparkles} label="KAIZEN" value={`${woStats.kaizenRate}%`} note="Improvement close rate" tone="gold" onClick={() => showOrders("kaizen")} />
         </> : null}
@@ -577,7 +595,7 @@ export function PerformancePage() {
                   {departmentSections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
                 </select>
               </label>
-              <p>{departmentLabel} work order metrics for {reportingLabel} use the selected section. Not closed includes resolved and cancelled orders.</p>
+              <p>{departmentLabel} · {reportingLabel}: closed orders follow Closed date; resolved orders follow Resolved date; other statuses follow Work order date. Not closed shows the backlog from all dates.</p>
             </div>
             <div className="performance-table-card">
               <div className="performance-card-heading"><div><strong>Work order analysis by section · {reportingLabel}</strong><span>Period totals and outstanding work from all dates. Select a section to view its work orders.</span></div></div>
@@ -590,7 +608,7 @@ export function PerformancePage() {
               </table></div>
             </div>
             <div className="performance-table-card" id="performance-work-orders">
-              <div className="performance-card-heading"><div><strong>{orderView === "not-closed" ? "Not closed work orders" : "Work order details"}</strong><span>{tableOrders.length} work orders · {tableRange === "all" ? "All dates, including older outstanding work" : reportingLabel} · oldest first</span><span>Click a work order row to open its details. Scroll the table horizontally to see all columns.</span></div></div>
+              <div className="performance-card-heading"><div><strong>{orderView === "not-closed" ? "Not closed work orders" : orderView === "closed" ? "Closed work orders" : "Work order details"}</strong><span>{tableOrders.length} work orders · {tableRange === "all" ? "All dates" : reportingLabel} · {orderView === "closed" ? "by Closed date" : orderView === "resolved" ? "by Resolved date" : orderView === "not-closed" ? "outstanding backlog" : "by reporting date"} · oldest first</span><span>Click a work order row to open its details. Scroll the table horizontally to see all columns.</span></div></div>
               <div className="performance-order-controls">
                 <label htmlFor="performance-order-status">Show
                   <select id="performance-order-status" value={orderView} onChange={(event) => setOrderView(event.target.value as OrderView)}>
@@ -598,13 +616,13 @@ export function PerformancePage() {
                   </select>
                 </label>
                 <label htmlFor="performance-order-range">Dates
-                  <select id="performance-order-range" value={tableRange} onChange={(event) => setTableRange(event.target.value as "all" | "period")}>
+                  <select id="performance-order-range" value={tableRange} disabled={orderView === "not-closed"} onChange={(event) => setTableRange(event.target.value as "all" | "period")}>
                     <option value="all">All dates</option><option value="period">{reportingLabel}</option>
                   </select>
                 </label>
               </div>
               <div className="performance-table-scroll" role="region" aria-label="Work order details; scroll horizontally to see all columns" tabIndex={0}><table>
-                <thead><tr><th>Work order ID</th><th>Date</th><th>Section</th><th>Issue</th><th>Status</th></tr></thead>
+                <thead><tr><th>Work order ID</th><th>Work order date</th><th>Closed date</th><th>Section</th><th>Issue</th><th>Status</th></tr></thead>
                 <tbody>{tableOrders.length ? tableOrders.map((item) => <tr key={item.id} className={`performance-order-row ${item.status !== "closed" ? "performance-unclosed-row" : ""}`} title={`Open work order ${item.number}`} onClick={(event) => {
                   if ((event.target as HTMLElement).closest("a, button") || window.getSelection()?.toString()) return;
                   const path = `/work-orders/${item.id}`;
@@ -612,13 +630,14 @@ export function PerformancePage() {
                 }}>
                   <td><Link to={`/work-orders/${item.id}`}>{item.number}</Link></td>
                   <td>{new Date(item.workDate || item.createdAt).toLocaleDateString("en-MY", { day: "2-digit", month: "short", year: "numeric" })}</td>
+                  <td>{item.status === "closed" ? item.closedAt ? new Date(item.closedAt).toLocaleDateString("en-MY", { day: "2-digit", month: "short", year: "numeric" }) : "Not recorded" : "—"}</td>
                   <td>{sections.find((section) => section.id === item.sectionId)?.name || item.area || "Unassigned"}</td>
                   <td>{item.issueDescription || item.description || item.title}</td><td>{workOrderStatusLabels[item.status]}{item.status !== "closed" ? <small className="performance-not-closed-label">Not closed</small> : null}</td>
-                </tr>) : <tr><td colSpan={5}><div className="performance-clear-state"><CheckCircle2 size={18} />No work orders match this view.</div></td></tr>}</tbody>
+                </tr>) : <tr><td colSpan={6}><div className="performance-clear-state"><CheckCircle2 size={18} />No work orders match this view.</div></td></tr>}</tbody>
               </table></div>
             </div>
             <div className="performance-chart-grid performance-chart-grid-wide">
-              <ChartCard title="Created vs closed" subtitle="Standard and KAIZEN intake with close-out rate" className="chart-wide">
+              <ChartCard title="Work orders vs closed" subtitle="Closed date for closures; resolved date for resolutions; work order date for other statuses" className="chart-wide">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={throughputData} margin={{ top: 8, right: 8, left: -22, bottom: 0 }}>
                     <CartesianGrid stroke="#eee6e7" strokeDasharray="3 5" vertical={false} />
