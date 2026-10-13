@@ -9113,6 +9113,50 @@ button.attachment-tile {
   background: radial-gradient(circle at 83% 10%, rgba(225, 184, 103, .3), transparent 25rem), linear-gradient(125deg, #430b15, #851923 47%, #ae3e36);
 }
 
+.performance-hero-all {
+  background: radial-gradient(circle at 83% 10%, rgba(225, 184, 103, .25), transparent 25rem), linear-gradient(125deg, #172332, #304754 47%, #49616a);
+}
+
+.performance-hero-work-orders .performance-header-icon {
+  color: #f5d697;
+  border-color: rgba(245, 214, 151, .5);
+  background: rgba(245, 214, 151, .15);
+}
+
+.performance-department-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 20px;
+  border: 1px solid rgba(255, 255, 255, .3);
+  border-left: 4px solid #f5d697;
+  border-radius: 12px;
+  padding: 16px 18px;
+  background: rgba(255, 255, 255, .12);
+}
+
+.performance-department-picker > div { display: grid; gap: 5px; min-width: 0; }
+.performance-department-picker strong { color: #fff; font-size: 16px; }
+.performance-department-picker > div > span { color: rgba(255, 255, 255, .8); font-size: 12px; line-height: 1.5; }
+.performance-department-picker label { display: grid; gap: 6px; flex: 1 1 220px; max-width: 320px; min-width: 0; }
+.performance-department-picker label > span { color: #f5d697; font-size: 12px; font-weight: 800; }
+.performance-department-picker select {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  border: 1px solid #fff;
+  border-radius: 9px;
+  padding: 10px 14px;
+  background: #fff;
+  color: #6b111a;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+}
+.performance-department-picker select:focus-visible { outline: 3px solid #f5d697; outline-offset: 3px; }
+
 .performance-header-intro {
   display: flex;
   align-items: center;

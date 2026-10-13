@@ -2,7 +2,8 @@ import type {
   PmDashboardResponse,
   Section,
   SpareInventoryResponse,
-  WorkOrder
+  WorkOrder,
+  WorkOrderDepartment
 } from "@sugi-cmms/shared";
 import {
   Activity,
@@ -23,7 +24,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { workOrderStatusLabels } from "@sugi-cmms/shared";
+import { workOrderDepartments, workOrderStatusLabels } from "@sugi-cmms/shared";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
 import {
   Area,
@@ -164,6 +165,10 @@ export function PerformancePage() {
     }, { replace: true });
   }
   const focus = focusOptions.find((option) => option.id === params.get("focus"))?.id ?? "all";
+  const departmentParam = params.get("department");
+  const department: WorkOrderDepartment | "all" = departmentParam === "all" ? "all"
+    : workOrderDepartments.includes(departmentParam as WorkOrderDepartment) ? departmentParam as WorkOrderDepartment : "Production";
+  const departmentLabel = department === "all" ? "All departments" : department;
   const setFocus = (value: Focus) => setParams((previous) => {
     const next = new URLSearchParams(previous);
     if (value === "all") next.delete("focus"); else next.set("focus", value);
@@ -234,13 +239,21 @@ export function PerformancePage() {
     fallbackMs: 30000
   });
 
+  const departmentWorkOrders = useMemo(
+    () => workOrders.filter((item) => department === "all" || item.responsibleDepartment === department),
+    [workOrders, department]
+  );
+  const departmentSections = useMemo(
+    () => sections.filter((section) => department === "all" || section.department === department),
+    [sections, department]
+  );
   const sectionWorkOrders = useMemo(
-    () => workOrders.filter((item) => sectionId === "all" || item.sectionId === sectionId),
-    [workOrders, sectionId]
+    () => departmentWorkOrders.filter((item) => sectionId === "all" || item.sectionId === sectionId),
+    [departmentWorkOrders, sectionId]
   );
   const periodWorkOrders = useMemo(
-    () => workOrders.filter((item) => inPeriod(item.createdAt, period, now) || (item.status === "closed" && inPeriod(item.closedAt || item.updatedAt, period, now)) || (item.status === "resolved" && inPeriod(item.resolvedAt || item.updatedAt, period, now))),
-    [workOrders, period, now]
+    () => departmentWorkOrders.filter((item) => inPeriod(item.createdAt, period, now) || (item.status === "closed" && inPeriod(item.closedAt || item.updatedAt, period, now)) || (item.status === "resolved" && inPeriod(item.resolvedAt || item.updatedAt, period, now))),
+    [departmentWorkOrders, period, now]
   );
   const scopedWorkOrders = useMemo(
     () => periodWorkOrders.filter((item) => sectionId === "all" || item.sectionId === sectionId),
@@ -284,12 +297,12 @@ export function PerformancePage() {
     }).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }, [sectionWorkOrders, scopedWorkOrders, tableRange, orderView]);
 
-  const sectionAnalysis = useMemo(() => sections.map((section) => {
+  const sectionAnalysis = useMemo(() => departmentSections.map((section) => {
     const records = periodWorkOrders.filter((item) => item.sectionId === section.id);
     return { section, total: records.length, closed: records.filter((item) => item.status === "closed").length,
       resolved: records.filter((item) => item.status === "resolved").length,
-      outstanding: workOrders.filter((item) => item.sectionId === section.id && item.status !== "closed").length };
-  }), [sections, periodWorkOrders, workOrders]);
+      outstanding: departmentWorkOrders.filter((item) => item.sectionId === section.id && item.status !== "closed").length };
+  }), [departmentSections, periodWorkOrders, departmentWorkOrders]);
 
   function showOrders(view: OrderView) {
     updateReport({ view, range: "period", focus: "work-orders" });
@@ -486,12 +499,22 @@ export function PerformancePage() {
           <div className="performance-header-intro">
             <div className="performance-header-icon" aria-hidden="true"><HeaderIcon size={30} /></div>
             <div>
-              <div className="performance-eyebrow">{activePeriod.eyebrow}</div>
-              <h1>{activeHeader.title}</h1>
+              <div className="performance-eyebrow">{focus === "all" ? "Maintenance overview" : focus === "work-orders" ? "Work order analysis" : activePeriod.eyebrow}</div>
+              <h1>{focus === "work-orders" ? department === "all" ? "All Work Orders" : `${department} Work Orders` : activeHeader.title}</h1>
             </div>
           </div>
           <div className="performance-report-label" key={reportingLabel} aria-live="polite">{reportingLabel}</div>
           <p>{activeHeader.subtitle}</p>
+          {showWorkOrders ? <div className="performance-department-picker">
+            <div><strong>Work order department</strong><span>{focus === "all" ? "Choose the department for work order metrics below." : "Choose which department’s work orders to analyse."}</span></div>
+            <label htmlFor="performance-department"><span>Department</span>
+              <select id="performance-department" value={department} onChange={(event) => updateReport({ department: event.target.value, section: "all" })}>
+                <option value="Production">Production</option>
+                {workOrderDepartments.filter((item) => item !== "Production").map((item) => <option key={item} value={item}>{item}</option>)}
+                <option value="all">All departments</option>
+              </select>
+            </label>
+          </div> : null}
           <div className="performance-header-signal" aria-hidden="true"><span /><span /><span /><span /><span /></div>
           <div className="performance-period-tabs" data-period={period} role="tablist" aria-label="Performance reporting period">
             {(["daily", "monthly", "yearly"] as Period[]).map((item) => (
@@ -546,15 +569,15 @@ export function PerformancePage() {
       <div className="performance-view-stage" key={`content-${focus}`}>
         {showWorkOrders ? (
           <section className="performance-section">
-            <SectionHeading icon={Wrench} eyebrow="Work order performance" title="Delivery, response and close-out" note={`${woStats.total} work orders in view`} />
+            <SectionHeading icon={Wrench} eyebrow={`${departmentLabel} · Work order performance`} title="Delivery, response and close-out" note={`${woStats.total} work orders in view`} />
             <div className="performance-order-controls">
               <label htmlFor="performance-section">Section
                 <select id="performance-section" value={sectionId} onChange={(event) => setSectionId(event.target.value)}>
                   <option value="all">All sections</option>
-                  {sections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
+                  {departmentSections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
                 </select>
               </label>
-              <p>Work order metrics for {reportingLabel} use the selected section. Not closed includes resolved and cancelled orders.</p>
+              <p>{departmentLabel} work order metrics for {reportingLabel} use the selected section. Not closed includes resolved and cancelled orders.</p>
             </div>
             <div className="performance-table-card">
               <div className="performance-card-heading"><div><strong>Work order analysis by section · {reportingLabel}</strong><span>Period totals and outstanding work from all dates. Select a section to view its work orders.</span></div></div>
