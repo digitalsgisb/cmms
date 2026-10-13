@@ -22,7 +22,7 @@ import {
   Wrench
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { workOrderStatusLabels } from "@sugi-cmms/shared";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
 import {
@@ -90,6 +90,13 @@ const focusOptions: Array<{ id: Focus; label: string }> = [
   { id: "pm", label: "PM" }
 ];
 
+const focusHeaders: Record<Focus, { title: string; subtitle: string; icon: typeof Gauge }> = {
+  all: { title: "Performance Overview", subtitle: "Maintenance delivery, spare part readiness and preventive care in one view.", icon: Gauge },
+  "work-orders": { title: "Work Order Performance", subtitle: "Track closure, resolved work and outstanding issues across Conversion, Roll Making and other sections.", icon: Wrench },
+  spares: { title: "Spare Part Performance", subtitle: "Review parts availability, stock movement and inventory risk.", icon: Boxes },
+  pm: { title: "PM Performance", subtitle: "Review preventive maintenance compliance, overdue schedules and technician workload.", icon: ShieldCheck }
+};
+
 function percent(value: number, total: number) {
   return total > 0 ? Math.round((value / total) * 100) : 0;
 }
@@ -145,18 +152,31 @@ function chartTooltipStyle() {
 
 export function PerformancePage() {
   const { currentUser } = useCurrentUser();
-  const [period, setPeriod] = useState<Period>("daily");
+  const navigate = useNavigate();
+  const [reportDate] = useState(() => new Date());
   const [params, setParams] = useSearchParams();
+  const period: Period = params.get("period") === "monthly" ? "monthly" : params.get("period") === "yearly" ? "yearly" : "daily";
+  function updateReport(patch: Record<string, string>) {
+    setParams((previous) => {
+      const next = new URLSearchParams(previous);
+      for (const [key, value] of Object.entries(patch)) next.set(key, value);
+      return next;
+    }, { replace: true });
+  }
   const focus = focusOptions.find((option) => option.id === params.get("focus"))?.id ?? "all";
   const setFocus = (value: Focus) => setParams((previous) => {
     const next = new URLSearchParams(previous);
     if (value === "all") next.delete("focus"); else next.set("focus", value);
     return next;
   });
-  const [sectionId, setSectionId] = useState("all");
+  const sectionId = params.get("section") || "all";
+  const setSectionId = (value: string) => updateReport({ section: value });
   const [sections, setSections] = useState<Section[]>([]);
-  const [orderView, setOrderView] = useState<OrderView>("not-closed");
-  const [tableRange, setTableRange] = useState<"all" | "period">("all");
+  const viewParam = params.get("view");
+  const orderView: OrderView = ["all", "closed", "resolved", "maintenance", "kaizen"].includes(viewParam || "") ? viewParam as OrderView : "not-closed";
+  const setOrderView = (value: OrderView) => updateReport({ view: value });
+  const tableRange = params.get("range") === "period" ? "period" : "all";
+  const setTableRange = (value: "all" | "period") => updateReport({ range: value });
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [inventory, setInventory] = useState<SpareInventoryResponse | null>(null);
   const [pm, setPm] = useState<PmDashboardResponse | null>(null);
@@ -165,9 +185,10 @@ export function PerformancePage() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [live, setLive] = useState(true);
-  const [reportDate] = useState(() => new Date());
-  const [selectedMonth, setSelectedMonth] = useState(() => reportDate.getMonth());
-  const [selectedYear, setSelectedYear] = useState(() => reportDate.getFullYear());
+  const monthParam = params.get("month") || "";
+  const validMonth = /^(19|20)\d{2}-(0[1-9]|1[0-2])$/.test(monthParam);
+  const selectedMonth = validMonth ? Number(monthParam.slice(5)) - 1 : reportDate.getMonth();
+  const selectedYear = validMonth ? Number(monthParam.slice(0, 4)) : reportDate.getFullYear();
   const now = useMemo(() => period === "monthly" ? new Date(selectedYear, selectedMonth, 1) : reportDate, [period, selectedYear, selectedMonth, reportDate]);
   const reportYear = now.getFullYear();
   const monthLabel = `${monthNames[selectedMonth]} ${selectedYear}`;
@@ -271,9 +292,7 @@ export function PerformancePage() {
   }), [sections, periodWorkOrders, workOrders]);
 
   function showOrders(view: OrderView) {
-    setOrderView(view);
-    setTableRange("period");
-    setFocus("work-orders");
+    updateReport({ view, range: "period", focus: "work-orders" });
     window.setTimeout(() => document.getElementById("performance-work-orders")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   }
 
@@ -454,20 +473,29 @@ export function PerformancePage() {
   const showSpares = focus === "all" || focus === "spares";
   const showPm = focus === "all" || focus === "pm";
   const activePeriod = periodCopy[period];
+  const activeHeader = focusHeaders[focus];
+  const HeaderIcon = activeHeader.icon;
 
   if (loading && !lastUpdated) return <div className="ux-recovery" role="status"><h1>Performance</h1><p>Loading performance data…</p></div>;
 
   return (
     <section className="performance-page page-stack">
       {loadError ? <div className="ux-load-error" role="alert"><span>{loadError}</span><button className="secondary-action" type="button" onClick={() => void loadPerformance(true)}>Try again</button></div> : null}
-      <header className="performance-hero">
+      <header className={`performance-hero performance-hero-${focus}`} key={focus}>
         <div className="performance-hero-copy">
-          <div className="performance-eyebrow"><Sparkles size={14} /> {activePeriod.eyebrow}</div>
-          <h1>{period === "monthly" ? `${monthLabel} performance` : activePeriod.title}</h1>
-          <p>{activePeriod.subtitle}</p>
+          <div className="performance-header-intro">
+            <div className="performance-header-icon" aria-hidden="true"><HeaderIcon size={30} /></div>
+            <div>
+              <div className="performance-eyebrow">{activePeriod.eyebrow}</div>
+              <h1>{activeHeader.title}</h1>
+            </div>
+          </div>
+          <div className="performance-report-label" key={reportingLabel} aria-live="polite">{reportingLabel}</div>
+          <p>{activeHeader.subtitle}</p>
+          <div className="performance-header-signal" aria-hidden="true"><span /><span /><span /><span /><span /></div>
           <div className="performance-period-tabs" data-period={period} role="tablist" aria-label="Performance reporting period">
             {(["daily", "monthly", "yearly"] as Period[]).map((item) => (
-              <button key={item} type="button" role="tab" aria-selected={period === item} className={period === item ? "active" : ""} onClick={() => { setPeriod(item); if (item === "monthly") setTableRange("period"); }}>
+              <button key={item} type="button" role="tab" aria-selected={period === item} className={period === item ? "active" : ""} onClick={() => updateReport({ period: item, ...(item === "monthly" ? { range: "period" } : {}) })}>
                 {item[0].toUpperCase() + item.slice(1)}
               </button>
             ))}
@@ -476,13 +504,13 @@ export function PerformancePage() {
             <div className="performance-month-heading">
               <strong aria-live="polite">{monthLabel}</strong>
               <label htmlFor="performance-report-year">Year
-                <select id="performance-report-year" value={selectedYear} onChange={(event) => { setSelectedYear(Number(event.target.value)); setTableRange("period"); }}>
+                <select id="performance-report-year" value={selectedYear} onChange={(event) => updateReport({ month: `${event.target.value}-${String(selectedMonth + 1).padStart(2, "0")}`, range: "period" })}>
                   {availableYears.map((year) => <option key={year} value={year}>{year}</option>)}
                 </select>
               </label>
             </div>
             <div className="performance-month-buttons" role="group" aria-label="Choose reporting month">
-              {monthNames.map((month, index) => <button key={month} type="button" className={selectedMonth === index ? "active" : ""} aria-label={`${month} ${selectedYear}`} aria-pressed={selectedMonth === index} onClick={() => { setSelectedMonth(index); setTableRange("period"); }}>{month.slice(0, 3)}</button>)}
+              {monthNames.map((month, index) => <button key={month} type="button" className={selectedMonth === index ? "active" : ""} aria-label={`${month} ${selectedYear}`} aria-pressed={selectedMonth === index} onClick={() => updateReport({ month: `${selectedYear}-${String(index + 1).padStart(2, "0")}`, range: "period" })}>{month.slice(0, 3)}</button>)}
             </div>
           </div> : null}
         </div>
@@ -515,19 +543,7 @@ export function PerformancePage() {
         <Kpi icon={AlertTriangle} label="Active exceptions" value={String(exceptions.length)} note="Require meeting action" tone={exceptions.length > 0 ? "red" : "green"} onClick={() => showArea(focus, "performance-exceptions")} />
       </div>
 
-      <div className="performance-focus-bar">
-        <div>
-          <strong>Meeting lens</strong>
-          <span>Focus the room without losing the overall picture.</span>
-        </div>
-        <div role="group" aria-label="Performance area filter">
-          {focusOptions.map((option) => (
-            <button type="button" key={option.id} className={focus === option.id ? "active" : ""} onClick={() => setFocus(option.id)}>{option.label}</button>
-          ))}
-        </div>
-      </div>
-
-      <div className="performance-view-stage">
+      <div className="performance-view-stage" key={focus}>
         {showWorkOrders ? (
           <section className="performance-section">
             <SectionHeading icon={Wrench} eyebrow="Work order performance" title="Delivery, response and close-out" note={`${woStats.total} work orders in view`} />
@@ -542,7 +558,7 @@ export function PerformancePage() {
             </div>
             <div className="performance-table-card">
               <div className="performance-card-heading"><div><strong>Work order analysis by section · {reportingLabel}</strong><span>Period totals and outstanding work from all dates. Select a section to view its work orders.</span></div></div>
-              <div className="performance-table-scroll"><table>
+              <div className="performance-table-scroll" role="region" aria-label="Work order analysis by section" tabIndex={0}><table>
                 <thead><tr><th>Section</th><th>Total work orders</th><th>WO Closure (Close)</th><th>WO Resolved (Resolved)</th><th>Not closed · all dates</th></tr></thead>
                 <tbody>{sectionAnalysis.map((row) => <tr key={row.section.id}>
                   <td><button className="performance-section-link" type="button" onClick={() => setSectionId(row.section.id)} aria-pressed={sectionId === row.section.id}>{row.section.name}</button></td>
@@ -551,7 +567,7 @@ export function PerformancePage() {
               </table></div>
             </div>
             <div className="performance-table-card" id="performance-work-orders">
-              <div className="performance-card-heading"><div><strong>{orderView === "not-closed" ? "Not closed work orders" : "Work order details"}</strong><span>{tableOrders.length} work orders · {tableRange === "all" ? "All dates, including older outstanding work" : reportingLabel} · oldest first</span></div></div>
+              <div className="performance-card-heading"><div><strong>{orderView === "not-closed" ? "Not closed work orders" : "Work order details"}</strong><span>{tableOrders.length} work orders · {tableRange === "all" ? "All dates, including older outstanding work" : reportingLabel} · oldest first</span><span>Click a work order row to open its details. Scroll the table horizontally to see all columns.</span></div></div>
               <div className="performance-order-controls">
                 <label htmlFor="performance-order-status">Show
                   <select id="performance-order-status" value={orderView} onChange={(event) => setOrderView(event.target.value as OrderView)}>
@@ -564,9 +580,13 @@ export function PerformancePage() {
                   </select>
                 </label>
               </div>
-              <div className="performance-table-scroll"><table>
+              <div className="performance-table-scroll" role="region" aria-label="Work order details; scroll horizontally to see all columns" tabIndex={0}><table>
                 <thead><tr><th>Work order ID</th><th>Date</th><th>Section</th><th>Issue</th><th>Status</th></tr></thead>
-                <tbody>{tableOrders.length ? tableOrders.map((item) => <tr key={item.id} className={item.status !== "closed" ? "performance-unclosed-row" : ""}>
+                <tbody>{tableOrders.length ? tableOrders.map((item) => <tr key={item.id} className={`performance-order-row ${item.status !== "closed" ? "performance-unclosed-row" : ""}`} title={`Open work order ${item.number}`} onClick={(event) => {
+                  if ((event.target as HTMLElement).closest("a, button") || window.getSelection()?.toString()) return;
+                  const path = `/work-orders/${item.id}`;
+                  if (event.ctrlKey || event.metaKey) window.open(path, "_blank", "noopener,noreferrer"); else navigate(path);
+                }}>
                   <td><Link to={`/work-orders/${item.id}`}>{item.number}</Link></td>
                   <td>{new Date(item.workDate || item.createdAt).toLocaleDateString("en-MY", { day: "2-digit", month: "short", year: "numeric" })}</td>
                   <td>{sections.find((section) => section.id === item.sectionId)?.name || item.area || "Unassigned"}</td>

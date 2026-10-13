@@ -13,10 +13,9 @@ initInstallPromptListener();
 
 function PlantScopedApp() {
   const location = useLocation();
-  // Leaving combined reports or the cross-plant user directory must discard
-  // cached work orders/users before the next operational screen can render.
-  const scope = `${selectedPlant()}:${location.pathname === "/users" ? "users" : "operations"}`;
-  return <UserProvider key={scope}><App /></UserProvider>;
+  // Plant changes discard operational caches; directory navigation keeps the
+  // authenticated app mounted and refreshes only the visible user directory.
+  return <UserProvider key={selectedPlant()} managementView={location.pathname === "/users"}><App /></UserProvider>;
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

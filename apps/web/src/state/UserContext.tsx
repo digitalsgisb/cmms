@@ -25,9 +25,13 @@ function recordAppOpen(user: User) {
   void api.recordAppOpen(`${appOpenId}_${user.id}`).catch((error) => console.warn("Unable to record app open.", error));
 }
 
-export function UserProvider({ children }: { children: React.ReactNode }) {
+export function UserProvider({ children, managementView = false }: { children: React.ReactNode; managementView?: boolean }) {
   const [sessionError, setSessionError] = useState("");
   const [users, setUsers] = useState<User[]>([]);
+  const [usersManagementView, setUsersManagementView] = useState(managementView);
+  const managementViewRef = useRef(managementView);
+  managementViewRef.current = managementView;
+  const usersRequestIdRef = useRef(0);
   const [currentUserId, setCurrentUserIdState] = useState(() => localStorage.getItem(sessionUserKey) || "");
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
@@ -35,11 +39,16 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const workOrdersRequestRef = useRef<Promise<WorkOrder[]> | null>(null);
 
   async function refreshUsers() {
-    const nextUsers = await api.users();
+    const requestedView = managementViewRef.current;
+    const requestId = ++usersRequestIdRef.current;
+    const nextUsers = await api.users(requestedView);
+    if (requestedView !== managementViewRef.current || requestId !== usersRequestIdRef.current) return;
     setUsers(nextUsers);
+    setUsersManagementView(requestedView);
   }
 
   function clearLocalSession() {
+    usersRequestIdRef.current += 1;
     localStorage.removeItem(sessionUserKey);
     setCurrentUserIdState("");
     setUsers([]);
@@ -74,6 +83,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }
 
   function logout() {
+    usersRequestIdRef.current += 1;
     api.clearSession();
     localStorage.removeItem(sessionUserKey);
     setCurrentUserIdState("");
@@ -129,6 +139,17 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const isAuthenticated = Boolean(currentUser);
 
   useEffect(() => {
+    if (!currentUserId) return;
+    // Discard the previous directory while keeping the signed-in user available.
+    setUsers((previous) => previous.filter((user) => user.id === currentUserId));
+    setUsersManagementView(managementView);
+    void refreshUsers().catch(console.error);
+  }, [managementView, currentUserId]);
+
+  const visibleUsers = useMemo(() => usersManagementView === managementView
+    ? users : users.filter((user) => user.id === currentUserId), [users, usersManagementView, managementView, currentUserId]);
+
+  useEffect(() => {
     if (!currentUser) {
       setWorkOrders([]);
       setWorkOrdersReady(false);
@@ -157,8 +178,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }, { enabled: Boolean(currentUser), fallbackMs: 30000 });
 
   const value = useMemo<UserContextValue>(
-    () => ({ users, currentUser, loadingUsers, isAuthenticated, login, logout, setCurrentUserId, refreshUsers, workOrders, workOrdersReady, refreshWorkOrders }),
-    [users, currentUser, loadingUsers, isAuthenticated, workOrders, workOrdersReady]
+    () => ({ users: visibleUsers, currentUser, loadingUsers, isAuthenticated, login, logout, setCurrentUserId, refreshUsers, workOrders, workOrdersReady, refreshWorkOrders }),
+    [visibleUsers, currentUser, loadingUsers, isAuthenticated, workOrders, workOrdersReady]
   );
 
   if (sessionError) return <main className="ux-recovery" role="alert"><h1>Connection interrupted</h1><p>{sessionError}</p><button className="primary-action" type="button" onClick={() => window.location.reload()}>Try again</button></main>;

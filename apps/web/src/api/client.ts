@@ -168,7 +168,7 @@ export const api = {
   usageDashboard: () => request<UsageDashboard>("/api/usage/dashboard"),
   hasSession: () => Boolean(localStorage.getItem(authTokenKey)),
   clearSession: () => { void request<void>("/api/auth/logout", { method: "POST" }).catch(() => {}); localStorage.removeItem(authTokenKey); sessionStorage.removeItem("cmms-user-plant-access"); },
-  users: () => request<User[]>(window.location.pathname === "/users" ? "/api/users?manage=1" : "/api/users"),
+  users: (managementView = window.location.pathname === "/users") => request<User[]>(managementView ? "/api/users?manage=1" : "/api/users"),
   usersByRole: (role: User["role"]) => request<User[]>(`/api/users?role=${role}`),
   createUser: (input: { actorId: string; username: string; password: string; name: string; role: User["role"]; department: string; title: string; plantAccess?: User["plantAccess"] }) =>
     request<User>("/api/users", {

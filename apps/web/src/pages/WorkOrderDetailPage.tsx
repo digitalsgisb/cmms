@@ -68,6 +68,10 @@ function findActivityTime(activities: WorkOrderActivity[], action: WorkOrderActi
 export function WorkOrderDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  function goBack() {
+    if (Number(window.history.state?.idx) > 0) navigate(-1);
+    else navigate(currentUser?.role === "technician" ? "/technician" : "/work-orders", { replace: true });
+  }
   const [searchParams, setSearchParams] = useSearchParams();
   const autoOpenedBriefId = useRef("");
   const { currentUser, users } = useCurrentUser();
@@ -502,7 +506,7 @@ export function WorkOrderDetailPage() {
   }
 
   if (!detail) {
-    return loadError ? <section className="ux-recovery" role="alert"><h1>Work order unavailable</h1><p>{loadError}</p><button className="primary-action" type="button" onClick={() => void loadDetail()}>Try again</button><Link to="/work-orders">Back to work orders</Link></section> : <p className="quiet-line" role="status">Loading work order...</p>;
+    return loadError ? <section className="ux-recovery" role="alert"><h1>Work order unavailable</h1><p>{loadError}</p><button className="primary-action" type="button" onClick={() => void loadDetail()}>Try again</button><button className="secondary-action" type="button" onClick={goBack}>Back</button></section> : <p className="quiet-line" role="status">Loading work order...</p>;
   }
 
   const displayWorkflow =
@@ -708,10 +712,10 @@ export function WorkOrderDetailPage() {
           ) : null}
         </div>
         <div className="work-order-command-actions">
-          <Link className="secondary-action" to={isTechnician ? "/technician" : "/work-orders"}>
+          <button className="secondary-action" type="button" onClick={goBack}>
             <ArrowLeft size={17} aria-hidden="true" />
             Back
-          </Link>
+          </button>
           {canEditWorkOrder ? (
             <>
               <button className="secondary-action work-order-edit-link" type="button" disabled={briefLoading} onClick={() => void openBriefEditor()}>

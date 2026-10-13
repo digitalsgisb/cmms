@@ -18,7 +18,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import type { NotificationRecord } from "@sugi-cmms/shared";
 import { api, mediaUrl, selectedPlant } from "../api/client";
@@ -26,6 +26,7 @@ import { PushNotificationControl } from "./PushNotificationControl";
 import { useCurrentUser } from "../state/UserContext";
 import { formatShortDate } from "../utils/format";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
+import { usePageScrollRestoration } from "../hooks/usePageScrollRestoration";
 
 const navItems = [
   { to: "/reports", label: "Reports", icon: Boxes },
@@ -78,6 +79,7 @@ export function Layout() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const location = useLocation();
+  usePageScrollRestoration();
   const isRequester = currentUser?.role === "requester";
   const hasDeveloperAccess = Boolean(currentUser && ["executive", "admin", "developer"].includes(currentUser.role));
   const canUseTechnicianViews = currentUser ? currentUser.role !== "requester" : true;
@@ -131,6 +133,10 @@ export function Layout() {
 
   const unreadCount = useMemo(() => notifications.filter((notification) => !notification.readAt).length, [notifications]);
   const breadcrumb = useMemo(() => {
+    if (performanceActive) {
+      const labels: Record<string, string> = { all: "Performance Overview", "work-orders": "Work Order Performance", spares: "Spare Part Performance", pm: "PM Performance" };
+      return labels[performanceFocus] || labels.all;
+    }
     if (currentUser?.role === "technician" && sparePartsActive) {
       return "Parts";
     }
@@ -156,7 +162,7 @@ export function Layout() {
     ].find((item) => location.pathname.startsWith(item.match));
 
     return current?.label || "Dashboard";
-  }, [currentUser?.role, location.pathname, sparePartsActive]);
+  }, [currentUser?.role, location.pathname, sparePartsActive, performanceActive, performanceFocus]);
 
   const initials = useMemo(() => {
     if (!currentUser) {
@@ -203,20 +209,6 @@ export function Layout() {
     setMobileNavOpen(false);
     setPanelOpen(false);
   }, [location.pathname]);
-
-  useLayoutEffect(() => {
-    if (currentUser?.role === "technician") {
-      technicianMainRef.current?.scrollTo({ top: 0, behavior: "auto" });
-      window.scrollTo({ top: 0, behavior: "auto" });
-    }
-  }, [currentUser?.role, location.pathname]);
-
-  useLayoutEffect(() => {
-    if (currentUser?.role === "executive") {
-      executiveMainRef.current?.scrollTo({ top: 0, behavior: "auto" });
-      window.scrollTo({ top: 0, behavior: "auto" });
-    }
-  }, [currentUser?.role, location.pathname]);
 
   useEffect(() => {
     if (!mobileNavOpen) {
@@ -563,7 +555,11 @@ export function Layout() {
                 { focus: "work-orders", label: "Work Order Performance" },
                 { focus: "spares", label: "Spare Part Performance" },
                 { focus: "pm", label: "PM Performance" }
-              ].map((item) => <Link key={item.focus} to={item.focus === "all" ? "/performance" : `/performance?focus=${item.focus}`} tabIndex={performanceOpen ? 0 : -1} className={performanceActive && performanceFocus === item.focus ? "active" : ""} aria-current={performanceActive && performanceFocus === item.focus ? "page" : undefined} onClick={() => setMobileNavOpen(false)}>{item.label}</Link>)}
+              ].map((item) => {
+                const next = new URLSearchParams(performanceActive ? location.search : "");
+                next.set("focus", item.focus);
+                return <Link key={item.focus} to={`/performance?${next}`} tabIndex={performanceOpen ? 0 : -1} className={performanceActive && performanceFocus === item.focus ? "active" : ""} aria-current={performanceActive && performanceFocus === item.focus ? "page" : undefined} onClick={() => setMobileNavOpen(false)}>{item.label}</Link>;
+              })}
             </div>
           </div> : <span className="nav-item locked" aria-disabled="true"><ChartNoAxesCombined size={18} aria-hidden="true" /><span>Performance</span><LockKeyhole className="nav-lock" size={14} aria-hidden="true" /></span>}
 
