@@ -481,7 +481,7 @@ export function PerformancePage() {
   return (
     <section className="performance-page page-stack">
       {loadError ? <div className="ux-load-error" role="alert"><span>{loadError}</span><button className="secondary-action" type="button" onClick={() => void loadPerformance(true)}>Try again</button></div> : null}
-      <header className={`performance-hero performance-hero-${focus}`} key={focus}>
+      <header className={`performance-hero performance-hero-${focus}`} key={`hero-${focus}`}>
         <div className="performance-hero-copy">
           <div className="performance-header-intro">
             <div className="performance-header-icon" aria-hidden="true"><HeaderIcon size={30} /></div>
@@ -543,7 +543,7 @@ export function PerformancePage() {
         <Kpi icon={AlertTriangle} label="Active exceptions" value={String(exceptions.length)} note="Require meeting action" tone={exceptions.length > 0 ? "red" : "green"} onClick={() => showArea(focus, "performance-exceptions")} />
       </div>
 
-      <div className="performance-view-stage" key={focus}>
+      <div className="performance-view-stage" key={`content-${focus}`}>
         {showWorkOrders ? (
           <section className="performance-section">
             <SectionHeading icon={Wrench} eyebrow="Work order performance" title="Delivery, response and close-out" note={`${woStats.total} work orders in view`} />
