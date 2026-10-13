@@ -112,44 +112,71 @@ const crossMonthOrders = [
   { ...departmentOrders[1], id: "october-closed", workDate: "2026-10-03", closedAt: "2026-11-01T12:00:00" }
 ];
 
-test("October activity follows closed and resolved dates even for September work orders", () => {
+test("October report uses work order date regardless of closure or resolution date", () => {
   const page = renderPage("work-orders", source, { params: { view: "all" }, workOrders: crossMonthOrders });
-  assert.equal(findElements(page, (element) => element.props.label === "Total work orders")[0].props.value, "3");
-  assert.equal(findElements(page, (element) => element.props.label === "WO Closure (Close)")[0].props.value, "33%");
-  assert.deepEqual(findElements(page, (element) => element.props.className?.includes("performance-order-row")).map((row) => row.key), ["october-work", "september-closed", "september-resolved"]);
+  assert.equal(findElements(page, (element) => element.props.label === "Total work orders")[0].props.value, "2");
+  assert.equal(findElements(page, (element) => element.props.label === "WO Closure (Close)")[0].props.value, "50%");
+  assert.deepEqual(findElements(page, (element) => element.props.className?.includes("performance-order-row")).map((row) => row.key), ["october-work", "october-closed"]);
   const chart = findElements(page, (element) => element.props.data?.[0]?.label === "Week 1" && "closeRate" in element.props.data[0])[0];
-  assert.equal(chart.props.data.reduce((sum, bucket) => sum + bucket.standard, 0), 3);
+  assert.equal(chart.props.data.reduce((sum, bucket) => sum + bucket.standard, 0), 2);
   assert.equal(chart.props.data.reduce((sum, bucket) => sum + bucket.closed, 0), 1);
 });
 
-test("default October view shows only October closures, and November closures belong to November", () => {
-  for (const [month, expected] of [["2026-10", ["september-closed"]], ["2026-11", ["october-closed"]], ["2026-09", []]]) {
+test("closed work orders are grouped by work order month", () => {
+  for (const [month, expected] of [["2026-10", ["october-closed"]], ["2026-11", []], ["2026-09", ["september-closed"]]]) {
     const page = renderPage("work-orders", source, { params: { month }, workOrders: crossMonthOrders });
     assert.deepEqual(findElements(page, (element) => element.props.className?.includes("performance-order-row")).map((row) => row.key), expected);
   }
 });
 
-test("year selector includes historical closure years", () => {
-  const page = renderPage("work-orders", source, { workOrders: [{ ...departmentOrders[1], closedAt: "2012-09-25T12:00:00" }] });
+test("year selector includes historical work order years", () => {
+  const page = renderPage("work-orders", source, { workOrders: [{ ...departmentOrders[1], workDate: "2012-09-25" }] });
   const years = findElements(page, (element) => element.props.id === "performance-report-year")[0];
   assert.ok(findElements(years, (element) => element.type === "option").some((option) => option.props.value === 2012));
 });
 
-test("older work orders are included only when All dates is explicitly selected", () => {
+test("legacy All dates links cannot override the chosen month", () => {
   const page = renderPage("work-orders", source, { params: { view: "all", range: "all" }, workOrders: crossMonthOrders });
-  assert.equal(findElements(page, (element) => element.props.className?.includes("performance-order-row")).length, 4);
-  assert.equal(findElements(page, (element) => element.props.label === "Total work orders")[0].props.value, "3");
+  assert.equal(findElements(page, (element) => element.props.className?.includes("performance-order-row")).length, 2);
+  assert.equal(findElements(page, (element) => element.props.label === "Total work orders")[0].props.value, "2");
+  assert.equal(findElements(page, (element) => element.props.id === "performance-order-range").length, 0);
+  const headers = findElements(page, (element) => element.type === "th").map((element) => element.props.children);
+  assert.ok(!headers.includes("Closed date"));
+  assert.ok(!headers.includes("Not closed · all dates"));
 });
 
-test("Not closed backlog retains older resolved and open orders regardless of selected month", () => {
+test("Not closed table and section backlog use the same selected month", () => {
   const page = renderPage("work-orders", source, { params: { month: "2026-11", view: "not-closed", range: "period" }, workOrders: crossMonthOrders });
-  assert.deepEqual(findElements(page, (element) => element.props.className?.includes("performance-order-row")).map((row) => row.key), ["september-resolved", "october-work"]);
-  assert.equal(findElements(page, (element) => element.props.id === "performance-order-range")[0].props.value, "all");
+  assert.equal(findElements(page, (element) => element.props.className?.includes("performance-order-row")).length, 0);
+  const october = renderPage("work-orders", source, { params: { view: "not-closed" }, workOrders: crossMonthOrders, sections: departmentSections });
+  assert.deepEqual(findElements(october, (element) => element.props.className?.includes("performance-order-row")).map((row) => row.key), ["october-work"]);
+  const conversion = findElements(october, (element) => element.type === "tr" && element.key === "conversion")[0];
+  assert.equal(conversion.props.children[4].props.children, 1);
 });
 
-test("missing closed dates are not replaced with work order or last-updated dates", () => {
+test("closed orders without a closed date remain visible by their work order date", () => {
   const page = renderPage("work-orders", source, { workOrders: [{ ...departmentOrders[1], closedAt: null }] });
-  assert.equal(findElements(page, (element) => element.props.className?.includes("performance-order-row")).length, 0);
+  assert.equal(findElements(page, (element) => element.props.className?.includes("performance-order-row")).length, 1);
+});
+
+test("empty work order percentages are 100% while counts remain zero", () => {
+  const page = renderPage("all", source, { sections: departmentSections });
+  for (const label of ["WO Closure (Close)", "WO Resolved (Resolved)", "Standard maintenance", "KAIZEN"]) {
+    assert.equal(findElements(page, (element) => element.props.label === label)[0].props.value, "100%");
+  }
+  assert.equal(findElements(page, (element) => element.props.label === "Total work orders")[0].props.value, "0");
+  const conversion = findElements(page, (element) => element.type === "tr" && element.key === "conversion")[0];
+  assert.equal(conversion.props.children[1].props.children, 0);
+  assert.equal(conversion.props.children[2].props.children.join(""), "0 (100%)");
+  assert.equal(conversion.props.children[3].props.children.join(""), "0 (100%)");
+  assert.equal(conversion.props.children[4].props.children, 0);
+  assert.equal(findElements(page, (element) => element.props.label === "PM compliance")[0].props.value, "0%");
+});
+
+test("existing unclosed work still reports 0% closure rather than 100%", () => {
+  const page = renderPage("work-orders", source, { workOrders: [departmentOrders[0], { ...departmentOrders[0], id: "resolved", status: "resolved" }] });
+  assert.equal(findElements(page, (element) => element.props.label === "WO Closure (Close)")[0].props.value, "0%");
+  assert.equal(findElements(page, (element) => element.props.label === "WO Resolved (Resolved)")[0].props.value, "50%");
 });
 
 test("regression check detects the original conflicting header/content keys", () => {
