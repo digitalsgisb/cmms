@@ -1,4 +1,4 @@
-import { BellRing, CheckCircle2, ChevronRight, History, ImagePlus, PackageOpen, Search, ShieldCheck, UsersRound, Wrench } from "lucide-react";
+import { BellRing, CheckCircle2, ChevronRight, History, ImagePlus, PackageOpen, PauseCircle, Search, ShieldCheck, UsersRound, Wrench } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent } from "react";
 import { createPortal } from "react-dom";
@@ -395,11 +395,11 @@ export function TechnicianPage() {
   function renderJobCard(workOrder: WorkOrder, mode: "mine" | "available" | "team") {
     const isMine = mode === "mine";
     const isClaimable = mode === "available" && currentUser?.role === "technician";
-    const canStart = isMine && (["acknowledged", "returned", "pending_material"].includes(workOrder.status) || workOrder.status === "open");
+    const canStart = isMine && (["acknowledged", "returned", "pending_material", "on_hold"].includes(workOrder.status) || workOrder.status === "open");
     const pendingVisualStatus = busyId === workOrder.id
       ? busyAction === "claim"
         ? "acknowledged"
-        : ["acknowledged", "in_progress", "pending_material", "returned", "resolved", "closed", "cancelled"].includes(busyAction)
+        : ["acknowledged", "in_progress", "pending_material", "on_hold", "returned", "resolved", "closed", "cancelled"].includes(busyAction)
           ? busyAction as WorkOrderStatus
           : null
       : null;
@@ -467,11 +467,13 @@ export function TechnicianPage() {
         ) : isMine ? (
           <div key={workOrder.status} className="quick-actions">
             {canStart ? (
-              <ActionButton type="button" icon={Wrench} tone="start" busy={submitting && busyId === workOrder.id && busyAction === "in_progress"} busyLabel="Starting..." disabled={Boolean(busyId)} onClick={() => quickAction(workOrder, "in_progress", "Work started from technician queue.")}>Start</ActionButton>
+              <ActionButton type="button" icon={Wrench} tone="start" busy={submitting && busyId === workOrder.id && busyAction === "in_progress"} busyLabel="Starting..." disabled={Boolean(busyId)} onClick={() => quickAction(workOrder, "in_progress", "Work started from technician queue.")}>{workOrder.status === "on_hold" ? "Resume" : "Start"}</ActionButton>
             ) : null}
             {["acknowledged", "in_progress", "returned"].includes(workOrder.status) ? (
               <ActionButton type="button" icon={PackageOpen} tone="material" busy={submitting && busyId === workOrder.id && busyAction === "pending_material"} busyLabel="Waiting..." disabled={Boolean(busyId)} onClick={() => quickAction(workOrder, "pending_material", "Waiting for parts or material.")}>Pending</ActionButton>
             ) : null}
+            {["acknowledged", "in_progress", "pending_material", "returned"].includes(workOrder.status) ? <ActionButton type="button" icon={PauseCircle} tone="material" busy={submitting && busyId === workOrder.id && busyAction === "on_hold"} busyLabel="Holding..." disabled={Boolean(busyId)} onClick={() => quickAction(workOrder, "on_hold", "Machine can still run; repair deferred.")}>On hold</ActionButton> : null}
+            {workOrder.status === "on_hold" ? <p className="quiet-line">Machine can still run · excluded from closure percentages.</p> : null}
             {workOrder.maintenanceStartedAt && ["acknowledged", "in_progress", "pending_material", "returned"].includes(workOrder.status) ? (
               <ActionButton type="button" icon={CheckCircle2} tone="resolve" busy={submitting && busyId === workOrder.id && busyAction === "resolved"} busyLabel="Resolving..." disabled={Boolean(busyId)} onClick={() => openResolveDialog(workOrder)}>Resolve</ActionButton>
             ) : null}

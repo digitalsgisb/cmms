@@ -4185,7 +4185,7 @@ export function updateWorkOrderStatus(id: string, input: UpdateWorkOrderStatusIn
     throw new Error("A requester can only cancel a work order before repair work starts.");
   }
   const effectiveAssignment = current.assignedToId || input.assignedToId;
-  if (actor.role === "technician" && (effectiveAssignment !== actor.id || !["acknowledged", "in_progress", "pending_material", "resolved"].includes(input.status))) {
+  if (actor.role === "technician" && (effectiveAssignment !== actor.id || !["acknowledged", "in_progress", "pending_material", "on_hold", "resolved"].includes(input.status))) {
     throw new Error("Technicians may only update work orders assigned to them.");
   }
   if (!elevated && !["requester", "technician"].includes(actor.role)) {
@@ -4195,6 +4195,12 @@ export function updateWorkOrderStatus(id: string, input: UpdateWorkOrderStatusIn
   const assignedToId = input.assignedToId === undefined ? current.assignedToId : input.assignedToId;
   if (assignedToId && !userPlants(getUser(assignedToId)).includes(current.plantId)) throw new Error("Assignee must have access to this plant.");
   const trimmedNote = input.note.trim();
+  if (input.status === "on_hold") {
+    if (actor.role === "technician" && current.assignedToId !== actor.id) throw new Error("Technicians may only hold work orders assigned to them.");
+    if (!elevated && !["open", "acknowledged", "in_progress", "pending_material", "returned"].includes(current.status)) throw new Error("Only active work orders can be put on hold.");
+    if (!trimmedNote) throw new Error("A hold reason is required.");
+  }
+  if (!elevated && current.status === "on_hold" && !["in_progress", "cancelled"].includes(input.status)) throw new Error("Resume repair before updating an on-hold work order.");
   const productionDowntimeReason = input.productionDowntimeReason?.trim() || "";
 
   if (input.status === "resolved") {
@@ -4874,7 +4880,7 @@ function notifyForStatusChange(workOrder: WorkOrder, status: WorkOrderStatus) {
     return;
   }
 
-  if (["acknowledged", "in_progress", "pending_material"].includes(status)) {
+  if (["acknowledged", "in_progress", "pending_material", "on_hold"].includes(status)) {
     if (workOrder.requesterId !== publicRequesterId) {
       notifyUsers(
         [workOrder.requesterId],
@@ -4906,6 +4912,7 @@ function statusToAction(status: WorkOrderStatus): ActivityAction {
     acknowledged: "acknowledged",
     in_progress: "started",
     pending_material: "pending_material",
+    on_hold: "on_hold",
     resolved: "resolved",
     closed: "closed",
     returned: "returned",
@@ -5065,6 +5072,7 @@ export function validateStatusInput(body: Partial<UpdateWorkOrderStatusInput>): 
   }
 
   getUser(body.actorId);
+  if (!Object.prototype.hasOwnProperty.call(workOrderStatusLabels, body.status)) throw new Error("Select a valid work order status.");
 
   if (body.assignedToId) {
     getUser(body.assignedToId);

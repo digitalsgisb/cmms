@@ -54,7 +54,7 @@ type RequesterTrackingScope = "department" | "all";
 
 const statusesByFilter: Record<Exclude<RequesterStatusFilter, "all">, WorkOrderStatus[]> = {
   open: ["open", "acknowledged"], in_progress: ["in_progress", "returned"],
-  waiting: ["pending_material", "resolved"], closed: ["closed", "cancelled"]
+  waiting: ["pending_material", "on_hold", "resolved"], closed: ["closed", "cancelled"]
 };
 const filterLabels: Record<RequesterStatusFilter, string> = {
   all: "All", open: "Open", in_progress: "In Progress", waiting: "Waiting", closed: "Closed"

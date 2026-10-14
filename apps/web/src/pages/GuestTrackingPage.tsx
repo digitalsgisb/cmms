@@ -23,7 +23,7 @@ const downtimeReasonChoices = ["Waiting for technician", "Waiting for spare part
 function statusStage(status: WorkOrderStatus) {
   if (status === "closed") return 3;
   if (status === "resolved") return 2;
-  if (["acknowledged", "in_progress", "pending_material", "returned"].includes(status)) return 1;
+  if (["acknowledged", "in_progress", "pending_material", "on_hold", "returned"].includes(status)) return 1;
   return 0;
 }
 
@@ -32,6 +32,7 @@ function trackerHeadline(status: WorkOrderStatus) {
   if (status === "acknowledged") return "Maintenance accepted your request";
   if (status === "in_progress") return "Repair work is in progress";
   if (status === "pending_material") return "Waiting for material or parts";
+  if (status === "on_hold") return "Repair on hold — machine can still run";
   if (status === "resolved") return "Repair completed — your verification is needed";
   if (status === "returned") return "Returned to maintenance for follow-up";
   if (status === "closed") return "Work order verified and closed";

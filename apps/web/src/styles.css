@@ -10006,9 +10006,16 @@ button.attachment-tile {
 #performance-work-orders th:first-child,
 #performance-work-orders td:first-child { min-width: 180px; }
 #performance-work-orders th:nth-child(2),
-#performance-work-orders td:nth-child(2) { min-width: 115px; }
-#performance-work-orders th:nth-child(4),
-#performance-work-orders td:nth-child(4) { min-width: 200px; }
+#performance-work-orders td:nth-child(2),
+#performance-work-orders th:nth-child(3),
+#performance-work-orders td:nth-child(3) { min-width: 115px; }
+#performance-work-orders th:nth-child(5),
+#performance-work-orders td:nth-child(5) { min-width: 200px; }
+
+.status-on_hold { background: #fff3d6; color: #885816; }
+.technician-card.technician-status-on_hold,
+.technician-work-order-command.technician-status-on_hold { background-color: #9b6b24; }
+.card-status-on_hold::before { background: #bc852d; }
 
 .performance-table-card td strong {
   color: var(--performance-ink);

@@ -21,6 +21,7 @@ const statusOptions: WorkOrderStatusFilter[] = [
   "acknowledged",
   "in_progress",
   "pending_material",
+  "on_hold",
   "resolved",
   "returned",
   "closed",
@@ -37,7 +38,7 @@ function matchesStatusFilter(workOrder: WorkOrder, filter: WorkOrderStatusFilter
   if (filter === "all") return true;
   if (filter === "active") return !["closed", "cancelled"].includes(workOrder.status);
   if (filter === "moving") return ["acknowledged", "in_progress", "returned"].includes(workOrder.status);
-  if (filter === "waiting") return ["pending_material", "resolved"].includes(workOrder.status);
+  if (filter === "waiting") return ["pending_material", "on_hold", "resolved"].includes(workOrder.status);
   return workOrder.status === filter;
 }
 
@@ -115,7 +116,7 @@ export function WorkOrdersPage() {
       active: workOrders.filter((workOrder) => !["closed", "cancelled"].includes(workOrder.status)).length,
       new: workOrders.filter((workOrder) => workOrder.status === "open").length,
       moving: workOrders.filter((workOrder) => ["acknowledged", "in_progress", "returned"].includes(workOrder.status)).length,
-      waiting: workOrders.filter((workOrder) => ["pending_material", "resolved"].includes(workOrder.status)).length,
+      waiting: workOrders.filter((workOrder) => ["pending_material", "on_hold", "resolved"].includes(workOrder.status)).length,
       closed: workOrders.filter((workOrder) => workOrder.status === "closed").length
     };
   }, [workOrders]);

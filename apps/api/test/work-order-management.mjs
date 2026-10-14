@@ -385,5 +385,42 @@ await assert.rejects(inPlant(() => m.deleteWorkOrder(disposable.id, developer.id
 await inPlant(() => m.deleteWorkOrder(disposable.id, executive.id));
 assert.throws(() => inPlant(() => m.getWorkOrder(disposable.id)), /not found/i);
 
+const holdOrder = createOrder("Machine running, repair deferred");
+assert.throws(() => inPlant(() => m.updateWorkOrderStatus(holdOrder.id, { actorId: technician.id, assignedToId: technician.id, status: "on_hold", note: "Machine can still run" })), /assigned to them/i);
+inPlant(() => m.claimWorkOrder(holdOrder.id, technician.id));
+assert.throws(() => inPlant(() => m.updateWorkOrderStatus(holdOrder.id, { actorId: supportingTechnician.id, status: "on_hold", note: "Machine can still run" })), /assigned to them/i);
+assert.throws(() => inPlant(() => m.updateWorkOrderStatus(holdOrder.id, { actorId: requester.id, status: "on_hold", note: "Machine can still run" })), /Requesters may only/i);
+assert.throws(() => inPlant(() => m.updateWorkOrderStatus(holdOrder.id, { actorId: technician.id, status: "on_hold", note: " " })), /hold reason/i);
+const heldOrder = inPlant(() => m.updateWorkOrderStatus(holdOrder.id, m.validateStatusInput({ actorId: technician.id, status: "on_hold", note: "Machine can still run; repair deferred." })));
+assert.equal(heldOrder.status, "on_hold");
+assert.equal(heldOrder.assignedToId, technician.id);
+assert.equal(heldOrder.closedAt, null);
+assert.equal(heldOrder.resolvedAt, null);
+assert(inPlant(() => m.getWorkOrderDetail(holdOrder.id)).activities.some((activity) => activity.action === "on_hold" && activity.message.includes("Machine can still run")));
+assert.throws(() => inPlant(() => m.updateWorkOrderStatus(holdOrder.id, { actorId: technician.id, status: "resolved", note: "Repair complete" })), /Resume repair/i);
+const resumedOrder = inPlant(() => m.updateWorkOrderStatus(holdOrder.id, { actorId: technician.id, status: "in_progress", note: "Repair resumed." }));
+assert.equal(resumedOrder.status, "in_progress");
+assert(resumedOrder.maintenanceStartedAt);
+const heldAgain = inPlant(() => m.updateWorkOrderStatus(holdOrder.id, { actorId: technician.id, status: "on_hold", note: "Waiting for planned machine access." }));
+assert.equal(heldAgain.maintenanceStartedAt, resumedOrder.maintenanceStartedAt);
+assert.throws(() => inPlant(() => m.updateWorkOrderStatus(closedFairTimingOrder.id, { actorId: technician.id, status: "on_hold", note: "Defer repair" })), /Only active work orders/i);
+assert.throws(() => inPlant(() => m.validateStatusInput({ actorId: technician.id, status: "invalid", note: "Invalid" })), /valid work order status/i);
+
+const executiveReopened = inPlant(() => m.updateWorkOrderStatus(closedFairTimingOrder.id, {
+  actorId: executive.id, status: "in_progress", note: "Executive reopened the repair for follow-up."
+}));
+assert.equal(executiveReopened.status, "in_progress");
+const executiveHeld = inPlant(() => m.updateWorkOrderStatus(closedTimedOrder.id, {
+  actorId: executive.id, status: "on_hold", note: "Machine can run; executive deferred repair."
+}));
+assert.equal(executiveHeld.status, "on_hold");
+const executiveWaiting = inPlant(() => m.updateWorkOrderStatus(executiveHeld.id, {
+  actorId: executive.id, status: "pending_material", note: "Executive confirmed a spare part is needed."
+}));
+assert.equal(executiveWaiting.status, "pending_material");
+assert(inPlant(() => m.getWorkOrderDetail(executiveWaiting.id)).activities.some((activity) => activity.actorId === executive.id && activity.status === "pending_material"));
+assert.throws(() => inPlant(() => m.updateWorkOrderStatus(executiveWaiting.id, { actorId: requester.id, status: "in_progress", note: "Try reopening" })), /Requesters may only/i);
+assert.throws(() => inPlant(() => m.updateWorkOrderStatus(executiveWaiting.id, { actorId: executive.id, status: "resolved", note: "Repaired", maintenanceActualMinutes: 10 })), /completion photo/i);
+
 m.db.close();
-console.log("PASS: work-order management, technician-team routing, project assignment rules, stable identifiers, and edit history.");
+console.log("PASS: work-order management, technician-team routing, project assignment rules, stable identifiers, edit history, and hold/resume permissions.");

@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowLeft, Check, CheckCircle2, ClipboardCopy, Clock3, ExternalLink, ImagePlus, MessageSquare, PackageOpen, Pencil, RotateCcw, Save, ShieldCheck, TimerReset, Trash2, UsersRound, Wrench, X } from "lucide-react";
+import { AlertCircle, ArrowLeft, Check, CheckCircle2, ClipboardCopy, Clock3, ExternalLink, ImagePlus, MessageSquare, PackageOpen, PauseCircle, Pencil, RotateCcw, Save, ShieldCheck, TimerReset, Trash2, UsersRound, Wrench, X } from "lucide-react";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -18,6 +18,7 @@ const workflowActionByStatus: Record<WorkOrderStatus, WorkOrderActivity["action"
   acknowledged: "acknowledged",
   in_progress: "started",
   pending_material: "pending_material",
+  on_hold: "on_hold",
   resolved: "resolved",
   closed: "closed",
   returned: "returned",
@@ -78,6 +79,9 @@ export function WorkOrderDetailPage() {
   const [loadError, setLoadError] = useState("");
   const [detail, setDetail] = useState<WorkOrderDetail | null>(null);
   const [note, setNote] = useState("");
+  const [executiveStatus, setExecutiveStatus] = useState<WorkOrderStatus | "">("");
+  const [executiveNote, setExecutiveNote] = useState("");
+  const [executiveStatusError, setExecutiveStatusError] = useState("");
   const [comment, setComment] = useState("");
   const [uploadKind, setUploadKind] = useState<WorkOrderAttachment["kind"]>("general");
   const [files, setFiles] = useState<FileList | null>(null);
@@ -212,26 +216,27 @@ export function WorkOrderDetailPage() {
     return () => window.cancelAnimationFrame(frame);
   }, [briefEditing]);
 
-  async function updateStatus(status: WorkOrderStatus, fallbackNote: string) {
+  async function updateStatus(status: WorkOrderStatus, fallbackNote: string, overrideNote?: string) {
     if (!detail || !currentUser) {
       return;
     }
 
     setBusy(true);
     setBusyAction(status);
+    const changeNote = overrideNote ?? (note || fallbackNote);
     try {
       const updatedWorkOrder =
         status === "acknowledged" && currentUser.role === "technician"
           ? await api.claimWorkOrder(detail.id, {
               actorId: currentUser.id,
-              note: note || fallbackNote
+              note: changeNote
             })
           : await api.updateWorkOrderStatus(detail.id, {
               status,
               actorId: currentUser.id,
-              note: note || fallbackNote,
+              note: changeNote,
               assignedToId: detail.assignedToId,
-              productionDowntimeReason: status === "closed" && detail.responsibleDepartment === "Production" ? note.trim() || null : null
+              productionDowntimeReason: status === "closed" && detail.responsibleDepartment === "Production" ? (overrideNote ?? note).trim() || null : null
             });
       if (status === "acknowledged" && currentUser.role === "technician") {
         navigator.vibrate?.([36, 18, 36]);
@@ -244,6 +249,25 @@ export function WorkOrderDetailPage() {
     } finally {
       setBusy(false);
       setBusyAction("");
+    }
+  }
+
+  async function saveExecutiveStatus(event: FormEvent) {
+    event.preventDefault();
+    if (!detail || !currentUser || !["executive", "admin", "developer"].includes(currentUser.role) || !executiveStatus || executiveStatus === detail.status) return;
+    setExecutiveStatusError("");
+    if (executiveStatus === "resolved") {
+      openResolveDialog();
+      setResolveNote(executiveNote.trim());
+      return;
+    }
+    try {
+      const message = executiveNote.trim() || `Status changed from ${workOrderStatusLabels[detail.status]} to ${workOrderStatusLabels[executiveStatus]} by ${currentUser.name}.`;
+      await updateStatus(executiveStatus, message, message);
+      setExecutiveStatus("");
+      setExecutiveNote("");
+    } catch (error) {
+      setExecutiveStatusError(error instanceof Error ? error.message : "Couldn’t update the status. Try again.");
     }
   }
 
@@ -510,7 +534,9 @@ export function WorkOrderDetailPage() {
   }
 
   const displayWorkflow =
-    detail.status === "returned"
+    detail.status === "on_hold"
+      ? (["open", "acknowledged", "in_progress", "on_hold", "resolved", "closed"] as WorkOrderStatus[])
+      : detail.status === "returned"
       ? (["open", "acknowledged", "in_progress", "returned", "resolved", "closed"] as WorkOrderStatus[])
       : detail.status === "cancelled"
         ? (["open", "cancelled"] as WorkOrderStatus[])
@@ -519,8 +545,8 @@ export function WorkOrderDetailPage() {
   const actionLocked = busy || Boolean(busyAction);
   const createdAt = findActivityTime(detail.activities, "created") || detail.createdAt;
   const startedAt = detail.maintenanceStartedAt || findActivityTime(detail.activities, "started");
-  const resolvedAt = detail.resolvedAt || findActivityTime(detail.activities, "resolved");
-  const closedAt = findActivityTime(detail.activities, "closed");
+  const resolvedAt = ["resolved", "closed"].includes(detail.status) ? detail.resolvedAt || findActivityTime(detail.activities, "resolved") : null;
+  const closedAt = detail.status === "closed" ? findActivityTime(detail.activities, "closed") : null;
   const terminalAt = closedAt || (detail.status === "cancelled" ? detail.updatedAt : null);
   const totalTimeEnd = terminalAt || timerNow;
   const queueEnd = startedAt || terminalAt || timerNow;
@@ -534,10 +560,10 @@ export function WorkOrderDetailPage() {
     !["resolved", "closed", "cancelled"].includes(detail.status) &&
     (!isTechnician || isAssignedToCurrentUser || canClaimOpen);
   const canStartRepair =
-    ["acknowledged", "returned", "pending_material"].includes(detail.status) ||
+    ["acknowledged", "returned", "pending_material", "on_hold"].includes(detail.status) ||
     (detail.status === "open" && (currentUser?.role !== "technician" || isAssignedToCurrentUser));
   const guestTrackingUrl = guestTrackingPath ? `${window.location.origin}${guestTrackingPath}` : "";
-  const visualStatus = ["open", "acknowledged", "in_progress", "pending_material", "returned", "resolved", "closed", "cancelled"].includes(busyAction)
+  const visualStatus = ["open", "acknowledged", "in_progress", "pending_material", "on_hold", "returned", "resolved", "closed", "cancelled"].includes(busyAction)
     ? busyAction as WorkOrderStatus
     : detail.status;
   const supportingCandidates = users.filter((user) =>
@@ -914,6 +940,25 @@ export function WorkOrderDetailPage() {
             </div>
           ) : null}
 
+          {currentUser && ["executive", "admin", "developer"].includes(currentUser.role) ? (
+            <form className="section-panel executive-status-panel" onSubmit={saveExecutiveStatus}>
+              <h2>Edit work order status</h2>
+              <p>Current status: <strong>{workOrderStatusLabels[detail.status]}</strong>. Changes are recorded in the work order history.</p>
+              <div className="form-grid two-columns">
+                <label>New status
+                  <select value={executiveStatus} disabled={actionLocked} onChange={(event) => { setExecutiveStatus(event.target.value as WorkOrderStatus | ""); setExecutiveStatusError(""); }} required>
+                    <option value="">Choose status</option>
+                    {Object.entries(workOrderStatusLabels).map(([status, label]) => <option key={status} value={status} disabled={status === detail.status}>{label}</option>)}
+                  </select>
+                </label>
+                <label>Reason / note
+                  <textarea rows={2} value={executiveNote} disabled={actionLocked} onChange={(event) => setExecutiveNote(event.target.value)} required={executiveStatus === "on_hold" || (executiveStatus === "closed" && requiresDowntimeExplanation)} placeholder={executiveStatus === "on_hold" ? "Why is repair being put on hold?" : "Add a reason for this status change"} />
+                </label>
+              </div>
+              {executiveStatusError ? <p className="error-line" role="alert">{executiveStatusError}</p> : null}
+              <ActionButton type="submit" icon={Save} busy={busy} disabled={actionLocked || !executiveStatus || executiveStatus === detail.status}>{executiveStatus === "resolved" ? "Continue to resolve" : "Update status"}</ActionButton>
+            </form>
+          ) : null}
           {canUseMaintenanceActions ? (
             <div className="section-panel action-panel">
               <h2>Maintenance Actions</h2>
@@ -943,7 +988,7 @@ export function WorkOrderDetailPage() {
                     disabled={actionLocked}
                     onClick={() => updateStatus("in_progress", "Repair started.")}
                   >
-                    {detail.type === "project" ? "Start Work" : "Start Repair"}
+                    {detail.status === "on_hold" ? "Resume Repair" : detail.type === "project" ? "Start Work" : "Start Repair"}
                   </ActionButton>
                 ) : null}
                 {["acknowledged", "in_progress", "returned"].includes(detail.status) ? (
@@ -959,6 +1004,10 @@ export function WorkOrderDetailPage() {
                     Pending Material
                   </ActionButton>
                 ) : null}
+                {["acknowledged", "in_progress", "pending_material", "returned"].includes(detail.status) ? (
+                  <ActionButton type="button" icon={PauseCircle} tone="material" busy={busy && busyAction === "on_hold"} busyLabel="Putting on hold..." disabled={actionLocked} onClick={() => updateStatus("on_hold", "Machine can still run; repair deferred.")}>On hold</ActionButton>
+                ) : null}
+                {detail.status === "on_hold" ? <p className="quiet-line">Machine can still run. This order is excluded from closure percentages until repair resumes.</p> : null}
                 {startedAt && ["acknowledged", "in_progress", "pending_material", "returned"].includes(detail.status) ? (
                   <ActionButton
                     type="button"

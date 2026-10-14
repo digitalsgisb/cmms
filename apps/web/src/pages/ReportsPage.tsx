@@ -90,6 +90,11 @@ function percent(value: number, total: number) {
   return total > 0 ? Math.round((value / total) * 100) : 0;
 }
 
+function closurePercent(records: WorkOrder[]) {
+  const eligible = records.filter((item) => item.status !== "on_hold");
+  return eligible.length ? percent(eligible.filter((item) => item.status === "closed").length, eligible.length) : 100;
+}
+
 function money(value: number) {
   return new Intl.NumberFormat("en-MY", { style: "currency", currency: "MYR", maximumFractionDigits: 0 }).format(value);
 }
@@ -215,9 +220,9 @@ export function ReportsPage() {
   const closedOrders = validOrders.filter((item) => item.status === "closed");
   const standardOrders = validOrders.filter((item) => item.type === "maintenance");
   const kaizenOrders = validOrders.filter((item) => item.type === "kaizen");
-  const closure = percent(closedOrders.length, validOrders.length);
-  const standardClosure = percent(standardOrders.filter((item) => item.status === "closed").length, standardOrders.length);
-  const kaizenClosure = percent(kaizenOrders.filter((item) => item.status === "closed").length, kaizenOrders.length);
+  const closure = closurePercent(validOrders);
+  const standardClosure = closurePercent(standardOrders);
+  const kaizenClosure = closurePercent(kaizenOrders);
   const completedPm = scopedPm.filter((item) => ["submitted", "verified"].includes(item.status)).length;
   const pmCompliance = percent(completedPm, scopedPm.length);
   const partsAvailability = inventory ? percent(inventory.summary.totalParts - inventory.summary.outOfStock, inventory.summary.totalParts) : 0;
@@ -232,7 +237,8 @@ export function ReportsPage() {
   const trendData = useMemo(() => buckets.map((bucket) => {
     const created = scopedWorkOrders.filter((item) => inBucket(item.createdAt, bucket));
     const closed = scopedWorkOrders.filter((item) => item.status === "closed" && inBucket(item.updatedAt, bucket));
-    return { label: bucket.label, created: created.length, closed: closed.length, closeRate: percent(closed.length, created.length) };
+    const eligible = created.filter((item) => item.status !== "on_hold");
+    return { label: bucket.label, created: created.length, closed: closed.length, closeRate: eligible.length ? percent(closed.length, eligible.length) : 100 };
   }), [buckets, scopedWorkOrders]);
 
   const pmTrendData = useMemo(() => buckets.map((bucket) => {

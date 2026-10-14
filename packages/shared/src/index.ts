@@ -11,6 +11,7 @@ export type WorkOrderStatus =
   | "acknowledged"
   | "in_progress"
   | "pending_material"
+  | "on_hold"
   | "resolved"
   | "closed"
   | "returned"
@@ -149,6 +150,7 @@ export type ActivityAction =
   | "assigned"
   | "started"
   | "pending_material"
+  | "on_hold"
   | "resolved"
   | "closed"
   | "returned"
@@ -983,6 +985,7 @@ export const workOrderStatusLabels: Record<WorkOrderStatus, string> = {
   acknowledged: "Acknowledged",
   in_progress: "In progress",
   pending_material: "Pending material",
+  on_hold: "On hold",
   resolved: "Resolved",
   closed: "Closed",
   returned: "Returned",
