@@ -941,22 +941,27 @@ export function WorkOrderDetailPage() {
           ) : null}
 
           {currentUser && ["executive", "admin", "developer"].includes(currentUser.role) ? (
-            <form className="section-panel executive-status-panel" onSubmit={saveExecutiveStatus}>
-              <h2>Edit work order status</h2>
-              <p>Current status: <strong>{workOrderStatusLabels[detail.status]}</strong>. Changes are recorded in the work order history.</p>
-              <div className="form-grid two-columns">
-                <label>New status
+            <form className="section-panel executive-status-panel" aria-labelledby="executive-status-title" onSubmit={saveExecutiveStatus}>
+              <div className="executive-status-heading">
+                <div className="executive-status-title"><span aria-hidden="true"><RotateCcw size={19} /></span><div><small>Executive controls</small><h2 id="executive-status-title">Change status</h2></div></div>
+                <div className="executive-status-current"><small>Current status</small><StatusBadge status={detail.status} /></div>
+              </div>
+              <div className="executive-status-fields">
+                <label><span>New status</span>
                   <select value={executiveStatus} disabled={actionLocked} onChange={(event) => { setExecutiveStatus(event.target.value as WorkOrderStatus | ""); setExecutiveStatusError(""); }} required>
                     <option value="">Choose status</option>
                     {Object.entries(workOrderStatusLabels).map(([status, label]) => <option key={status} value={status} disabled={status === detail.status}>{label}</option>)}
                   </select>
                 </label>
-                <label>Reason / note
-                  <textarea rows={2} value={executiveNote} disabled={actionLocked} onChange={(event) => setExecutiveNote(event.target.value)} required={executiveStatus === "on_hold" || (executiveStatus === "closed" && requiresDowntimeExplanation)} placeholder={executiveStatus === "on_hold" ? "Why is repair being put on hold?" : "Add a reason for this status change"} />
+                <label><span>Reason / note <small>{executiveStatus === "on_hold" || (executiveStatus === "closed" && requiresDowntimeExplanation) ? "Required" : "Optional"}</small></span>
+                  <textarea rows={3} value={executiveNote} disabled={actionLocked} onChange={(event) => setExecutiveNote(event.target.value)} required={executiveStatus === "on_hold" || (executiveStatus === "closed" && requiresDowntimeExplanation)} placeholder={executiveStatus === "on_hold" ? "Why is repair being put on hold?" : "Briefly explain the change…"} />
                 </label>
               </div>
               {executiveStatusError ? <p className="error-line" role="alert">{executiveStatusError}</p> : null}
-              <ActionButton type="submit" icon={Save} busy={busy} disabled={actionLocked || !executiveStatus || executiveStatus === detail.status}>{executiveStatus === "resolved" ? "Continue to resolve" : "Update status"}</ActionButton>
+              <div className="executive-status-footer">
+                <ActionButton type="submit" icon={Save} busy={busy} disabled={actionLocked || !executiveStatus || executiveStatus === detail.status}>{executiveStatus === "resolved" ? "Continue to resolve" : "Update status"}</ActionButton>
+                <small><ShieldCheck size={13} aria-hidden="true" />Changes are recorded in history</small>
+              </div>
             </form>
           ) : null}
           {canUseMaintenanceActions ? (
