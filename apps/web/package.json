@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test:work-order-photos": "node --test test/work-order-photos.mjs",
     "test:performance": "node --test test/performance-rendering.mjs",
     "test:navigation": "node --test test/scroll-restoration.mjs",
     "dev": "pnpm --filter @sugi-cmms/shared build && vite --host 0.0.0.0",

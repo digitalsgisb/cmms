@@ -242,7 +242,7 @@ export function PublicRequesterPage() {
       marker.scrollIntoView({ behavior: "smooth", block: "center" });
       const control = marker.matches("input, select, textarea, button")
         ? marker
-        : marker.querySelector<HTMLElement>("input, select, textarea, button");
+        : marker.querySelector<HTMLElement>(field === "before-photos" ? "button" : "input, select, textarea, button");
       window.setTimeout(() => control?.focus({ preventScroll: true }), 280);
     });
   }
@@ -267,6 +267,7 @@ export function PublicRequesterPage() {
     if (!isOffice && !form.reportedByDepartment) { showMissingField("Choose your department.", "reporter-department"); return; }
     if (!isOffice && form.reportedByDepartment === otherOptionValue && !form.customReportedByDepartment.trim()) { showMissingField("Specify your department.", "custom-reporter-department"); return; }
     if (!form.issueDescription.trim()) { showMissingField("Describe what happened.", "issue-description"); return; }
+    if (!issueFiles.length) { showMissingField("Add at least one before photo before submitting the work order.", "before-photos"); return; }
     setSubmitting(true); setError(""); setSuccess("");
     setInvalidField("");
     try {
@@ -436,7 +437,7 @@ function RequesterForm({ selectedType, selectedDepartment, rules, form, setForm,
 
       <div className="requester-step-label"><span>3</span>Describe the issue</div>
       <label className={fieldClass("issue-description")} data-requester-field="issue-description">What happened?<textarea value={form.issueDescription} onChange={(event) => setForm({ ...form, issueDescription: event.target.value })} rows={5} placeholder="Describe what is wrong, when it started, and anything maintenance should know" required /></label>
-      <MultiPhotoPicker files={issueFiles} onChange={setIssueFiles} disabled={submitting} />
+      <MultiPhotoPicker files={issueFiles} onChange={(files) => { setIssueFiles(files); if (files.length && invalidField === "before-photos") clearInvalidField(); }} disabled={submitting} label="Before photos" help="Add at least one photo showing the issue before work begins." required invalid={invalidField === "before-photos"} validationField="before-photos" />
       <button className="primary-action" type="submit" disabled={submitting}><Send size={17} />{submitting ? "Submitting..." : "Submit Work Order"}</button>
     </form>
   );

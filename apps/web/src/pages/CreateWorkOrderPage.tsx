@@ -52,6 +52,7 @@ export function CreateWorkOrderPage() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [issueFiles, setIssueFiles] = useState<File[]>([]);
+  const [photoRequiredError, setPhotoRequiredError] = useState(false);
 
   useEffect(() => {
     api.masterData()
@@ -102,6 +103,12 @@ export function CreateWorkOrderPage() {
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!currentUser || submitting || !masterReady) {
+      return;
+    }
+
+    if (!issueFiles.length && !createdOrderId) {
+      setPhotoRequiredError(true);
+      setError("Add at least one before photo before submitting the work order.");
       return;
     }
 
@@ -167,7 +174,7 @@ export function CreateWorkOrderPage() {
       </div>
 
       <form className="form-panel" onSubmit={handleSubmit} aria-busy={submitting}>
-        <p className="ux-form-help">Describe the issue and where it happened. Photos are optional and help the maintenance team prepare.</p>
+        <p className="ux-form-help">Describe the issue and where it happened. At least one before photo is required to submit a work order.</p>
         <fieldset className="ux-form-fields" disabled={submitting || Boolean(createdOrderId)}>
         <div className="form-grid two-columns">
           <label>
@@ -293,9 +300,12 @@ export function CreateWorkOrderPage() {
 
         <MultiPhotoPicker
           files={issueFiles}
-          onChange={setIssueFiles}
+          onChange={(files) => { setIssueFiles(files); if (files.length) { setPhotoRequiredError(false); setError(""); } }}
           disabled={submitting}
-          help="Choose several issue photos before creating the work order."
+          label="Before photos"
+          required
+          invalid={photoRequiredError}
+          help="Add at least one photo showing the issue before work begins."
         />
 
         </fieldset>

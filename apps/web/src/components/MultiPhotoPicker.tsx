@@ -8,6 +8,9 @@ interface MultiPhotoPickerProps {
   label?: string;
   help?: string;
   maxFiles?: number;
+  required?: boolean;
+  invalid?: boolean;
+  validationField?: string;
 }
 
 interface PhotoPreview {
@@ -23,13 +26,24 @@ export function MultiPhotoPicker({
   disabled = false,
   label = "Issue photos",
   help = "Open the camera or select several photos from your phone.",
-  maxFiles = 10
+  maxFiles = 10,
+  required = false,
+  invalid = false,
+  validationField
 }: MultiPhotoPickerProps) {
   const inputId = useId();
+  const pickerRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [previews, setPreviews] = useState<PhotoPreview[]>([]);
   const [message, setMessage] = useState("");
+  const showRequiredError = required && invalid && files.length === 0;
+
+  useEffect(() => {
+    if (!showRequiredError) return;
+    pickerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    pickerRef.current?.querySelector("button")?.focus({ preventScroll: true });
+  }, [showRequiredError]);
 
   useEffect(() => {
     const nextPreviews = files.map((file) => ({ file, url: URL.createObjectURL(file) }));
@@ -64,14 +78,15 @@ export function MultiPhotoPicker({
   }
 
   return (
-    <section className="multi-photo-picker" aria-labelledby={`${inputId}-label`}>
+    <section ref={pickerRef} className={`multi-photo-picker${showRequiredError ? " is-invalid" : ""}`} role="group" aria-labelledby={`${inputId}-label`} aria-invalid={showRequiredError || undefined} aria-describedby={showRequiredError ? `${inputId}-error` : `${inputId}-help`} data-requester-field={validationField}>
       <div className="multi-photo-heading">
         <div>
-          <strong id={`${inputId}-label`}><Camera size={16} aria-hidden="true" />{label}</strong>
-          <span>{help}</span>
+          <strong id={`${inputId}-label`}><Camera size={16} aria-hidden="true" />{label}{required ? <span className="multi-photo-required">Required</span> : null}</strong>
+          <span id={`${inputId}-help`}>{help}</span>
         </div>
         <small aria-live="polite">{files.length}/{maxFiles} photos · 8 MB each</small>
       </div>
+      {showRequiredError ? <p id={`${inputId}-error`} className="error-line" role="alert">Add at least one before photo. You cannot submit this work order without a photo.</p> : null}
       <input
         id={inputId}
         ref={inputRef}
