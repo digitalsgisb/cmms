@@ -20,6 +20,12 @@ export function isActiveProductionOrder(order: WorkOrder) {
   return !["closed", "cancelled"].includes(order.status);
 }
 
+export function productionOrderDay(order: WorkOrder) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(order.workDate || "")) return order.workDate;
+  const timestamp = Date.parse(order.createdAt);
+  return Number.isFinite(timestamp) ? new Date(timestamp + 8 * 3600_000).toISOString().slice(0, 10) : "";
+}
+
 export function productionAttentionReasons(order: WorkOrder, now: Date): string[] {
   if (!isActiveProductionOrder(order)) return [];
   const reasons: string[] = [];
@@ -47,10 +53,11 @@ export function productionDashboardSummary(orders: WorkOrder[], sections: Sectio
   const trend = Array.from({ length: 7 }, (_, index) => {
     const date = new Date(Date.parse(`${today}T00:00:00+08:00`) - (6 - index) * 86400_000);
     const key = new Date(date.getTime() + 8 * 3600_000).toISOString().slice(0, 10);
-    const onDay = (value: string | null) => value && Number.isFinite(Date.parse(value)) && new Date(Date.parse(value) + 8 * 3600_000).toISOString().slice(0, 10) === key;
+    const cohort = production.filter((order) => order.status !== "cancelled" && productionOrderDay(order) === key);
     return { key, label: date.toLocaleDateString("en-MY", { timeZone: "Asia/Kuala_Lumpur", day: "numeric", month: "short" }),
-      resolved: production.filter((order) => onDay(order.resolvedAt)).length,
-      closed: production.filter((order) => onDay(order.closedAt)).length };
+      total: cohort.length,
+      resolved: cohort.filter((order) => ["resolved", "closed"].includes(order.status)).length,
+      closed: cohort.filter((order) => order.status === "closed").length };
   });
   return { production, active, closed, cancelled, attention, trend,
     awaitingVerification: production.filter((order) => order.status === "resolved").length,

@@ -53,19 +53,41 @@ test("attention sorts critical then returned then oldest", () => {
   assert.equal(Array.from(productionDashboardSummary(orders, sections, now).attention, ({ order }) => order.id).join(","), "critical,returned,old,new");
 });
 
-test("seven-day graph counts actual completion dates in Malaysia rather than issue dates or current status", () => {
+test("seven-day graph follows work-order-date cohorts and counts closed orders as resolved", () => {
   const summary = productionDashboardSummary([
-    order({ status: "closed", createdAt: "2026-01-01T00:00:00Z", resolvedAt: "2026-10-20T16:30:00Z", closedAt: "2026-10-21T01:00:00Z" }),
-    order({ status: "returned", resolvedAt: "2026-10-20T15:59:00Z" }),
-    order({ status: "closed", closedAt: "2026-10-14T12:00:00Z" }),
-    order({ responsibleDepartment: "SHE", resolvedAt: "2026-10-21T01:00:00Z" })
+    order({ workDate: "2026-10-15", status: "closed", resolvedAt: "2026-10-20T16:30:00Z", closedAt: "2026-10-21T01:00:00Z" }),
+    order({ workDate: "2026-10-21", status: "closed", resolvedAt: null }),
+    order({ workDate: "2026-10-21", status: "resolved" }),
+    order({ workDate: "2026-10-21", status: "returned", resolvedAt: "2026-10-20T15:59:00Z" }),
+    order({ workDate: "2026-10-21", status: "cancelled" }),
+    order({ workDate: "2026-10-21", responsibleDepartment: "SHE", status: "closed" }),
+    order({ workDate: "2026-10-20" })
   ], sections, now);
   assert.equal(summary.trend.length, 7);
   assert.equal(summary.trend[0].key, "2026-10-15");
-  assert.equal(summary.trend[5].resolved, 1);
-  assert.equal(summary.trend[6].resolved, 1);
+  assert.equal(summary.trend[0].resolved, 1);
+  assert.equal(summary.trend[0].closed, 1);
+  assert.equal(summary.trend[5].resolved, 0);
+  assert.equal(summary.trend[6].total, 3);
+  assert.equal(summary.trend[6].resolved, 2);
   assert.equal(summary.trend[6].closed, 1);
-  assert.equal(summary.trend.reduce((total, day) => total + day.closed, 0), 1);
+  assert.ok(summary.trend.every((day) => day.closed <= day.resolved));
+});
+
+test("when all orders for a date close, both graph bars equal even with missing legacy resolution timestamps", () => {
+  const summary = productionDashboardSummary([
+    order({ workDate: "2026-10-21", status: "closed", resolvedAt: null, closedAt: "2026-10-22T01:00:00Z" }),
+    order({ workDate: "2026-10-21", status: "closed", resolvedAt: "2026-10-21T01:00:00Z" })
+  ], sections, now);
+  assert.equal(summary.trend[6].total, 2);
+  assert.equal(summary.trend[6].resolved, 2);
+  assert.equal(summary.trend[6].closed, 2);
+});
+
+test("legacy orders without a work date use the Malaysian creation date", () => {
+  const summary = productionDashboardSummary([order({ createdAt: "2026-10-20T16:05:00Z", status: "closed" })], sections, now);
+  assert.equal(summary.trend[6].total, 1);
+  assert.equal(summary.trend[6].closed, 1);
 });
 
 test("empty and cancelled-only datasets never produce invalid rates", () => {
@@ -129,4 +151,36 @@ test("table pagination reaches every order and changing status scope includes fi
   assert.equal(reached.size, 13, "All orders appear across the four pages");
   const wrapped = render(section.type, { ...section.props, rotating: false });
   assert.ok(nodes(wrapped, (node) => node.type === "tr" && String(node.key).includes("order-0")).length, "Next wraps to the first page");
+});
+
+test("cards, graph dates, status counts and table orders open the matching work order explorer", () => {
+  let states = [];
+  let cursor = 0;
+  const hooks = { ...React, useEffect() {}, useMemo: (callback) => callback(), useRef: () => ({ current: null }),
+    useState(initial) { const index = cursor++; if (!(index in states)) states[index] = initial; return [states[index], (next) => { states[index] = typeof next === "function" ? next(states[index]) : next; }]; }
+  };
+  const { ProductionTvDashboard: Board } = loadTsModule(new URL("../src/pages/ProductionTvDashboard.tsx", import.meta.url), { react: hooks, "../api/client": { selectedPlant: () => "sendayan" } });
+  const orders = [order({ id: "open", workDate: "2026-10-21" }), order({ id: "closed", status: "closed", workDate: "2026-10-20" })];
+  const props = { workOrders: orders, sections, now: now.toISOString(), lastUpdated: now.toISOString(), loadError: "", onBack() {}, async onRefresh() {} };
+  function nodes(element, predicate) { if (!React.isValidElement(element)) return []; return [...(predicate(element) ? [element] : []), ...React.Children.toArray(element.props.children).flatMap((child) => nodes(child, predicate))]; }
+  function render(component = Board, values = props) { cursor = 0; return component(values); }
+  let board = render();
+  nodes(board, (node) => node.props["aria-label"] === "View Closed")[0].props.onClick();
+  let explorer = nodes(render(), (node) => Boolean(node.props.selection))[0];
+  assert.equal(explorer.props.selection.ids.join(","), "closed");
+  explorer.props.onClose();
+  board = render();
+  nodes(board, (node) => String(node.props["aria-label"] || "").startsWith("View 21 Oct:"))[0].props.onClick();
+  explorer = nodes(render(), (node) => Boolean(node.props.selection))[0];
+  assert.equal(explorer.props.selection.ids.join(","), "open");
+  explorer.props.onClose();
+  board = render();
+  const section = nodes(board, (node) => node.props.title === "Conversion")[0];
+  section.props.onOpen(orders[0]);
+  explorer = nodes(render(), (node) => Boolean(node.props.selection))[0];
+  assert.equal(explorer.props.selection.initialId, "open");
+  explorer.props.onClose();
+  board = render();
+  nodes(board, (node) => node.type === "button" && Array.isArray(node.props.children) && node.props.children[0] === "Closed")[0].props.onClick();
+  assert.equal(nodes(render(), (node) => Boolean(node.props.selection))[0].props.selection.ids.join(","), "closed");
 });
