@@ -3539,6 +3539,46 @@ html.production-tv-scrollbars::-webkit-scrollbar-thumb:hover, .production-tv::-w
   .production-tv-bar-pair { width: 90%; }
 }
 
+/* Stable table slots and fluid columns override the shared app table minimum. */
+.production-tv .production-tv-brand img { display: block; width: clamp(170px, 14vw, 240px); height: auto; max-height: 62px; object-fit: contain; }
+.production-tv-brand > div { padding-left: 16px; border-left: 1px solid #ffffff25; }
+.production-tv .production-tv-brand h1 { font-size: 22px; }
+.production-tv .production-tv-brand p { letter-spacing: .5px; text-transform: none; }
+.production-tv-table-heading { justify-content: flex-end; }
+.production-tv-tables { align-items: start; }
+.production-tv .production-tv-table-scroll { --tv-slots: 4; --tv-row-height: 48px; height: calc(30px + var(--tv-slots) * var(--tv-row-height)); min-height: 0; overflow: clip; }
+.production-tv .production-tv-table-scroll[data-page-size="3"] { --tv-slots: 3; }
+.production-tv .production-tv-table-scroll table { width: 100%; min-width: 0; max-width: 100%; height: 100%; table-layout: fixed; }
+.production-tv .production-tv-table-scroll thead { height: 30px; }
+.production-tv .production-tv-table-scroll tr { height: var(--tv-row-height); }
+.production-tv .production-tv-table-scroll thead tr { height: 30px; }
+.production-tv .production-tv-table-scroll th, .production-tv .production-tv-table-scroll td { min-width: 0; overflow: hidden; padding: 6px 10px; }
+.production-tv .production-tv-table-scroll th:first-child { width: 35%; }
+.production-tv .production-tv-table-scroll th:nth-child(2) { width: 26%; }
+.production-tv .production-tv-table-scroll th:nth-child(3) { width: 25%; }
+.production-tv .production-tv-table-scroll th:last-child { width: 14%; }
+.production-tv-table-scroll td > strong, .production-tv-table-scroll td > span { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.production-tv-table-scroll .production-tv-status { vertical-align: middle; }
+.production-tv .production-tv-table-scroll .production-tv-empty-row { height: calc(var(--tv-slots) * var(--tv-row-height)); }
+.production-tv .production-tv-empty-row td { text-align: center; }
+.production-tv-spacer-row { pointer-events: none; }
+.production-tv-work-row { cursor: pointer; }
+.production-tv-work-row:focus-visible { outline: 2px solid var(--brass); outline-offset: -2px; background: #ffffff15; }
+.production-tv-order-number { color: #fff0d4; }
+.production-tv .production-tv-other { display: block; margin: 8px 0 0 auto; border: 0; background: #ffffff09; font-size: 11px; }
+.production-tv-footer { align-items: center; justify-content: space-between; }
+.production-tv-dtu { margin-left: auto; font-size: 10px; letter-spacing: 1.5px; font-weight: 800; color: #e6bcc7; white-space: normal; text-align: right; }
+.production-tv-toolbar, .production-tv-controls, .production-tv-brand, .production-tv-clock, .production-tv-panel-heading, .production-tv-legend { min-width: 0; }
+@media (max-width: 600px) {
+  .production-tv-brand > div { display: none; }
+  .production-tv .production-tv-brand img { width: 160px; max-width: 42vw; }
+  .production-tv .production-tv-table-scroll th, .production-tv .production-tv-table-scroll td { padding: 5px; font-size: 10px; }
+  .production-tv .production-tv-table-scroll td > strong { font-size: 11px; }
+  .production-tv .production-tv-table-scroll .production-tv-status { font-size: 9px; padding: 4px; }
+  .production-tv-panel-heading { gap: 8px; }
+  .production-tv-legend { font-size: 10px; gap: 8px; }
+}
+
 .multi-photo-picker.is-invalid {
   border: 2px solid var(--red);
   background: #fff0f0;

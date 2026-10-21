@@ -109,9 +109,9 @@ test("TV renders two tables, actual metrics, chart and attention with empty, loa
   assert.ok(stale.includes("Updates delayed"));
   assert.ok(stale.includes("WO-1"), "Retains previous work orders during connection failure");
   const loading = renderToStaticMarkup(React.createElement(ProductionTvDashboard, { ...props, workOrders: [], lastUpdated: null }));
-  assert.ok(loading.includes("Loading work orders"));
+  assert.ok(loading.includes("Loading"));
   const empty = renderToStaticMarkup(React.createElement(ProductionTvDashboard, { ...props, workOrders: [] }));
-  assert.ok(empty.includes("No matching work orders"));
+  assert.ok(empty.includes("No orders"));
   assert.ok(empty.includes("No work orders currently need attention"));
 });
 
@@ -161,6 +161,19 @@ test("table pagination reaches every order and changing status scope includes fi
     nodes(table, (node) => node.props["aria-label"] === "Next Conversion page")[0].props.onClick();
   }
   assert.equal(compactReached.size, 13, "Compact pagination keeps every order reachable");
+  states = [];
+  const clicked = [];
+  const table = render(section.type, { ...section.props, rotating: false, onOpen: (order) => clicked.push(order.id) });
+  const row = nodes(table, (node) => node.type === "tr" && node.props.role === "button")[0];
+  row.props.onClick();
+  let prevented = 0;
+  for (const key of ["Enter", " ", "Escape"]) row.props.onKeyDown({ key, preventDefault() { prevented++; } });
+  assert.equal(clicked.join(","), "order-0,order-0,order-0");
+  assert.equal(prevented, 2);
+  assert.equal(nodes(table, (node) => node.type === "tr" && node.props["aria-hidden"] === true).length, 0);
+  states = [];
+  const partial = render(section.type, { ...section.props, orders: orders.slice(0, 1), rotating: false });
+  assert.equal(nodes(partial, (node) => node.props.className === "production-tv-spacer-row").length, 3, "Short lists keep four table slots");
 });
 
 test("cards, graph dates, status counts and table orders open the matching work order explorer", () => {
