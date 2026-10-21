@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test:production": "node --test test/production-dashboard.mjs",
     "test:work-order-photos": "node --test test/work-order-photos.mjs",
     "test:performance": "node --test test/performance-rendering.mjs",
     "test:navigation": "node --test test/scroll-restoration.mjs",

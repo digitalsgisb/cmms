@@ -6,6 +6,7 @@ import vm from "node:vm";
 import React from "react";
 import ts from "typescript";
 import * as shared from "@sugi-cmms/shared";
+import { loadTsModule } from "./support/load-ts-module.mjs";
 
 const require = createRequire(import.meta.url);
 const placeholder = () => null;
@@ -45,6 +46,8 @@ function load(relativePath, { overrides = {}, currentUser = user, api = {} } = {
     "@sugi-cmms/shared": shared,
     "react-router-dom": { Link: placeholder, Navigate: placeholder, useNavigate: () => () => {}, useSearchParams: () => [new URLSearchParams()] },
     "../api/client": { api, mediaUrl: (url) => url },
+    "./ProductionTvDashboard": { ProductionTvDashboard: placeholder },
+    "../utils/productionDashboard": loadTsModule(new URL("../src/utils/productionDashboard.ts", import.meta.url)),
     "../utils/format": { formatDateTime: (value) => value, formatLiveDuration: () => "", formatMinutes: () => "" },
     "../state/UserContext": { useCurrentUser: () => ({ currentUser, loadingUsers: false }) },
     "../hooks/useLiveRefresh": { useLiveRefresh() {} }
@@ -57,7 +60,7 @@ function load(relativePath, { overrides = {}, currentUser = user, api = {} } = {
   vm.runInNewContext(compiled, {
     exports, require: (name) => mocks[name] || (name.startsWith("../components/") ? new Proxy({}, { get: () => placeholder }) : require(name)),
     URLSearchParams, Date, console,
-    window: { requestAnimationFrame: (callback) => callback(), setTimeout: (callback) => callback() },
+    window: { requestAnimationFrame: (callback) => callback(), setTimeout: (callback) => callback(), scrollTo() {} },
     document: { querySelector: () => null }
   });
   return { exports, states, render(name, props) { stateIndex = 0; return exports[name](props); } };
@@ -128,4 +131,45 @@ test("rejected files do not satisfy the photo requirement and removing the last 
   assert.equal(files.length, 0);
   picker = env.render("MultiPhotoPicker", props());
   assert.equal(picker.props["aria-invalid"], true);
+});
+
+test("Production home section buttons update counts, recent orders and the tracking drilldown", () => {
+  const sections = [{ id: "cv", name: "Conversion" }, { id: "rm", name: "Roll Making" }];
+  const orders = [
+    { id: "cv-open", sectionId: "cv", responsibleDepartment: "Production", status: "open" },
+    { id: "cv-closed", sectionId: "cv", responsibleDepartment: "Production", status: "closed" },
+    { id: "rm-progress", sectionId: "rm", responsibleDepartment: "Production", status: "in_progress" },
+    { id: "she", sectionId: "cv", responsibleDepartment: "SHE", status: "open" }
+  ];
+  const env = load("../src/pages/PublicRequesterPage.tsx", { overrides: { 0: { sections, machines: [], issueCategories: [] }, 1: orders, 4: "dashboard" } });
+  const render = () => env.render("PublicRequesterPage");
+  let page = render();
+  let dashboard = find(page, (node) => Boolean(node.props.stats));
+  assert.equal(dashboard.props.workOrders.length, 3);
+  assert.equal(dashboard.props.stats.open, 1);
+  find(page, (node) => node.props.value === "all" && Boolean(node.props.onChange)).props.onChange("roll-making");
+  page = render();
+  dashboard = find(page, (node) => Boolean(node.props.stats));
+  assert.equal(dashboard.props.workOrders.length, 1);
+  assert.equal(dashboard.props.workOrders[0].id, "rm-progress");
+  assert.equal(dashboard.props.stats.open, 0);
+  assert.equal(dashboard.props.stats.in_progress, 1);
+  dashboard.props.onStatus("in_progress");
+  const tracking = find(render(), (node) => Boolean(node.props.onFilter && node.props.onScope));
+  assert.equal(tracking.props.workOrders.length, 1);
+  assert.equal(tracking.props.workOrders[0].id, "rm-progress");
+});
+
+test("Production account opens the TV board and other departments do not have that entry", () => {
+  const env = load("../src/pages/PublicRequesterPage.tsx", { overrides: { 4: "account" } });
+  const launch = find(env.render("PublicRequesterPage"), (node) => node.props.className === "production-tv-launch");
+  assert.ok(launch);
+  launch.props.onClick();
+  const tv = env.render("PublicRequesterPage");
+  assert.ok(tv.props.onBack);
+  assert.ok(tv.props.onRefresh);
+  tv.props.onBack();
+  assert.ok(find(env.render("PublicRequesterPage"), (node) => node.props.className === "production-tv-launch"));
+  const other = load("../src/pages/PublicRequesterPage.tsx", { currentUser: { ...user, department: "SHE" }, overrides: { 4: "account" } });
+  assert.equal(find(other.render("PublicRequesterPage"), (node) => node.props.className === "production-tv-launch"), undefined);
 });

@@ -13,6 +13,9 @@ import { ImageLightbox } from "../components/ImageLightbox";
 import { PwaInstallButton } from "../components/PwaInstallButton";
 import { PushNotificationControl } from "../components/PushNotificationControl";
 import { SearchableSelect } from "../components/SearchableSelect";
+import { ProductionSectionFilter } from "../components/ProductionSectionFilter";
+import { ProductionTvDashboard } from "./ProductionTvDashboard";
+import { filterProductionSection, type ProductionSection } from "../utils/productionDashboard";
 import { StatusBadge } from "../components/Badges";
 import { formatDateTime, formatLiveDuration, formatMinutes } from "../utils/format";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
@@ -48,7 +51,7 @@ function reporterDepartmentOptions(current: string) {
     : workOrderDepartments;
 }
 
-type RequesterView = "dashboard" | "new" | "tracking" | "verify" | "account";
+type RequesterView = "dashboard" | "new" | "tracking" | "verify" | "account" | "production-tv";
 type RequesterStatusFilter = "all" | "open" | "in_progress" | "waiting" | "closed";
 type RequesterTrackingScope = "department" | "all";
 
@@ -93,6 +96,9 @@ export function PublicRequesterPage() {
   const [detail, setDetail] = useState<WorkOrderDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [timerNow, setTimerNow] = useState(() => new Date().toISOString());
+  const [sectionFilter, setSectionFilter] = useState<ProductionSection>("all");
+  const [lastWorkOrderUpdate, setLastWorkOrderUpdate] = useState<string | null>(null);
+  const [workOrderLoadError, setWorkOrderLoadError] = useState("");
 
   async function loadMasterData() {
     const next = await api.masterData();
@@ -102,8 +108,14 @@ export function PublicRequesterPage() {
 
   async function loadAccountWorkOrders() {
     if (!signedRequester) { setWorkOrders([]); return; }
-    const next = await api.workOrders();
-    setWorkOrders(next);
+    try {
+      const next = await api.workOrders();
+      setWorkOrders(next);
+      setLastWorkOrderUpdate(new Date().toISOString());
+      setWorkOrderLoadError("");
+    } catch {
+      setWorkOrderLoadError("Unable to refresh work orders. Reconnecting automatically; the last available data is still displayed.");
+    }
   }
 
   async function loadRequesterNotifications() {
@@ -131,10 +143,10 @@ export function PublicRequesterPage() {
   const requestedView = searchParams.get("view");
   useEffect(() => {
     if (signedRequester && requestedView === "verify") setView("verify");
+    if (signedRequester && workOrderDepartmentForUser(currentUser.department) === "Production" && requestedView === "production-tv") setView("production-tv");
   }, [requestedView, signedRequester]);
   useLiveRefresh(["work-orders", "master-data", "notifications"], async () => {
-    await loadMasterData();
-    if (signedRequester) await Promise.all([loadAccountWorkOrders(), loadRequesterNotifications()]);
+    await Promise.all([loadMasterData(), ...(signedRequester ? [loadAccountWorkOrders(), loadRequesterNotifications()] : [])]);
   }, { fallbackMs: 10000 });
 
   const isOffice = selectedType === "office";
@@ -158,22 +170,25 @@ export function PublicRequesterPage() {
   const departmentWorkOrders = useMemo(() => accountDepartment
     ? workOrders.filter((item) => item.responsibleDepartment === accountDepartment)
     : workOrders.filter((item) => item.requesterId === currentUser?.id), [accountDepartment, currentUser?.id, workOrders]);
+  const homeWorkOrders = useMemo(() => accountDepartment === "Production"
+    ? filterProductionSection(departmentWorkOrders, masterData.sections, sectionFilter)
+    : departmentWorkOrders, [accountDepartment, departmentWorkOrders, masterData.sections, sectionFilter]);
   const stats = useMemo(() => ({
-    open: departmentWorkOrders.filter((item) => statusesByFilter.open.includes(item.status)).length,
-    in_progress: departmentWorkOrders.filter((item) => statusesByFilter.in_progress.includes(item.status)).length,
-    waiting: departmentWorkOrders.filter((item) => statusesByFilter.waiting.includes(item.status)).length,
-    closed: departmentWorkOrders.filter((item) => statusesByFilter.closed.includes(item.status)).length
-  }), [departmentWorkOrders]);
+    open: homeWorkOrders.filter((item) => statusesByFilter.open.includes(item.status)).length,
+    in_progress: homeWorkOrders.filter((item) => statusesByFilter.in_progress.includes(item.status)).length,
+    waiting: homeWorkOrders.filter((item) => statusesByFilter.waiting.includes(item.status)).length,
+    closed: homeWorkOrders.filter((item) => statusesByFilter.closed.includes(item.status)).length
+  }), [homeWorkOrders]);
   const pendingVerification = useMemo(() => currentUser
     ? workOrders.filter((item) => requesterCanVerifyWorkOrder(currentUser, item))
     : [], [currentUser, workOrders]);
   const unreadNotifications = useMemo(() => notifications.filter((notification) => !notification.readAt).length, [notifications]);
   const visibleWorkOrders = useMemo(() => {
-    const scopedWorkOrders = trackingScope === "department" ? departmentWorkOrders : prioritizedWorkOrders;
+    const scopedWorkOrders = trackingScope === "department" ? homeWorkOrders : prioritizedWorkOrders;
     const byStatus = statusFilter === "all" ? scopedWorkOrders : scopedWorkOrders.filter((item) => statusesByFilter[statusFilter].includes(item.status));
     const query = search.trim().toLowerCase();
     return query ? byStatus.filter((item) => `${item.number} ${item.issueDescription} ${item.machineName} ${item.area}`.toLowerCase().includes(query)) : byStatus;
-  }, [departmentWorkOrders, prioritizedWorkOrders, search, statusFilter, trackingScope]);
+  }, [homeWorkOrders, prioritizedWorkOrders, search, statusFilter, trackingScope]);
 
   function chooseDepartment(department: WorkOrderDepartment) {
     setSelectedDepartment(department);
@@ -191,6 +206,11 @@ export function PublicRequesterPage() {
 
   function openView(next: RequesterView) {
     setView(next); setError("");
+    if (next === "production-tv") {
+      const params = new URLSearchParams(searchParams);
+      params.set("view", "production-tv");
+      navigate(`/report-issue?${params}`);
+    }
     if (next === "tracking") setTrackingScope("department");
     if (next !== "new") { setSelectedDepartment(null); setSelectedType(null); setChoosingOtherDepartment(false); }
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -367,6 +387,10 @@ export function PublicRequesterPage() {
 
   if (loadingUsers) return <div className="requester-app-loading">Preparing requester app...</div>;
 
+  if (signedRequester && accountDepartment === "Production" && view === "production-tv") {
+    return <ProductionTvDashboard workOrders={workOrders} sections={masterData.sections} now={timerNow} lastUpdated={lastWorkOrderUpdate} loadError={workOrderLoadError} onBack={() => { setView("account"); if (requestedView === "production-tv") { const params = new URLSearchParams(searchParams); params.delete("view"); navigate(`/report-issue?${params}`, { replace: true }); } }} onRefresh={loadAccountWorkOrders} />;
+  }
+
   return <div className={`requester-app-shell ${signedRequester ? "is-account" : "is-guest"}`}>
     <header className="requester-app-topbar">
       <div className="requester-app-brand"><span><img src="/brand/sugi_logo_white.png" alt="Sugihara Grand" /></span><div><small>SUGI CMMS</small><strong>{signedRequester ? `${currentUser.department} Requester` : "Guest Request"}</strong></div></div>
@@ -374,9 +398,11 @@ export function PublicRequesterPage() {
     </header>
 
     <main className="requester-app-main">
+      {signedRequester && accountDepartment === "Production" && view === "account" ? <button className="production-tv-launch" type="button" onClick={() => openView("production-tv")}><Eye size={26} /><span><strong>Production TV Dashboard</strong><small>Conversion, Roll Making, live status and completion analysis</small></span><ArrowLeft className="production-tv-launch-arrow" size={20} /></button> : null}
+      {signedRequester && accountDepartment === "Production" && view === "tracking" && trackingScope === "department" ? <ProductionSectionFilter value={sectionFilter} onChange={setSectionFilter} /> : null}
       {success ? <div className="requester-app-toast success"><CheckCircle2 size={18} />{success}<button type="button" onClick={() => setSuccess("")} aria-label="Dismiss"><X size={15} /></button></div> : null}
       {error ? <div className="requester-app-toast error"><RefreshCcw size={18} />{error}<button type="button" onClick={() => setError("")} aria-label="Dismiss"><X size={15} /></button></div> : null}
-      {signedRequester && view === "dashboard" ? <RequesterDashboard user={currentUser} workOrders={departmentWorkOrders} stats={stats} pendingVerification={pendingVerification} timerNow={timerNow} onStatus={showStatus} onView={openView} onDetail={openDetail} /> : null}
+      {signedRequester && view === "dashboard" ? <>{accountDepartment === "Production" ? <ProductionSectionFilter value={sectionFilter} onChange={setSectionFilter} /> : null}{workOrderLoadError ? <p className="error-line" role="status">{workOrderLoadError}</p> : null}<RequesterDashboard user={currentUser} workOrders={homeWorkOrders} stats={stats} pendingVerification={pendingVerification.filter((order) => homeWorkOrders.some((item) => item.id === order.id))} timerNow={timerNow} onStatus={showStatus} onView={openView} onDetail={openDetail} /></> : null}
       {view === "new" ? <section className={`requester-new-view ${selectedType ? "" : "requester-new-view-locked"}`} aria-hidden={!selectedType}>
         <div className="requester-new-heading"><div><p>{signedRequester ? "Account request" : "Guest request"}</p><h1>New Work Order</h1><span>{signedRequester ? "This request will be saved under your account." : "No account needed. Submit an issue in a few simple steps."}</span></div>{!signedRequester ? <button type="button" onClick={() => setLoginOpen(true)}><ShieldCheck size={16} />Sign in to track</button> : null}</div>
         {selectedType && selectedDepartment && rules ? <RequesterForm selectedType={selectedType} selectedDepartment={selectedDepartment} rules={rules} form={form} setForm={setForm} isOffice={isOffice} sectionOptions={sectionOptions} areaOptions={areaOptions} machineOptions={machineOptions} issueCategoryOptions={issueOptions} issueFiles={issueFiles} setIssueFiles={setIssueFiles} submitting={submitting} signedRequester={signedRequester} invalidField={invalidField} clearInvalidField={() => setInvalidField("")} onChangeType={() => setSelectedType(null)} onSubmit={submit} /> : <section className="requester-form-panel requester-form-locked"><div className="requester-panel-heading"><span className="requester-panel-icon"><ShieldCheck size={18} /></span><div><h2>Choose a department and category</h2><span>The request form opens after your selections.</span></div></div></section>}
