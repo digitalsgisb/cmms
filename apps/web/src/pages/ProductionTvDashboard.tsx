@@ -65,7 +65,7 @@ export function ProductionTvDashboard({ workOrders, sections, now, lastUpdated, 
 
   return <main className="production-tv" ref={boardRef}>
     <header className="production-tv-header">
-      <div className="production-tv-brand"><img src="/brand/sugihara-full-white.png" alt="Sugihara Grand Industries Sdn Bhd" /><div><p>{plant === "all" ? "All plants" : plantLabels[plant]}</p><h1>Production</h1></div></div>
+      <div className="production-tv-brand"><img src="/brand/sugihara-full-white.png" alt="Sugihara Grand Industries Sdn Bhd" /><div><p>{plant === "all" ? "All plants" : plantLabels[plant]}</p><h1>Production Work Order Monitoring</h1></div></div>
       <div className="production-tv-clock"><strong>{date.toLocaleTimeString("en-MY", { timeZone: "Asia/Kuala_Lumpur", hour12: false })}</strong><span>{date.toLocaleDateString("en-MY", { timeZone: "Asia/Kuala_Lumpur", weekday: "short", day: "numeric", month: "short", year: "numeric" })} · MYT</span></div>
     </header>
     <div className="production-tv-toolbar">
@@ -83,12 +83,11 @@ export function ProductionTvDashboard({ workOrders, sections, now, lastUpdated, 
         ["Closure rate", `${summary.closureRate}%`, "Closed / total excluding cancelled", ""]
       ].map(([label, value, help, tone], index) => <button type="button" key={label} className={`production-tv-metric ${tone}`} title={String(help)} onClick={() => openOrders(String(label), metricOrders[index].map((order) => order.id))} aria-label={`View ${label}`}><span>{label}</span><strong key={lastUpdated ? value : "loading"}>{lastUpdated ? value : "—"}</strong></button>)}
     </section>
-    <div className="production-tv-table-heading"><div role="group" aria-label="Table status scope"><button type="button" aria-pressed={!allStatuses} onClick={() => setAllStatuses(false)}>Active only</button><button type="button" aria-pressed={allStatuses} onClick={() => setAllStatuses(true)}>All statuses</button></div></div>
+    <div className="production-tv-table-heading">{summary.otherActive ? <button className="production-tv-other" type="button" onClick={() => openOrders("Other production sections", summary.active.filter((order) => !filterProductionSection([order], sections, "conversion").length && !filterProductionSection([order], sections, "roll-making").length).map((order) => order.id))}>Other sections · {summary.otherActive} →</button> : null}<div role="group" aria-label="Table status scope"><button type="button" aria-pressed={!allStatuses} onClick={() => setAllStatuses(false)}>Active only</button><button type="button" aria-pressed={allStatuses} onClick={() => setAllStatuses(true)}>All statuses</button></div></div>
     <section className="production-tv-tables" aria-label="Production section tables">
       <SectionTable title="Conversion" orders={filterProductionSection(records, sections, "conversion")} now={now} rotating={rotating && !selection} loading={!lastUpdated} onOpen={openOrder} pageSize={shortScreen ? 3 : tablePageSize} />
       <SectionTable title="Roll Making" orders={filterProductionSection(records, sections, "roll-making")} now={now} rotating={rotating && !selection} loading={!lastUpdated} onOpen={openOrder} pageSize={shortScreen ? 3 : tablePageSize} />
     </section>
-    {summary.otherActive ? <button className="production-tv-other" type="button" onClick={() => openOrders("Other production sections", summary.active.filter((order) => !filterProductionSection([order], sections, "conversion").length && !filterProductionSection([order], sections, "roll-making").length).map((order) => order.id))}>Other sections · {summary.otherActive} →</button> : null}
     <section className="production-tv-analysis">
       <article className="production-tv-chart"><div className="production-tv-panel-heading"><div><h2>Resolved vs closed</h2></div><div className="production-tv-legend"><span>Resolved <b>{summary.trend.reduce((total, day) => total + day.resolved, 0)}</b></span><span>Closed <b>{summary.trend.reduce((total, day) => total + day.closed, 0)}</b></span></div></div>
         <div className="production-tv-bars" role="group" aria-label="Select a work order date to explore its orders">

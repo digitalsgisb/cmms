@@ -3542,7 +3542,9 @@ html.production-tv-scrollbars::-webkit-scrollbar-thumb:hover, .production-tv::-w
 /* Stable table slots and fluid columns override the shared app table minimum. */
 .production-tv .production-tv-brand img { display: block; width: clamp(170px, 14vw, 240px); height: auto; max-height: 62px; object-fit: contain; }
 .production-tv-brand > div { padding-left: 16px; border-left: 1px solid #ffffff25; }
-.production-tv .production-tv-brand h1 { font-size: 22px; }
+.production-tv .production-tv-brand h1 { font-size: clamp(23px, 2vw, 38px); }
+.production-tv .production-tv-header { padding: 22px 24px; min-height: 112px; }
+.production-tv .production-tv-brand img { width: clamp(210px, 16vw, 300px); max-height: 78px; }
 .production-tv .production-tv-brand p { letter-spacing: .5px; text-transform: none; }
 .production-tv-table-heading { justify-content: flex-end; }
 .production-tv-tables { align-items: start; }
@@ -3565,12 +3567,29 @@ html.production-tv-scrollbars::-webkit-scrollbar-thumb:hover, .production-tv::-w
 .production-tv-work-row { cursor: pointer; }
 .production-tv-work-row:focus-visible { outline: 2px solid var(--brass); outline-offset: -2px; background: #ffffff15; }
 .production-tv-order-number { color: #fff0d4; }
-.production-tv .production-tv-other { display: block; margin: 8px 0 0 auto; border: 0; background: #ffffff09; font-size: 11px; }
+.production-tv .production-tv-other { display: block; margin: 0 auto 0 0; border: 0; background: #ffffff09; font-size: 11px; }
 .production-tv-footer { align-items: center; justify-content: space-between; }
 .production-tv-dtu { margin-left: auto; font-size: 10px; letter-spacing: 1.5px; font-weight: 800; color: #e6bcc7; white-space: normal; text-align: right; }
 .production-tv-toolbar, .production-tv-controls, .production-tv-brand, .production-tv-clock, .production-tv-panel-heading, .production-tv-legend { min-width: 0; }
+@media (min-width: 1101px) {
+  .production-tv { display: flex; flex-direction: column; height: 100dvh; overflow-y: auto; }
+  .production-tv > * { flex-shrink: 0; }
+  .production-tv-analysis { flex: 1 0 165px; }
+  .production-tv-chart { display: flex; flex-direction: column; }
+  .production-tv-chart .production-tv-bars { flex: 1; height: auto; min-height: 100px; }
+  .production-tv-chart .production-tv-day { height: 100%; }
+  .production-tv-chart .production-tv-bar-pair { height: calc(100% - 25px); min-height: 70px; }
+  .production-tv-chart .production-tv-bar-pair i { max-height: none; }
+}
+@media (min-width: 1101px) and (max-height: 850px) {
+  .production-tv .production-tv-header { padding: 15px 18px; min-height: 88px; }
+  .production-tv .production-tv-brand h1 { font-size: 26px; }
+}
 @media (max-width: 600px) {
-  .production-tv-brand > div { display: none; }
+  .production-tv .production-tv-header { padding: 14px; min-height: 0; }
+  .production-tv-brand { display: grid; gap: 8px; }
+  .production-tv-brand > div { display: block; padding: 0; border: 0; }
+  .production-tv .production-tv-brand h1 { font-size: 17px; }
   .production-tv .production-tv-brand img { width: 160px; max-width: 42vw; }
   .production-tv .production-tv-table-scroll th, .production-tv .production-tv-table-scroll td { padding: 5px; font-size: 10px; }
   .production-tv .production-tv-table-scroll td > strong { font-size: 11px; }
