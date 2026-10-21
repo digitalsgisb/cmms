@@ -141,10 +141,21 @@ export function PublicRequesterPage() {
     }
   }, [currentUser?.id]);
   const requestedView = searchParams.get("view");
+  const requestedWorkOrder = searchParams.get("workOrder");
   useEffect(() => {
     if (signedRequester && requestedView === "verify") setView("verify");
+    if (signedRequester && requestedView === "tracking") setView("tracking");
     if (signedRequester && workOrderDepartmentForUser(currentUser.department) === "Production" && requestedView === "production-tv") setView("production-tv");
   }, [requestedView, signedRequester]);
+  useEffect(() => {
+    if (!signedRequester || requestedView !== "tracking" || !requestedWorkOrder) return;
+    let cancelled = false;
+    setDetailLoading(true);
+    api.workOrder(requestedWorkOrder).then((next) => { if (!cancelled) setDetail(next); })
+      .catch(() => { if (!cancelled) setError("Unable to open this work order. Please try it from Track."); })
+      .finally(() => { if (!cancelled) setDetailLoading(false); });
+    return () => { cancelled = true; };
+  }, [requestedView, requestedWorkOrder, signedRequester, currentUser?.id]);
   useLiveRefresh(["work-orders", "master-data", "notifications"], async () => {
     await Promise.all([loadMasterData(), ...(signedRequester ? [loadAccountWorkOrders(), loadRequesterNotifications()] : [])]);
   }, { fallbackMs: 10000 });
@@ -209,6 +220,7 @@ export function PublicRequesterPage() {
     if (next === "production-tv") {
       const params = new URLSearchParams(searchParams);
       params.set("view", "production-tv");
+      params.delete("workOrder");
       navigate(`/report-issue?${params}`);
     }
     if (next === "tracking") setTrackingScope("department");
@@ -388,7 +400,7 @@ export function PublicRequesterPage() {
   if (loadingUsers) return <div className="requester-app-loading">Preparing requester app...</div>;
 
   if (signedRequester && accountDepartment === "Production" && view === "production-tv") {
-    return <ProductionTvDashboard workOrders={workOrders} sections={masterData.sections} now={timerNow} lastUpdated={lastWorkOrderUpdate} loadError={workOrderLoadError} onBack={() => { setView("account"); if (requestedView === "production-tv") { const params = new URLSearchParams(searchParams); params.delete("view"); navigate(`/report-issue?${params}`, { replace: true }); } }} onRefresh={loadAccountWorkOrders} />;
+    return <ProductionTvDashboard workOrders={workOrders} sections={masterData.sections} now={timerNow} lastUpdated={lastWorkOrderUpdate} loadError={workOrderLoadError} onBack={() => { setView("account"); if (requestedView === "production-tv") { const params = new URLSearchParams(searchParams); params.delete("view"); navigate(`/report-issue?${params}`, { replace: true }); } }} onRefresh={loadAccountWorkOrders} currentUser={currentUser} onOpenInApp={(id) => { const params = new URLSearchParams(searchParams); params.set("view", "tracking"); params.set("workOrder", id); setDetail(null); setView("tracking"); navigate(`/report-issue?${params}`); }} />;
   }
 
   return <div className={`requester-app-shell ${signedRequester ? "is-account" : "is-guest"}`}>

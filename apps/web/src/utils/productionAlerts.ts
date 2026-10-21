@@ -1,6 +1,17 @@
 import type { WorkOrder, WorkOrderStatus } from "@sugi-cmms/shared";
 
 export const productionReminderInterval = 15 * 60_000;
+export const productionPopupDuration = 5_000;
+
+export async function playProductionAlertSound(audio: Pick<HTMLAudioElement, "pause" | "play" | "currentTime" | "volume">) {
+  try {
+    audio.pause();
+    audio.currentTime = 0;
+    audio.volume = 0.7;
+    await audio.play();
+    return true;
+  } catch { return false; }
+}
 export type ProductionAlert = { id: string; title: string; body: string; orderIds: string[]; createdAt: number; kind: "new" | "reminder" | "returned" };
 export type ProductionAlertState = { initialized: boolean; statuses: Record<string, WorkOrderStatus>; reminders: Record<string, number> };
 export const emptyProductionAlertState = (): ProductionAlertState => ({ initialized: false, statuses: {}, reminders: {} });

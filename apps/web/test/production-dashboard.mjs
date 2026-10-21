@@ -151,6 +151,16 @@ test("table pagination reaches every order and changing status scope includes fi
   assert.equal(reached.size, 13, "All orders appear across the four pages");
   const wrapped = render(section.type, { ...section.props, rotating: false });
   assert.ok(nodes(wrapped, (node) => node.type === "tr" && String(node.key).includes("order-0")).length, "Next wraps to the first page");
+  states = [];
+  const compactReached = new Set();
+  for (let page = 0; page < 5; page++) {
+    const table = render(section.type, { ...section.props, rotating: false, pageSize: 3 });
+    const rows = nodes(table, (node) => node.type === "tr" && String(node.key).includes("order-"));
+    assert.ok(rows.length <= 3, "Short screens show at most three rows");
+    rows.forEach((row) => compactReached.add(String(row.key).match(/order-\d+/)[0]));
+    nodes(table, (node) => node.props["aria-label"] === "Next Conversion page")[0].props.onClick();
+  }
+  assert.equal(compactReached.size, 13, "Compact pagination keeps every order reachable");
 });
 
 test("cards, graph dates, status counts and table orders open the matching work order explorer", () => {

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:production": "node --test test/production-dashboard.mjs test/production-alerts.mjs test/production-explorer.mjs",
+    "test:production": "node --test test/production-dashboard.mjs test/production-alerts.mjs test/production-alert-ui.mjs test/production-explorer.mjs",
     "test:work-order-photos": "node --test test/work-order-photos.mjs",
     "test:performance": "node --test test/performance-rendering.mjs",
     "test:navigation": "node --test test/scroll-restoration.mjs",

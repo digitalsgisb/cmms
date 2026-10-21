@@ -28,7 +28,7 @@ function find(element, predicate) {
   }
 }
 
-function load(relativePath, { overrides = {}, currentUser = user, api = {} } = {}) {
+function load(relativePath, { overrides = {}, currentUser = user, api = {}, onNavigate } = {}) {
   const states = [];
   let stateIndex = 0;
   const hooks = {
@@ -44,7 +44,7 @@ function load(relativePath, { overrides = {}, currentUser = user, api = {} } = {
   const mocks = {
     react: hooks, "lucide-react": new Proxy({}, { get: () => placeholder }),
     "@sugi-cmms/shared": shared,
-    "react-router-dom": { Link: placeholder, Navigate: placeholder, useNavigate: () => () => {}, useSearchParams: () => [new URLSearchParams()] },
+    "react-router-dom": { Link: placeholder, Navigate: placeholder, useNavigate: () => (path) => onNavigate?.(path), useSearchParams: () => [new URLSearchParams()] },
     "../api/client": { api, mediaUrl: (url) => url },
     "./ProductionTvDashboard": { ProductionTvDashboard: placeholder },
     "../utils/productionDashboard": loadTsModule(new URL("../src/utils/productionDashboard.ts", import.meta.url)),
@@ -172,4 +172,17 @@ test("Production account opens the TV board and other departments do not have th
   assert.ok(find(env.render("PublicRequesterPage"), (node) => node.props.className === "production-tv-launch"));
   const other = load("../src/pages/PublicRequesterPage.tsx", { currentUser: { ...user, department: "SHE" }, overrides: { 4: "account" } });
   assert.equal(find(other.render("PublicRequesterPage"), (node) => node.props.className === "production-tv-launch"), undefined);
+});
+
+test("TV Open in app navigates to the requester's tracking detail instead of a staff-only route", () => {
+  let destination;
+  const env = load("../src/pages/PublicRequesterPage.tsx", { overrides: { 4: "production-tv" }, onNavigate: (path) => { destination = path; } });
+  const board = env.render("PublicRequesterPage");
+  assert.equal(board.props.currentUser.id, user.id);
+  board.props.onOpenInApp("target-order");
+  const url = new URL(destination, "https://cmms.example");
+  assert.equal(url.pathname, "/report-issue");
+  assert.equal(url.searchParams.get("view"), "tracking");
+  assert.equal(url.searchParams.get("workOrder"), "target-order");
+  assert.equal(env.states[4], "tracking");
 });
