@@ -380,8 +380,13 @@ const closedFairTimingOrder = inPlant(() => m.updateWorkOrderStatus(fairTimingOr
 assert.equal(closedFairTimingOrder.productionDowntimeReason, "Waiting for technician");
 
 const disposable = createOrder("Delete permission check");
-await assert.rejects(inPlant(() => m.deleteWorkOrder(disposable.id, technician.id)), /Executive or admin/i);
-await assert.rejects(inPlant(() => m.deleteWorkOrder(disposable.id, developer.id)), /Executive or admin/i);
+await assert.rejects(inPlant(() => m.deleteWorkOrder(disposable.id, technician.id)), /Executive, admin, or developer/i);
+assert(inPlant(() => m.getWorkOrder(disposable.id)));
+for (const manager of [admin, developer]) {
+  const managedOrder = createOrder(`Delete by ${manager.role}`);
+  await inPlant(() => m.deleteWorkOrder(managedOrder.id, manager.id));
+  assert.throws(() => inPlant(() => m.getWorkOrder(managedOrder.id)), /not found/i);
+}
 await inPlant(() => m.deleteWorkOrder(disposable.id, executive.id));
 assert.throws(() => inPlant(() => m.getWorkOrder(disposable.id)), /not found/i);
 

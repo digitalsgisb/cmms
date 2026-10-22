@@ -1748,8 +1748,8 @@ function requireAdmin(actorId: string) {
 
 function requireWorkOrderManager(actorId: string) {
   const actor = getUser(actorId);
-  if (!["executive", "admin"].includes(actor.role)) {
-    throw new Error("Executive or admin access is required to manage work orders.");
+  if (!["executive", "admin", "developer"].includes(actor.role)) {
+    throw new Error("Executive, admin, or developer access is required to manage work orders.");
   }
 
   return actor;

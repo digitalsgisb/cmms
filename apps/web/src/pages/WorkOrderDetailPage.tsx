@@ -189,7 +189,7 @@ export function WorkOrderDetailPage() {
 
   const canMaintain = currentUser ? ["technician", "executive", "admin", "developer"].includes(currentUser.role) : false;
   const canEditWorkOrder = currentUser ? ["technician", "executive", "admin", "developer"].includes(currentUser.role) : false;
-  const canDeleteWorkOrder = currentUser ? ["executive", "admin"].includes(currentUser.role) : false;
+  const canDeleteWorkOrder = currentUser ? ["executive", "admin", "developer"].includes(currentUser.role) : false;
   const canVerify =
     currentUser && detail
       ? currentUser.id === detail.requesterId || ["executive", "admin", "developer"].includes(currentUser.role)
