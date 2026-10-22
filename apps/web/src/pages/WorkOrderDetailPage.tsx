@@ -738,6 +738,11 @@ export function WorkOrderDetailPage() {
           ) : null}
         </div>
         <div className="work-order-command-actions">
+          {canDeleteWorkOrder ? (
+            <button type="button" className="delete-work-order-button" disabled={actionLocked} onClick={() => setShowDeleteAction(true)}>
+              <Trash2 size={17} aria-hidden="true" /> Delete work order
+            </button>
+          ) : null}
           <button className="secondary-action" type="button" onClick={goBack}>
             <ArrowLeft size={17} aria-hidden="true" />
             Back
@@ -752,6 +757,19 @@ export function WorkOrderDetailPage() {
           ) : null}
         </div>
       </div>
+
+      {canDeleteWorkOrder && showDeleteAction ? (
+        <div className="work-order-delete-confirmation">
+          <p>Delete {detail.number} and its uploaded images permanently?</p>
+          <div>
+            <button type="button" className="secondary-action" onClick={() => setShowDeleteAction(false)}>Cancel</button>
+            <button type="button" className="delete-work-order-button" disabled={busy} onClick={removeWorkOrder}>
+              <Trash2 size={15} aria-hidden="true" />
+              {busyAction === "delete" ? "Deleting..." : "Delete permanently"}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {!isTechnician ? (
         <section className="work-order-journey" aria-label="Work order journey">
@@ -1100,27 +1118,6 @@ export function WorkOrderDetailPage() {
           ) : null}
         </aside>
       </div>
-
-      {canDeleteWorkOrder ? (
-        <section className="work-order-danger-zone" aria-label="Work order management">
-          {showDeleteAction ? (
-            <div className="work-order-delete-confirmation">
-              <p>Delete {detail.number} and its uploaded images permanently?</p>
-              <div>
-                <button type="button" className="secondary-action" onClick={() => setShowDeleteAction(false)}>Cancel</button>
-                <button type="button" className="delete-work-order-button" disabled={busy} onClick={removeWorkOrder}>
-                  <Trash2 size={15} aria-hidden="true" />
-                  {busyAction === "delete" ? "Deleting..." : "Delete permanently"}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button type="button" className="work-order-delete-reveal" onClick={() => setShowDeleteAction(true)}>
-              <Trash2 size={15} aria-hidden="true" /> Delete work order
-            </button>
-          )}
-        </section>
-      ) : null}
 
       {resolveDialogOpen ? createPortal(
         <div className="modal-backdrop">
