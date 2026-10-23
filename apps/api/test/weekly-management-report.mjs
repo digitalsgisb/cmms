@@ -80,7 +80,26 @@ assert.equal(downtimeWindow({ ...timing, status: "resolved", acknowledgedAt: "in
 
 const [saved, duplicate] = await inPlant("port-klang", () => Promise.all([r.generateWeeklyReport(week), r.generateWeeklyReport(week)]));
 assert.equal(saved.id, duplicate.id); assert.equal(saved.aiStatus, "disabled");
-assert.match(saved.html, /&lt;img/); assert.doesNotMatch(saved.html, /<img|<script|undefined|NaN/);
+assert.match(saved.html, /&lt;img/); assert.doesNotMatch(saved.html, /<img src=x|<script|undefined|NaN/);
+assert.equal((saved.html.match(/<img /g) || []).length, 1, "Only the trusted company logo may render as an image");
+assert.match(saved.html, /alt="Sugihara Grand Industries Sdn\. Bhd\."/);
+assert.match(saved.html, /bgcolor="#7f111b"/);
+assert.equal((saved.html.match(/Open CMMS app/g) || []).length, 2);
+assert.match(saved.html, /prefers-color-scheme:dark/);
+const originalAppUrl = process.env.APP_PUBLIC_URL;
+process.env.APP_PUBLIC_URL = "https://cmms.example.test/portal/?private=do-not-leak#section";
+const configuredHtml = r.renderWeeklyEmail(saved);
+assert.match(configuredHtml, /href="https:\/\/cmms\.example\.test\/portal\/"/);
+assert.match(configuredHtml, /src="https:\/\/cmms\.example\.test\/portal\/brand\/sugihara-full-white\.png"/);
+assert.doesNotMatch(configuredHtml, /do-not-leak|#section/);
+for (const invalid of ["javascript:alert(1)", "https://user:password@example.test", "not a URL"]) {
+  process.env.APP_PUBLIC_URL = invalid;
+  const html = r.renderWeeklyEmail(saved);
+  assert.match(html, /href="https:\/\/cmms\.sugidigital\.org\/"/);
+  assert.doesNotMatch(html, /href="javascript:|user:password/);
+}
+if (originalAppUrl === undefined) delete process.env.APP_PUBLIC_URL;
+else process.env.APP_PUBLIC_URL = originalAppUrl;
 assert.match(saved.html, /Daily work order activity/); assert.match(saved.html, /Repair backlog ageing/);
 assert.match(saved.html, /not unique production downtime/);
 writeFileSync(path.join(root, "preview.html"), saved.html);

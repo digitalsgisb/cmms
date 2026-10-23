@@ -2,6 +2,8 @@
 
 The Reports page contains a weekly email preview, local AI generation, HTML download, and saved reports with delivery status. Access is restricted to executive, admin and developer roles and the selected plant. Both-plants reports require access to both plants. Generating or previewing does not send email.
 
+The email uses the CMMS maroon and gold theme, the full Sugihara company logo, and **Open CMMS app** buttons at the top and bottom. Set `APP_PUBLIC_URL` to the CMMS address recipients can reach (for example `https://cmms.sugidigital.org`); it supplies both the button destination and public `/brand/sugihara-full-white.png` image URL. Without a valid HTTP(S) URL, the template falls back to `https://cmms.sugidigital.org/`. Do not use an internal Docker service hostname as the public URL. Email clients may require recipients to allow images. Explicit light/dark palettes improve readability, but Outlook may still transform colours; its message background toggle can display the original formatting. Existing saved email snapshots retain their original template; new previews and newly generated drafts use the updated design. A sent report is not resent by changing its template.
+
 Reports cover the last completed Monday–Sunday in **Asia/Kuala_Lumpur**, regardless of the PC timezone. You can select an earlier Monday. A saved report is a snapshot; it does not change when a work order is edited later. An unsent draft can be regenerated. Preview uses current records and can therefore differ from an earlier saved report.
 
 ## Run locally on the CMMS PC
