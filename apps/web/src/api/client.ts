@@ -1,4 +1,5 @@
 import type { PlantId } from "@sugi-cmms/shared";
+import type { WeeklyReport, WeeklyReportHistory } from "@sugi-cmms/shared";
 import type {
   AssetDashboardResponse,
   AssetRecord,
@@ -132,6 +133,11 @@ export function mediaUrl(url: string) {
 }
 
 export const api = {
+  weeklyReportPreview: (week?: string) => request<WeeklyReport>(`/api/reports/weekly/preview${week ? `?week=${encodeURIComponent(week)}` : ""}`),
+  generateWeeklyReport: (week?: string, regenerate = false) => request<WeeklyReport>("/api/reports/weekly/generate", { method: "POST", body: JSON.stringify({ week, regenerate }) }),
+  weeklyReportHistory: () => request<WeeklyReportHistory[]>("/api/reports/weekly/history"),
+  weeklyReport: (id: string) => request<WeeklyReport>(`/api/reports/weekly/${encodeURIComponent(id)}`),
+  resetWeeklyDelivery: (id: string) => request<WeeklyReport>(`/api/reports/weekly/${encodeURIComponent(id)}/reset-delivery`, { method: "POST", body: JSON.stringify({ confirmedNotSent: true }) }),
   createPmPlan: (input: UpdatePmPlanInput) => request<PmPlan>("/api/pm/plans", { method: "POST", body: JSON.stringify(input) }),
   health: () => request<{ ok: boolean; service: string; timestamp: string }>("/api/health"),
   login: async (username: string, password: string) => {

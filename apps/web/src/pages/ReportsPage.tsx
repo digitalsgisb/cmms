@@ -44,6 +44,7 @@ import {
 import { api } from "../api/client";
 import { useCurrentUser } from "../state/UserContext";
 import { PlantSelector } from "../components/PlantSelector";
+import { WeeklyManagementReport } from "../components/WeeklyManagementReport";
 
 type PresetId = "daily" | "monthly" | "annual" | "work-orders" | "inventory" | "pm";
 type RangeId = "7d" | "30d" | "ytd";
@@ -345,6 +346,8 @@ export function ReportsPage() {
           <span>{closure}% work order closure</span>
         </div>
       </header>
+
+      <WeeklyManagementReport key={selectedPlant()} />
 
       <section className="reports-library">
         <div className="reports-section-heading"><div><span>Report library</span><h2>Choose the conversation you need to lead</h2></div><small>Every pack uses the same live source of truth.</small></div>

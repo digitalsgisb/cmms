@@ -1,3 +1,4 @@
+import { downtimeWindow } from "@sugi-cmms/shared";
 import { AlertCircle, ArrowLeft, Check, CheckCircle2, ClipboardCopy, Clock3, ExternalLink, ImagePlus, MessageSquare, PackageOpen, PauseCircle, Pencil, RotateCcw, Save, ShieldCheck, TimerReset, Trash2, UsersRound, Wrench, X } from "lucide-react";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -548,6 +549,7 @@ export function WorkOrderDetailPage() {
   const resolvedAt = ["resolved", "closed"].includes(detail.status) ? detail.resolvedAt || findActivityTime(detail.activities, "resolved") : null;
   const closedAt = detail.status === "closed" ? findActivityTime(detail.activities, "closed") : null;
   const terminalAt = closedAt || (detail.status === "cancelled" ? detail.updatedAt : null);
+  const downtime = downtimeWindow(detail, timerNow);
   const totalTimeEnd = terminalAt || timerNow;
   const queueEnd = startedAt || terminalAt || timerNow;
   const totalOpenMinutes = Math.max(0, Math.round((Date.parse(totalTimeEnd) - Date.parse(createdAt)) / 60000));
@@ -732,7 +734,7 @@ export function WorkOrderDetailPage() {
               <div><small>Current status</small><strong>{workOrderStatusLabels[visualStatus]}</strong></div>
               <div><small>Assigned technician</small><strong>{detail.assignedTo?.name || "Waiting for acceptance"}</strong></div>
               <div><small>Total queue time</small><strong>{formatDuration(createdAt, queueEnd)}</strong></div>
-              <div><small>System repair elapsed</small><strong>{startedAt ? formatDuration(startedAt, resolvedAt || terminalAt || timerNow) : "Not started"}</strong></div>
+              <div><small>Downtime</small><strong>{downtime.start ? formatDuration(downtime.start, downtime.end) : detail.acknowledgedAt ? "Timing unavailable" : "Not acknowledged"}</strong></div>
               <div><small>Maintenance actual</small><strong>{formatMinutes(detail.maintenanceActualMinutes)}</strong></div>
             </div>
           ) : null}
@@ -805,8 +807,8 @@ export function WorkOrderDetailPage() {
       {!isTechnician ? <section className="work-order-timing-strip" aria-label="Work order timing">
         <article className="timer-card primary">
           <TimerReset size={18} aria-hidden="true" />
-          <span>Total time</span>
-          <strong>{formatDuration(createdAt, totalTimeEnd)}</strong>
+          <span>Downtime</span>
+          <strong title="Acknowledgement to repair resolution">{downtime.start ? formatDuration(downtime.start, downtime.end) : detail.acknowledgedAt ? "Timing unavailable" : "Not acknowledged"}</strong>
         </article>
         <article className="timer-card technician-secondary-timer">
           <Clock3 size={18} aria-hidden="true" />

@@ -1,0 +1,385 @@
+{
+  "name": "SUGI CMMS - Weekly Management Email",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Kuala_Lumpur",
+    "executionTimeout": 300,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  },
+  "nodes": [
+    {
+      "id": "weekly",
+      "name": "Monday 08:00 MYT",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -500,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * 1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "config",
+      "name": "Report configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -280,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "url",
+              "name": "cmmsUrl",
+              "value": "http://host.docker.internal:3300",
+              "type": "string"
+            },
+            {
+              "id": "plant",
+              "name": "plant",
+              "value": "port-klang",
+              "type": "string"
+            },
+            {
+              "id": "from",
+              "name": "fromEmail",
+              "value": "cmms@example.com",
+              "type": "string"
+            },
+            {
+              "id": "to",
+              "name": "toEmail",
+              "value": "boss@example.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "notes": "Set the CMMS URL, plant (port-klang / sendayan / all), sender and recipients. Replace example addresses before activating."
+    },
+    {
+      "id": "generate",
+      "name": "Generate weekly report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -40,
+        0
+      ],
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-CMMS-Plant",
+              "value": "={{ $('Report configuration').first().json.plant }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 180000
+        },
+        "method": "POST",
+        "url": "={{ $('Report configuration').first().json.cmmsUrl + '/api/integrations/management-reports/weekly' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "CMMS reporting token"
+        }
+      }
+    },
+    {
+      "id": "claim",
+      "name": "Claim delivery",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        200,
+        0
+      ],
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-CMMS-Plant",
+              "value": "={{ $('Report configuration').first().json.plant }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 180000
+        },
+        "method": "POST",
+        "url": "={{ $('Report configuration').first().json.cmmsUrl + '/api/integrations/management-reports/weekly/' + $json.id + '/claim' }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "CMMS reporting token"
+        }
+      }
+    },
+    {
+      "id": "if",
+      "name": "Delivery claimed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        420,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "claimed",
+              "leftValue": "={{ $json.claimed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "email",
+      "name": "Send management email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        650,
+        -80
+      ],
+      "parameters": {
+        "fromEmail": "={{ $('Report configuration').first().json.fromEmail }}",
+        "toEmail": "={{ $('Report configuration').first().json.toEmail }}",
+        "subject": "={{ $('Generate weekly report').first().json.subject }}",
+        "emailFormat": "html",
+        "html": "={{ $('Generate weekly report').first().json.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "smtp": {
+          "name": "CMMS SMTP"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "notes": "Do not enable retries here. SMTP can accept a message even when its reply is lost. Review delivery before resetting a failed or uncertain report."
+    },
+    {
+      "id": "sent",
+      "name": "Record successful delivery",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        -140
+      ],
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-CMMS-Plant",
+              "value": "={{ $('Report configuration').first().json.plant }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 180000
+        },
+        "method": "POST",
+        "url": "={{ $('Report configuration').first().json.cmmsUrl + '/api/integrations/management-reports/weekly/' + $('Generate weekly report').first().json.id + '/delivery' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { deliveryToken: $('Claim delivery').first().json.deliveryToken, sent: true } }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "CMMS reporting token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "failed",
+      "name": "Record failed delivery",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        100
+      ],
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-CMMS-Plant",
+              "value": "={{ $('Report configuration').first().json.plant }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 180000
+        },
+        "method": "POST",
+        "url": "={{ $('Report configuration').first().json.cmmsUrl + '/api/integrations/management-reports/weekly/' + $('Generate weekly report').first().json.id + '/delivery' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { deliveryToken: $('Claim delivery').first().json.deliveryToken, sent: false } }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "CMMS reporting token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "delivery-error",
+      "name": "Flag delivery failure",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        100
+      ],
+      "parameters": {
+        "errorMessage": "CMMS management email delivery failed or is uncertain. Check SMTP and the saved report before retrying."
+      }
+    }
+  ],
+  "connections": {
+    "Monday 08:00 MYT": {
+      "main": [
+        [
+          {
+            "node": "Report configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Report configuration": {
+      "main": [
+        [
+          {
+            "node": "Generate weekly report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate weekly report": {
+      "main": [
+        [
+          {
+            "node": "Claim delivery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim delivery": {
+      "main": [
+        [
+          {
+            "node": "Delivery claimed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delivery claimed": {
+      "main": [
+        [
+          {
+            "node": "Send management email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Send management email": {
+      "main": [
+        [
+          {
+            "node": "Record successful delivery",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record failed delivery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record failed delivery": {
+      "main": [
+        [
+          {
+            "node": "Flag delivery failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "tags": []
+}

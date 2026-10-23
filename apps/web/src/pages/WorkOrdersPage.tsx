@@ -1,3 +1,4 @@
+import { downtimeWindow } from "@sugi-cmms/shared";
 import { AlertTriangle, CheckCircle2, Clock3, Eye, Layers3, Pencil, Plus, Search, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent, MouseEvent } from "react";
@@ -318,9 +319,9 @@ function WorkOrderCard({
   canVerifyAll: boolean;
 }) {
   const needsVerification = workOrder.status === "resolved" && (canVerifyAll || workOrder.requesterId === currentUserId);
-  const timerRunning = !["closed", "cancelled"].includes(workOrder.status);
-  const timerEnd = timerRunning ? timerNow : workOrder.closedAt || workOrder.updatedAt;
-  const timerLabel = workOrder.status === "cancelled" ? "Cancelled" : "Total time";
+  const downtime = downtimeWindow(workOrder, timerNow);
+  const timerRunning = downtime.running;
+  const timerLabel = "Downtime";
 
   return (
     <article className={`work-order-card card-status-${workOrder.status} ${needsVerification ? "needs-verification" : ""}`}>
@@ -331,7 +332,7 @@ function WorkOrderCard({
             <StatusBadge status={workOrder.status} />
             <span className={`card-live-timer ${timerRunning ? "is-live" : "is-stopped"}`}>
               <Clock3 size={13} aria-hidden="true" />
-              {timerLabel} {formatLiveDuration(workOrder.createdAt, timerEnd)}
+              {timerLabel} {downtime.start ? formatLiveDuration(downtime.start, downtime.end) : workOrder.acknowledgedAt ? "Timing unavailable" : "Not acknowledged"}
             </span>
           </div>
         </div>

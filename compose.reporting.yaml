@@ -1,0 +1,30 @@
+# Optional local reporting services. Start alongside compose.yaml.
+services:
+  cmms:
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-}"
+      CMMS_REPORT_TOKEN: "${CMMS_REPORT_TOKEN:-}"
+      CMMS_REPORT_PLANTS: "${CMMS_REPORT_PLANTS:-port-klang}"
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    # CPU operation by default. Configure GPU access for the actual host separately.
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      GENERIC_TIMEZONE: Asia/Kuala_Lumpur
+      TZ: Asia/Kuala_Lumpur
+      N8N_ENCRYPTION_KEY: "${N8N_ENCRYPTION_KEY:?Set a persistent N8N_ENCRYPTION_KEY in .env}"
+    volumes:
+      - n8n-data:/home/node/.n8n
+volumes:
+  ollama-models:
+  n8n-data:

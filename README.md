@@ -10,6 +10,8 @@ A learning-friendly CMMS foundation using:
 
 ## How To Run
 
+Weekly management email reports with charts, local Ollama commentary, saved snapshots and an importable n8n workflow are available under **Reports**. See [setup and reporting definitions](docs/weekly-management-report.md). Work order **Downtime** runs from first acknowledgement to repair resolution; Total Time is hidden from the work order screens.
+
 Install dependencies:
 
 ```powershell

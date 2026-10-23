@@ -3503,7 +3503,8 @@ function workOrderSheetRow(workOrderId: string) {
     IssueDescription: detail.issueDescription,
     PhotoIssue: publicMediaUrl(issuePhoto?.url),
     "Downtime Actual": elapsedMinutes(repairStartedAt, resolvedAt),
-    "Total Downtime": elapsedMinutes(detail.createdAt, closedAt),
+    Downtime: elapsedMinutes(acknowledgedAt, resolvedAt),
+    "Total Downtime": elapsedMinutes(acknowledgedAt, resolvedAt),
     "Total Time": elapsedMinutes(detail.createdAt, closedAt),
     "Production Downtime": elapsedMinutes(detail.createdAt, resolvedAt),
     "Total Queue Time": elapsedMinutes(detail.createdAt, repairStartedAt),
@@ -3743,6 +3744,9 @@ export function listWorkOrders(actor?: User): WorkOrder[] {
   const workOrders = rows<StoredWorkOrder>(db.prepare(`
     SELECT wo.*,
       (SELECT activity.createdAt FROM scoped_work_order_activities activity
+       WHERE activity.workOrderId = wo.id AND activity.action = 'acknowledged'
+       ORDER BY activity.createdAt ASC LIMIT 1) AS acknowledgedAt,
+      (SELECT activity.createdAt FROM scoped_work_order_activities activity
        WHERE activity.workOrderId = wo.id AND activity.action = 'started'
        ORDER BY activity.createdAt ASC LIMIT 1) AS maintenanceStartedAt,
       (SELECT activity.createdAt FROM scoped_work_order_activities activity
@@ -3750,7 +3754,10 @@ export function listWorkOrders(actor?: User): WorkOrder[] {
        ORDER BY activity.createdAt DESC LIMIT 1) AS resolvedAt,
       (SELECT activity.createdAt FROM scoped_work_order_activities activity
        WHERE activity.workOrderId = wo.id AND activity.action = 'closed'
-       ORDER BY activity.createdAt DESC LIMIT 1) AS closedAt
+       ORDER BY activity.createdAt DESC LIMIT 1) AS closedAt,
+      (SELECT activity.createdAt FROM scoped_work_order_activities activity
+       WHERE activity.workOrderId = wo.id AND activity.action = 'cancelled'
+       ORDER BY activity.createdAt DESC LIMIT 1) AS cancelledAt
     FROM scoped_work_orders wo
     ORDER BY wo.updatedAt DESC
   `).all()).map(hydrateWorkOrderTeam);
@@ -3776,6 +3783,9 @@ export function getWorkOrder(id: string): WorkOrder {
   const workOrder = db.prepare(`
     SELECT wo.*,
       (SELECT activity.createdAt FROM scoped_work_order_activities activity
+       WHERE activity.workOrderId = wo.id AND activity.action = 'acknowledged'
+       ORDER BY activity.createdAt ASC LIMIT 1) AS acknowledgedAt,
+      (SELECT activity.createdAt FROM scoped_work_order_activities activity
        WHERE activity.workOrderId = wo.id AND activity.action = 'started'
        ORDER BY activity.createdAt ASC LIMIT 1) AS maintenanceStartedAt,
       (SELECT activity.createdAt FROM scoped_work_order_activities activity
@@ -3783,7 +3793,10 @@ export function getWorkOrder(id: string): WorkOrder {
        ORDER BY activity.createdAt DESC LIMIT 1) AS resolvedAt,
       (SELECT activity.createdAt FROM scoped_work_order_activities activity
        WHERE activity.workOrderId = wo.id AND activity.action = 'closed'
-       ORDER BY activity.createdAt DESC LIMIT 1) AS closedAt
+       ORDER BY activity.createdAt DESC LIMIT 1) AS closedAt,
+      (SELECT activity.createdAt FROM scoped_work_order_activities activity
+       WHERE activity.workOrderId = wo.id AND activity.action = 'cancelled'
+       ORDER BY activity.createdAt DESC LIMIT 1) AS cancelledAt
     FROM scoped_work_orders wo
     WHERE wo.id = ?
   `).get(id);
@@ -4295,6 +4308,9 @@ export function notifyLongRunningWorkOrders() {
   const workOrders = rows<WorkOrder>(db.prepare(`
     SELECT wo.*,
       (SELECT activity.createdAt FROM scoped_work_order_activities activity
+       WHERE activity.workOrderId = wo.id AND activity.action = 'acknowledged'
+       ORDER BY activity.createdAt ASC LIMIT 1) AS acknowledgedAt,
+      (SELECT activity.createdAt FROM scoped_work_order_activities activity
        WHERE activity.workOrderId = wo.id AND activity.action = 'started'
        ORDER BY activity.createdAt ASC LIMIT 1) AS maintenanceStartedAt,
       (SELECT activity.createdAt FROM scoped_work_order_activities activity
@@ -4302,7 +4318,10 @@ export function notifyLongRunningWorkOrders() {
        ORDER BY activity.createdAt DESC LIMIT 1) AS resolvedAt,
       (SELECT activity.createdAt FROM scoped_work_order_activities activity
        WHERE activity.workOrderId = wo.id AND activity.action = 'closed'
-       ORDER BY activity.createdAt DESC LIMIT 1) AS closedAt
+       ORDER BY activity.createdAt DESC LIMIT 1) AS closedAt,
+      (SELECT activity.createdAt FROM scoped_work_order_activities activity
+       WHERE activity.workOrderId = wo.id AND activity.action = 'cancelled'
+       ORDER BY activity.createdAt DESC LIMIT 1) AS cancelledAt
     FROM scoped_work_orders wo
     WHERE wo.responsibleDepartment = 'Production'
       AND wo.status NOT IN ('closed', 'cancelled')
@@ -4507,6 +4526,9 @@ export function listRequesterWorkOrders(): PublicRequesterWorkOrder[] {
         wo.productionDowntimeReason,
         wo.createdAt,
         (SELECT activity.createdAt FROM scoped_work_order_activities activity
+         WHERE activity.workOrderId = wo.id AND activity.action = 'acknowledged'
+         ORDER BY activity.createdAt ASC LIMIT 1) AS acknowledgedAt,
+        (SELECT activity.createdAt FROM scoped_work_order_activities activity
          WHERE activity.workOrderId = wo.id AND activity.action = 'started'
          ORDER BY activity.createdAt ASC LIMIT 1) AS maintenanceStartedAt,
         (SELECT activity.createdAt FROM scoped_work_order_activities activity
@@ -4515,6 +4537,9 @@ export function listRequesterWorkOrders(): PublicRequesterWorkOrder[] {
         (SELECT activity.createdAt FROM scoped_work_order_activities activity
          WHERE activity.workOrderId = wo.id AND activity.action = 'closed'
          ORDER BY activity.createdAt DESC LIMIT 1) AS closedAt,
+        (SELECT activity.createdAt FROM scoped_work_order_activities activity
+         WHERE activity.workOrderId = wo.id AND activity.action = 'cancelled'
+         ORDER BY activity.createdAt DESC LIMIT 1) AS cancelledAt,
         wo.updatedAt
       FROM scoped_work_orders wo
       JOIN users requester ON requester.id = wo.requesterId
@@ -4614,6 +4639,8 @@ export function getGuestWorkOrderTracking(workOrderId: string, token: string): G
       completionNote: detail.completionNote,
       maintenanceActualMinutes: detail.maintenanceActualMinutes,
       productionDowntimeReason: detail.productionDowntimeReason,
+      acknowledgedAt: detail.acknowledgedAt,
+      cancelledAt: detail.cancelledAt,
       maintenanceStartedAt: detail.maintenanceStartedAt,
       resolvedAt: detail.resolvedAt,
       assignedToName: detail.assignedTo?.name || "Waiting for assignment"

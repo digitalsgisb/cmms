@@ -22,6 +22,10 @@ services:
       WORK_ORDER_SYNC_TOKEN: "${WORK_ORDER_SYNC_TOKEN:-}"
       WORK_ORDER_SYNC_SHEET_NAME: "${WORK_ORDER_SYNC_SHEET_NAME:-WorkOrders}"
       WORK_ORDER_WEBHOOK_URL: "${WORK_ORDER_WEBHOOK_URL:-}"
+      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-}"
+      CMMS_REPORT_TOKEN: "${CMMS_REPORT_TOKEN:-}"
+      CMMS_REPORT_PLANTS: "${CMMS_REPORT_PLANTS:-port-klang}"
     volumes:
       - cmms-data:/app/apps/api/data
       - cmms-uploads:/app/apps/api/uploads

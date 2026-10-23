@@ -193,7 +193,7 @@ function normalizeCellValue(header, value) {
 function calculateReadableDurations(record) {
   const calculated = Object.assign({}, record);
   calculated["Downtime Actual"] = durationOrCalculated(record["Downtime Actual"], record.DateRepair, record.DateResolved);
-  calculated["Total Downtime"] = durationOrCalculated(record["Total Downtime"], record.DateSubmitted, record.DateResolved);
+  calculated["Total Downtime"] = durationOrCalculated(record["Total Downtime"], record.DateAcknowledge, record.DateResolved);
   calculated.AcknowledgeTime = durationOrCalculated(record.AcknowledgeTime, record.DateSubmitted, record.DateAcknowledge);
   calculated.RepairTime = durationOrCalculated(record.RepairTime, record.DateRepair, record.DateResolved);
   calculated.FinishTime = durationOrCalculated(record.FinishTime, record.DateSubmitted, record.DateResolved);
@@ -267,7 +267,7 @@ function styleStatusCell(cell, status) {
 function setHeaderNotes(sheet) {
   const notes = {
     "Downtime Actual": "Minutes from repair start until resolution.",
-    "Total Downtime": "Minutes from submission until resolution.",
+    "Total Downtime": "Downtime in minutes from first maintenance acknowledgement until repair resolution. Excludes requester verification time.",
     AcknowledgeTime: "Minutes from submission until maintenance acknowledgement.",
     RepairTime: "Minutes from repair start until resolution.",
     FinishTime: "Minutes from submission until resolution.",

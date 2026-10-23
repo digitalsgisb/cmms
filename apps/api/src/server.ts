@@ -1,5 +1,7 @@
 import { plantContext, userPlants } from "./plant-context.js";
 import { db } from "./db.js";
+import { initializeWeeklyReports } from "./weekly-report.js";
+import { weeklyAutomationRouter, weeklyManagementRouter } from "./weekly-report-routes.js";
 import { requesterCanVerifyWorkOrder, workOrderDepartmentForUser, type PlantId } from "@sugi-cmms/shared";
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
@@ -244,6 +246,7 @@ async function importAirLeakPhoto(workOrderId: string, pictureUrl: string) {
 }
 
 migrate();
+initializeWeeklyReports();
 plantContext.run({ plant: "port-klang" }, () => seed());
 plantContext.run({ plant: "sendayan" }, () => ensurePlantPmSchedules());
 initializeWebPush();
@@ -263,6 +266,8 @@ declare global {
     interface Request { cmmsUser?: User }
   }
 }
+
+app.use("/api/integrations/management-reports", weeklyAutomationRouter());
 
 app.use("/api", (request, response, next) => {
   const appSheetAirLeakMutation = request.method === "POST" && request.path === "/integrations/appsheet/air-leaks";
@@ -314,7 +319,7 @@ app.use("/api", (request, response, next) => {
   if (requestedPlant === "all" ? request.cmmsUser.plantAccess !== "both" : !userPlants(request.cmmsUser).includes(requestedPlant as PlantId)) {
     response.status(403).json({ error: "You do not have access to this plant." }); return;
   }
-  if (requestedPlant === "all" && !["GET", "HEAD"].includes(request.method) && !["/auth/", "/users", "/notifications", "/push/"].some((prefix) => request.path.startsWith(prefix))) {
+  if (requestedPlant === "all" && !["GET", "HEAD"].includes(request.method) && !["/auth/", "/users", "/notifications", "/push/", "/reports/weekly/"].some((prefix) => request.path.startsWith(prefix))) {
     response.status(400).json({ error: "Select one plant before making changes." }); return;
   }
   plantContext.run({ plant: requestedPlant as PlantId | "all" }, () => authorizeRequest(request, response, next));
@@ -367,6 +372,8 @@ function authorizeRequest(request: Request, response: Response, next: NextFuncti
   if (request.path.startsWith("/assets") && !["executive", "admin", "developer"].includes(request.cmmsUser!.role)) { response.status(403).json({ error: "Management access is required." }); return; }
   next();
 }
+
+app.use("/api/reports/weekly", weeklyManagementRouter());
 
 type LiveTopic = "work-orders" | "notifications" | "dashboard" | "spare-parts" | "pm" | "assets" | "master-data" | "users";
 

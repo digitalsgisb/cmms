@@ -1,3 +1,4 @@
+import { downtimeWindow } from "@sugi-cmms/shared";
 import {
   AlertTriangle, Check, CheckCircle2, ClipboardCopy, Clock3, Home, Image, RefreshCcw,
   Send, Share2, ShieldCheck, Wrench
@@ -154,7 +155,7 @@ export function GuestTrackingPage() {
   const stage = statusStage(workOrder.status);
   const photos = workOrder.attachments.filter((attachment) => ["issue", "after", "return_evidence"].includes(attachment.kind));
   const timerRunning = !["closed", "cancelled"].includes(workOrder.status);
-  const timerEnd = timerRunning ? timerNow : workOrder.closedAt || workOrder.updatedAt;
+  const downtime = downtimeWindow(workOrder, timerNow);
   const needsDowntimeReason = workOrder.responsibleDepartment === "Production" && !workOrder.productionDowntimeReason && timerRunning &&
     Math.max(0, Date.now() - Date.parse(workOrder.createdAt)) >= longProductionDowntimeMinutes * 60000;
 
@@ -171,7 +172,7 @@ export function GuestTrackingPage() {
 
       <section className={`guest-progress-card status-${workOrder.status}`}>
         <div className="guest-progress-heading"><div><p>{workOrder.number}</p><h1>{trackerHeadline(workOrder.status)}</h1><span>Last updated {formatDateTime(workOrder.updatedAt)}</span></div><StatusBadge status={workOrder.status} /></div>
-        <div className={`guest-total-timer ${timerRunning ? "is-live" : "is-stopped"}`}><Clock3 size={22} aria-hidden="true" /><span><small>Total Time</small><strong>{formatLiveDuration(workOrder.createdAt, timerEnd)}</strong></span><time>Opened {formatDateTime(workOrder.createdAt)}</time></div>
+        <div className={`guest-total-timer ${downtime.running ? "is-live" : "is-stopped"}`}><Clock3 size={22} aria-hidden="true" /><span><small>Downtime</small><strong>{downtime.start ? formatLiveDuration(downtime.start, downtime.end) : workOrder.acknowledgedAt ? "Timing unavailable" : "Not acknowledged"}</strong></span><time>Opened {formatDateTime(workOrder.createdAt)}</time></div>
         <div className="guest-progress-track" style={{ "--tracker-progress": `${(stage / (trackingSteps.length - 1)) * 100}%` } as React.CSSProperties}>
           <div className="guest-progress-line"><span /></div>
           {trackingSteps.map(({ label, Icon }, index) => <div className={`guest-progress-step ${index <= stage ? "done" : ""} ${index === stage ? "current" : ""}`} key={label}><span>{index < stage || workOrder.status === "closed" ? <Check size={14} /> : <Icon size={15} />}</span><strong>{label}</strong></div>)}

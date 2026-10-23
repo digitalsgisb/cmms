@@ -1,3 +1,4 @@
+import { downtimeWindow } from "@sugi-cmms/shared";
 import {
   Activity, AlertTriangle, ArrowLeft, Bell, Building2, CalendarDays, CheckCircle2, ClipboardList, Clock3, Eye, Factory,
   Hammer, History, Home, Lightbulb, LogIn, LogOut, MapPin, RefreshCcw, Search, Send, ShieldCheck,
@@ -568,9 +569,9 @@ function RequesterDetailDialog({ detail, canVerify, isOwner, timerNow, onClose, 
 }
 
 function RequesterElapsedTimer({ workOrder, timerNow, detailed = false }: { workOrder: WorkOrder; timerNow: string; detailed?: boolean }) {
-  const running = !["closed", "cancelled"].includes(workOrder.status);
-  const end = running ? timerNow : workOrder.closedAt || workOrder.updatedAt;
-  return <div className={`requester-elapsed-timer ${running ? "is-live" : "is-stopped"} ${detailed ? "is-detailed" : ""}`}><Clock3 size={detailed ? 21 : 17} aria-hidden="true" /><span><small>Total Time</small><strong>{formatLiveDuration(workOrder.createdAt, end)}</strong></span>{detailed ? <time>{running ? "Still open" : workOrder.status === "closed" ? `Closed ${formatDateTime(end)}` : `Cancelled ${formatDateTime(end)}`}</time> : null}</div>;
+  const downtime = downtimeWindow(workOrder, timerNow);
+  const running = downtime.running;
+  return <div className={`requester-elapsed-timer ${running ? "is-live" : "is-stopped"} ${detailed ? "is-detailed" : ""}`}><Clock3 size={detailed ? 21 : 17} aria-hidden="true" /><span><small>Downtime</small><strong>{downtime.start ? formatLiveDuration(downtime.start, downtime.end) : workOrder.acknowledgedAt ? "Timing unavailable" : "Not acknowledged"}</strong></span>{detailed ? <time>{running ? "Since acknowledgement" : downtime.start ? `Stopped ${formatDateTime(downtime.end)}` : "Starts at acknowledgement"}</time> : null}</div>;
 }
 
 function RequesterEmpty({ title, copy }: { title: string; copy: string }) { return <div className="requester-empty"><ClipboardList size={30} /><h2>{title}</h2><p>{copy}</p></div>; }

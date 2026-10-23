@@ -1,3 +1,5 @@
+export { downtimeWindow } from "./downtime.js";
+export type { WeeklyMetrics, WeeklyReportFacts, WeeklyReport, WeeklyReportHistory } from "./weekly-report.js";
 export type PlantId = "port-klang" | "sendayan";
 export type PlantAccess = PlantId | "both";
 export const plantLabels: Record<PlantId, string> = { "port-klang": "Port Klang", sendayan: "Sendayan" };
@@ -275,6 +277,8 @@ export interface WorkOrder {
   issueCategoryName: string;
   issueDescription: string;
   createdAt: string;
+  acknowledgedAt?: string | null;
+  cancelledAt?: string | null;
   maintenanceStartedAt: string | null;
   resolvedAt: string | null;
   closedAt: string | null;
@@ -492,6 +496,8 @@ export interface PublicRequesterWorkOrder {
   productionDowntimeReason: string | null;
   attachments: WorkOrderAttachment[];
   createdAt: string;
+  acknowledgedAt?: string | null;
+  cancelledAt?: string | null;
   maintenanceStartedAt: string | null;
   resolvedAt: string | null;
   closedAt: string | null;
