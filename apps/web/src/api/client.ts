@@ -1,6 +1,7 @@
 import type { PlantId } from "@sugi-cmms/shared";
 import type { WeeklyReport, WeeklyReportHistory } from "@sugi-cmms/shared";
 import type {
+  ArchivedWorkOrder,
   AssetDashboardResponse,
   AssetRecord,
   AirLeakSyncResult,
@@ -423,6 +424,8 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ assignedToId, actorId, note })
     }),
+  archivedWorkOrders: () => request<ArchivedWorkOrder[]>("/api/work-order-archive"),
+  restoreWorkOrder: (id: string) => request<WorkOrder>(`/api/work-order-archive/${id}/restore`, { method: "POST" }),
   deleteWorkOrder: (id: string, input: DeleteWorkOrderInput) =>
     request<WorkOrder>(`/api/work-orders/${id}`, {
       method: "DELETE",

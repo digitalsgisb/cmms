@@ -39,6 +39,8 @@ import {
   deleteAppSheetAirLeak,
   deletePushSubscription,
   deleteWorkOrder,
+  listArchivedWorkOrders,
+  restoreWorkOrder,
   deletePmResultPhoto,
   getPmDashboard,
   getPmPhoto,
@@ -378,7 +380,7 @@ app.use("/api/reports/weekly", weeklyManagementRouter());
 type LiveTopic = "work-orders" | "notifications" | "dashboard" | "spare-parts" | "pm" | "assets" | "master-data" | "users";
 
 function topicsForMutation(pathname: string): LiveTopic[] {
-  if (pathname.startsWith("/api/requester/work-orders") || pathname.startsWith("/api/work-orders") || pathname.startsWith("/api/integrations/appsheet/air-leaks")) {
+  if (pathname.startsWith("/api/requester/work-orders") || pathname.startsWith("/api/work-orders") || pathname.startsWith("/api/work-order-archive") || pathname.startsWith("/api/integrations/appsheet/air-leaks")) {
     return ["work-orders", "notifications", "dashboard"];
   }
   if (pathname.startsWith("/api/spare-parts")) return ["spare-parts", "dashboard"];
@@ -536,8 +538,9 @@ app.use("/uploads", (request, response, next) => {
     const token = request.header("authorization")?.replace(/^Bearer /, "") || sessionCookie(request);
     if (token && !request.query.token) {
       const user = authenticateSession(token);
-      const record = workOrderId ? db.prepare("SELECT plantId FROM work_orders WHERE id = ?").get(workOrderId) as { plantId: PlantId } | undefined : null;
+      const record = workOrderId ? db.prepare("SELECT plantId, archivedAt FROM work_orders WHERE id = ?").get(workOrderId) as { plantId: PlantId; archivedAt: string | null } | undefined : null;
       if (workOrderId && (!record || !userPlants(user).includes(record.plantId))) throw new Error("Media access denied.");
+      if (record?.archivedAt && !["executive", "admin", "developer"].includes(user.role)) throw new Error("Media access denied.");
       if (avatarUserId) {
         const owner = db.prepare("SELECT plantAccess FROM users WHERE id = ?").get(avatarUserId) as User | undefined;
         if (!owner || !userPlants(owner).some((plant) => userPlants(user).includes(plant))) throw new Error("Media access denied.");
@@ -920,7 +923,7 @@ app.post("/api/integrations/appsheet/air-leaks", asyncHandler(async (request, re
     issuedBy: String(request.body.issuedBy || request.body["Issue By"] || "")
   });
   let photoImported = false;
-  if (request.body.pictureUrl || request.body.Picture) {
+  if (result.status !== "Archived" && (request.body.pictureUrl || request.body.Picture)) {
     photoImported = await importAirLeakPhoto(result.workOrderId, String(request.body.pictureUrl || request.body.Picture));
   }
   response.status(result.created ? 201 : 200).json({ ...result, photoImported });
@@ -975,6 +978,14 @@ app.patch("/api/requester/work-orders/:id/downtime-reason", (request, response) 
   ));
 });
 
+app.get("/api/work-order-archive", (request, response) => {
+  response.json(listArchivedWorkOrders(request.cmmsUser!.id));
+});
+
+app.post("/api/work-order-archive/:id/restore", (request, response) => {
+  response.json(restoreWorkOrder(request.params.id, request.cmmsUser!.id));
+});
+
 app.get("/api/work-orders", (request, response) => {
   const workOrders = listWorkOrders(request.cmmsUser);
   response.json(workOrders);
@@ -1008,7 +1019,7 @@ app.delete("/api/work-orders/:id", asyncHandler(async (request, response) => {
     throw new Error("actorId is required.");
   }
 
-  response.json(await deleteWorkOrder(request.params.id, String(request.body.actorId)));
+  response.json(await deleteWorkOrder(request.params.id, request.cmmsUser!.id, request.body.reason));
 }));
 
 app.patch("/api/work-orders/:id/status", (request, response) => {

@@ -89,6 +89,8 @@ export function migratePlants(db: DatabaseSync) {
         BEGIN SELECT RAISE(ABORT, 'Plant access denied'); END;
       `);
     }
+    // All normal reads and aggregates exclude archived orders; records and relations stay intact.
+    db.exec("DROP VIEW scoped_work_orders; CREATE VIEW scoped_work_orders AS SELECT * FROM work_orders WHERE cmms_can_access(plantId) AND archivedAt IS NULL");
     const relations = [
       ["machines", "sectionId", "sections", "id"],
       ["work_orders", "sectionId", "sections", "id"],

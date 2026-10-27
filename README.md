@@ -132,7 +132,9 @@ Work-order timing uses separate accountability clocks:
 
 The Apps Script formats the mirror for people rather than exposing raw payloads: dates use `dd/mm/yyyy`, timestamps use `dd/mm/yyyy hh:mm`, duration fields show elapsed minutes, photo paths become compact links, long descriptions wrap, and technical ID/sync columns are hidden by default. After changing `docs/work-orders-apps-script.js`, create a new Apps Script deployment version so the live `/exec` endpoint uses the update. Reload the Sheet and run **SUGI CMMS → Format existing work orders** once to clean up rows written by an older script. Set `APP_PUBLIC_URL` to the CMMS address reachable by Sheet users if photo links should open from Google Sheets.
 
-Deleting a work order in CMMS also queues deletion of the matching `WorkOrderID` row in Google Sheets. The deletion queue is durable and is retried through the normal sync worker if Apps Script is temporarily unavailable. The deployed Apps Script must include the `deleteWorkOrder` action from the current `docs/work-orders-apps-script.js`.
+Deleting a work order requires a reason and moves it to the archive, preserving the original record, photos, activity history and spare-part links. Executives, admins and developers can open **Work Orders → Archive** to review the reason, deletion time and actor, and restore an order with its original number and status. Archived orders are excluded from normal queues and reports.
+
+Archiving a work order in CMMS also queues deletion of the matching `WorkOrderID` row in Google Sheets. The deletion queue is durable and is retried through the normal sync worker if Apps Script is temporarily unavailable. The deployed Apps Script must include the `deleteWorkOrder` action from the current `docs/work-orders-apps-script.js`.
 
 ### AppSheet Air Leak work orders
 
@@ -140,7 +142,7 @@ The Air Leak App can create duplicate-safe SHE work orders through `POST /api/in
 
 CMMS queues every mapped lifecycle update separately from the general WorkOrders mirror. When the CMMS work order closes, [docs/air-leak-apps-script.js](docs/air-leak-apps-script.js) updates the matching Air Leak row to `Close`, including the close date, assigned technician, proof-photo URL and detailed CMMS status. Existing Production master data is retained as Production; new sections, machines and issue categories are assigned to a department and are only offered for that department's work orders.
 
-To mirror AppSheet deletions, add a second AppSheet Bot for **Deletes only** that calls the same endpoint and token with `{"action":"delete","airLeakId":"<<[_THISROW_BEFORE].[Air Leak ID]>>"}`. The operation is idempotent: it permanently removes only the CMMS work order mapped to that Air Leak ID, and a retry after deletion returns `deleted: false` without affecting another work order.
+To mirror AppSheet deletions, add a second AppSheet Bot for **Deletes only** that calls the same endpoint and token with `{"action":"delete","airLeakId":"<<[_THISROW_BEFORE].[Air Leak ID]>>"}`. The operation is idempotent: it archives only the CMMS work order mapped to that Air Leak ID with an integration-supplied reason, and a retry after deletion returns `deleted: false` without affecting another work order. Later AppSheet updates leave the archived order intact until a manager restores it.
 
 These values can also be supplied without the UI:
 

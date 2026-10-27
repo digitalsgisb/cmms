@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import path from "node:path";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 
 const root = path.resolve("tmp", `work-order-management-${Date.now()}`);
@@ -168,8 +168,8 @@ assert.equal(updated.shiftGroup, "N/A");
 assert.equal(inPlant(() => m.getWorkOrderDetail(workOrder.id)).activities[0].action, "edited");
 
 const requesterTestOrder = createOrder("Requester delete test");
-await assert.rejects(inPlant(() => m.deleteWorkOrder(requesterTestOrder.id, secondRequester.id)), /requester account/i);
-await inPlant(() => m.deleteWorkOrder(requesterTestOrder.id, requester.id));
+await assert.rejects(inPlant(() => m.deleteWorkOrder(requesterTestOrder.id, secondRequester.id, "Test or duplicate request")), /requester account/i);
+await inPlant(() => m.deleteWorkOrder(requesterTestOrder.id, requester.id, "Test or duplicate request"));
 assert.throws(() => inPlant(() => m.getWorkOrder(requesterTestOrder.id)), /not found/i);
 
 const requesterCancelledOrder = createOrder("Requester cancel test");
@@ -179,7 +179,7 @@ const cancelledByRequester = inPlant(() => m.updateWorkOrderStatus(requesterCanc
   note: "Test request cancelled by requester."
 }));
 assert.equal(cancelledByRequester.status, "cancelled");
-await inPlant(() => m.deleteWorkOrder(requesterCancelledOrder.id, requester.id));
+await inPlant(() => m.deleteWorkOrder(requesterCancelledOrder.id, requester.id, "Test or duplicate request"));
 assert.throws(() => inPlant(() => m.getWorkOrder(requesterCancelledOrder.id)), /not found/i);
 
 const timedOrder = createOrder("Requester timer check");
@@ -380,14 +380,14 @@ const closedFairTimingOrder = inPlant(() => m.updateWorkOrderStatus(fairTimingOr
 assert.equal(closedFairTimingOrder.productionDowntimeReason, "Waiting for technician");
 
 const disposable = createOrder("Delete permission check");
-await assert.rejects(inPlant(() => m.deleteWorkOrder(disposable.id, technician.id)), /Executive, admin, or developer/i);
+await assert.rejects(inPlant(() => m.deleteWorkOrder(disposable.id, technician.id, "Test or duplicate request")), /Executive, admin, or developer/i);
 assert(inPlant(() => m.getWorkOrder(disposable.id)));
 for (const manager of [admin, developer]) {
   const managedOrder = createOrder(`Delete by ${manager.role}`);
-  await inPlant(() => m.deleteWorkOrder(managedOrder.id, manager.id));
+  await inPlant(() => m.deleteWorkOrder(managedOrder.id, manager.id, "Test or duplicate request"));
   assert.throws(() => inPlant(() => m.getWorkOrder(managedOrder.id)), /not found/i);
 }
-await inPlant(() => m.deleteWorkOrder(disposable.id, executive.id));
+await inPlant(() => m.deleteWorkOrder(disposable.id, executive.id, "Test or duplicate request"));
 assert.throws(() => inPlant(() => m.getWorkOrder(disposable.id)), /not found/i);
 
 const holdOrder = createOrder("Machine running, repair deferred");
@@ -427,5 +427,52 @@ assert(inPlant(() => m.getWorkOrderDetail(executiveWaiting.id)).activities.some(
 assert.throws(() => inPlant(() => m.updateWorkOrderStatus(executiveWaiting.id, { actorId: requester.id, status: "in_progress", note: "Try reopening" })), /Requesters may only/i);
 assert.throws(() => inPlant(() => m.updateWorkOrderStatus(executiveWaiting.id, { actorId: executive.id, status: "resolved", note: "Repaired", maintenanceActualMinutes: 10 })), /completion photo/i);
 
+// Archiving keeps the original record, evidence and audit trail, and survives migration.
+const archiveOrder = createOrder("Archive preservation");
+const photoDir = path.join(process.env.CMMS_UPLOADS_DIR, "work-orders", archiveOrder.id);
+mkdirSync(photoDir, { recursive: true });
+writeFileSync(path.join(photoDir, "evidence.jpg"), "original evidence");
+inPlant(() => m.addAttachment({ workOrderId: archiveOrder.id, uploadedBy: requester.id, filename: "evidence.jpg", originalName: "evidence.jpg", mimeType: "image/jpeg", size: 17, url: "/test/evidence.jpg", kind: "issue" }));
+for (const reason of [undefined, null, "", "  ", 123, "x".repeat(2001)]) {
+  await assert.rejects(inPlant(() => m.deleteWorkOrder(archiveOrder.id, executive.id, reason)), /reason/i);
+  assert(inPlant(() => m.getWorkOrder(archiveOrder.id)));
+}
+const beforeArchive = inPlant(() => m.getWorkOrderDetail(archiveOrder.id));
+await inPlant(() => m.deleteWorkOrder(archiveOrder.id, executive.id, "  Duplicate request  "));
+assert.throws(() => inPlant(() => m.getWorkOrderDetail(archiveOrder.id)), /not found/i);
+assert(!inPlant(() => m.listWorkOrders()).some(order => order.id === archiveOrder.id));
+assert(!inPlant(() => m.listTvWorkOrders()).some(order => order.id === archiveOrder.id));
+assert.throws(() => inPlant(() => m.listArchivedWorkOrders(requester.id)), /Executive, admin, or developer/i);
+assert.throws(() => inPlant(() => m.restoreWorkOrder(archiveOrder.id, technician.id)), /Executive, admin, or developer/i);
+m.migrate();
+const archived = inPlant(() => m.listArchivedWorkOrders(executive.id)).find(order => order.id === archiveOrder.id);
+assert(archived);
+assert.equal(archived.deletionReason, "Duplicate request");
+assert.equal(archived.archivedBy, executive.id);
+assert(archived.archivedAt);
+assert.equal(archived.attachments.length, beforeArchive.attachments.length);
+assert(archived.activities.some(activity => activity.action === "archived" && activity.actorId === executive.id && activity.message === "Duplicate request"));
+assert.equal(readFileSync(path.join(photoDir, "evidence.jpg"), "utf8"), "original evidence");
+assert.equal(inPlant(() => m.db.prepare("SELECT COUNT(*) AS count FROM scoped_work_order_sync_queue WHERE workOrderId = ?").get(archiveOrder.id)).count, 0);
+plantContext.run({ plant: "sendayan" }, () => {
+  assert(!m.listArchivedWorkOrders(admin.id).some(order => order.id === archiveOrder.id));
+  assert.throws(() => m.restoreWorkOrder(archiveOrder.id, admin.id), /not found/i);
+});
+const restored = inPlant(() => m.restoreWorkOrder(archiveOrder.id, executive.id));
+assert.equal(restored.number, archiveOrder.number);
+assert.equal(restored.status, archiveOrder.status);
+assert(!inPlant(() => m.listArchivedWorkOrders(executive.id)).some(order => order.id === archiveOrder.id));
+assert(inPlant(() => m.listWorkOrders()).some(order => order.id === archiveOrder.id));
+const restoredDetail = inPlant(() => m.getWorkOrderDetail(archiveOrder.id));
+assert.equal(restoredDetail.attachments.length, beforeArchive.attachments.length);
+assert(restoredDetail.activities.some(activity => activity.action === "restored"));
+assert(restoredDetail.activities.some(activity => activity.action === "archived"));
+assert.equal(inPlant(() => m.db.prepare("SELECT COUNT(*) AS count FROM scoped_work_order_sync_deletions WHERE workOrderNumber = ?").get(archiveOrder.number)).count, 0);
+assert.equal(inPlant(() => m.db.prepare("SELECT status FROM scoped_work_order_sync_queue WHERE workOrderId = ?").get(archiveOrder.id)).status, "pending");
+// AppSheet deletion also archives and a later sync does not revive the order.
+assert(inPlant(() => m.listArchivedWorkOrders(admin.id)).some(order => order.id === airLeak.workOrderId));
+const archivedAirLeak = inPlant(() => m.upsertAppSheetAirLeak({ airLeakId: "ALD-TEST-001", date: "2026-09-18", section: "Luggage Mat", machine: "Ignored", issuedBy: "Tester", issue: "Do not resurrect" }));
+assert.equal(archivedAirLeak.status, "Archived");
+assert.throws(() => inPlant(() => m.getWorkOrder(airLeak.workOrderId)), /not found/i);
 m.db.close();
 console.log("PASS: work-order management, technician-team routing, project assignment rules, stable identifiers, edit history, and hold/resume permissions.");

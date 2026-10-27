@@ -1,12 +1,13 @@
 import { migratePlants } from "./plant-storage.js";
 import { canAccessPlant, plantContext, plantSettingKey, userPlants, writePlant } from "./plant-context.js";
 import { DatabaseSync } from "node:sqlite";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import type {
   ActivityAction,
+  ArchivedWorkOrder,
   AirLeakSyncResult,
   AirLeakSyncSettings,
   AppSheetAirLeakInput,
@@ -579,6 +580,9 @@ export function migrate() {
   }
 
   const workOrderColumns = rows<{ name: string }>(db.prepare("PRAGMA table_info(work_orders)").all());
+  addWorkOrderColumnIfMissing(workOrderColumns, "archivedAt", "TEXT");
+  addWorkOrderColumnIfMissing(workOrderColumns, "archivedBy", "TEXT");
+  addWorkOrderColumnIfMissing(workOrderColumns, "deletionReason", "TEXT");
   addWorkOrderColumnIfMissing(workOrderColumns, "workDate", "TEXT");
   addWorkOrderColumnIfMissing(workOrderColumns, "shiftGroup", "TEXT");
   addWorkOrderColumnIfMissing(workOrderColumns, "sectionId", "TEXT");
@@ -3779,7 +3783,7 @@ export function listTvWorkOrders(): TvWorkOrder[] {
   `).all());
 }
 
-export function getWorkOrder(id: string): WorkOrder {
+export function getWorkOrder(id: string, archived = false): WorkOrder {
   const workOrder = db.prepare(`
     SELECT wo.*,
       (SELECT activity.createdAt FROM scoped_work_order_activities activity
@@ -3797,9 +3801,9 @@ export function getWorkOrder(id: string): WorkOrder {
       (SELECT activity.createdAt FROM scoped_work_order_activities activity
        WHERE activity.workOrderId = wo.id AND activity.action = 'cancelled'
        ORDER BY activity.createdAt DESC LIMIT 1) AS cancelledAt
-    FROM scoped_work_orders wo
-    WHERE wo.id = ?
-  `).get(id);
+    FROM work_orders wo
+    WHERE cmms_can_access(wo.plantId) AND (wo.archivedAt IS NOT NULL) = ? AND wo.id = ?
+  `).get(Number(archived), id);
   if (!workOrder) {
     throw new Error("Work order not found");
   }
@@ -3807,8 +3811,8 @@ export function getWorkOrder(id: string): WorkOrder {
   return hydrateWorkOrderTeam(row<StoredWorkOrder>(workOrder));
 }
 
-export function getWorkOrderDetail(id: string): WorkOrderDetail {
-  const workOrder = getWorkOrder(id);
+export function getWorkOrderDetail(id: string, archived = false): WorkOrderDetail {
+  const workOrder = getWorkOrder(id, archived);
   const requester = getUser(workOrder.requesterId);
   const assignedTo = workOrder.assignedToId ? getUser(workOrder.assignedToId) : null;
   const supportingTechnicians = workOrder.supportingTechnicianIds.map((userId) => getUser(userId));
@@ -3956,6 +3960,11 @@ export function upsertAppSheetAirLeak(input: AppSheetAirLeakInput): AppSheetAirL
     WHERE source = 'appsheet-air-leak' AND externalId = ?
   `).get(externalId));
   if (existing) {
+    const archived = db.prepare("SELECT id FROM work_orders WHERE id = ? AND cmms_can_access(plantId) AND archivedAt IS NOT NULL").get(existing.workOrderId);
+    if (archived) {
+      const workOrder = getWorkOrder(existing.workOrderId, true);
+      return { ok: true, created: false, workOrderId: workOrder.id, workOrderNumber: workOrder.number, status: "Archived", photoImported: false };
+    }
     const current = getWorkOrder(existing.workOrderId);
     const nextMachineName = machine?.name || machineName || current.machineName;
     const nextLocation = section?.name || sectionName || current.location;
@@ -4683,37 +4692,57 @@ export function updateGuestWorkOrderDowntimeReason(workOrderId: string, token: s
   return getGuestWorkOrderTracking(workOrderId, token);
 }
 
-async function permanentlyDeleteWorkOrder(workOrder: WorkOrder, notifyWebhook = true) {
+async function archiveWorkOrder(workOrder: WorkOrder, actorId: string, reason: string, notifyWebhook = true) {
   const id = workOrder.id;
   const runtime = workOrderSyncRuntimeSettings();
-
   if (notifyWebhook && runtime.webhookUrl) {
-    const deletionData = { ...workOrderSheetRow(id), Status: "Deleted", UpdatedAt: now() };
+    const deletionData = { ...workOrderSheetRow(id), Status: "Deleted", UpdatedAt: now(), DeletionReason: reason };
     await postJson(runtime.webhookUrl, { Source: "CMMS", Event: "Deleted", Data: deletionData });
   }
-
-  db.exec("BEGIN");
+  db.exec("BEGIN IMMEDIATE");
   try {
+    const archivedAt = now();
+    const result = db.prepare("UPDATE work_orders SET archivedAt = ?, archivedBy = ?, deletionReason = ?, updatedAt = ? WHERE id = ? AND archivedAt IS NULL")
+      .run(archivedAt, actorId, reason, archivedAt, id);
+    if (!result.changes) throw new Error("Work order is already archived.");
+    addActivity(id, actorId, "archived", workOrder.status, reason);
     enqueueWorkOrderSheetDeletion(workOrder.number);
-    db.prepare("UPDATE stock_movements SET workOrderId = NULL WHERE workOrderId = ?").run(id);
-    db.prepare("DELETE FROM work_orders WHERE id = ?").run(id);
+    db.prepare("DELETE FROM work_order_sync_queue WHERE workOrderId = ?").run(id);
+    db.prepare("DELETE FROM air_leak_sync_queue WHERE workOrderId = ?").run(id);
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
     throw error;
   }
-
-  const workOrderUploadsRoot = path.resolve(uploadsRoot, "work-orders");
-  const targetDir = path.resolve(workOrderUploadsRoot, id);
-  const uploadsRootPrefix = workOrderUploadsRoot.endsWith(path.sep) ? workOrderUploadsRoot : `${workOrderUploadsRoot}${path.sep}`;
-  if (targetDir.startsWith(uploadsRootPrefix) && existsSync(targetDir)) {
-    rmSync(targetDir, { recursive: true, force: true });
-  }
-
   return workOrder;
 }
 
-export async function deleteWorkOrder(id: string, actorId: string) {
+export function listArchivedWorkOrders(actorId: string): ArchivedWorkOrder[] {
+  requireWorkOrderManager(actorId);
+  const records = rows<{ id: string; archivedAt: string; archivedBy: string; deletionReason: string }>(db.prepare(
+    "SELECT id, archivedAt, archivedBy, deletionReason FROM work_orders WHERE cmms_can_access(plantId) AND archivedAt IS NOT NULL ORDER BY archivedAt DESC"
+  ).all());
+  return records.map(record => ({ ...getWorkOrderDetail(record.id, true), ...record }));
+}
+
+export function restoreWorkOrder(id: string, actorId: string): WorkOrder {
+  requireWorkOrderManager(actorId);
+  const workOrder = getWorkOrder(id, true);
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.prepare("UPDATE work_orders SET archivedAt = NULL, archivedBy = NULL, deletionReason = NULL, updatedAt = ? WHERE id = ?").run(now(), id);
+    addActivity(id, actorId, "restored", workOrder.status, "Restored from archive.");
+    db.prepare("DELETE FROM work_order_sync_deletions WHERE workOrderNumber = ?").run(workOrder.number);
+    enqueueWorkOrderSync(id, true);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  return getWorkOrder(id);
+}
+
+export async function deleteWorkOrder(id: string, actorId: string, reason: string) {
   const actor = getUser(actorId);
   const workOrder = getWorkOrder(id);
   if (actor.role === "requester") {
@@ -4726,7 +4755,9 @@ export async function deleteWorkOrder(id: string, actorId: string) {
   } else {
     requireWorkOrderManager(actorId);
   }
-  return permanentlyDeleteWorkOrder(workOrder);
+  if (typeof reason !== "string" || !reason.trim()) throw new Error("A deletion reason is required.");
+  if (reason.trim().length > 2000) throw new Error("Deletion reason must be 2000 characters or fewer.");
+  return archiveWorkOrder(workOrder, actorId, reason.trim());
 }
 
 export async function deleteAppSheetAirLeak(airLeakId: string) {
@@ -4736,8 +4767,8 @@ export async function deleteAppSheetAirLeak(airLeakId: string) {
     SELECT workOrderId FROM scoped_external_work_orders
     WHERE source = 'appsheet-air-leak' AND externalId = ?
   `).get(externalId));
-  if (!mapping) return { ok: true as const, deleted: false, airLeakId: externalId };
-  const workOrder = await permanentlyDeleteWorkOrder(getWorkOrder(mapping.workOrderId), false);
+  if (!mapping || !db.prepare("SELECT id FROM scoped_work_orders WHERE id = ?").get(mapping.workOrderId)) return { ok: true as const, deleted: false, airLeakId: externalId };
+  const workOrder = await archiveWorkOrder(getWorkOrder(mapping.workOrderId), publicRequesterId, `Deleted by AppSheet Air Leak integration (${externalId}).`, false);
   return {
     ok: true as const,
     deleted: true,

@@ -14614,3 +14614,8 @@ body,
     min-height: 44px;
   }
 }
+
+.archive-photos { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0; }
+.archive-photos a { display: grid; gap: .5rem; max-width: 220px; overflow-wrap: anywhere; }
+.archive-photos img { width: 100%; max-height: 180px; object-fit: contain; }
+.work-order-delete-confirmation textarea { display: block; width: 100%; min-height: 90px; margin: .5rem 0 1rem; }

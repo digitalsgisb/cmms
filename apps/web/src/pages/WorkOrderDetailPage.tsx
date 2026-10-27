@@ -97,6 +97,7 @@ export function WorkOrderDetailPage() {
   const [busy, setBusy] = useState(false);
   const [busyAction, setBusyAction] = useState("");
   const [showDeleteAction, setShowDeleteAction] = useState(false);
+  const [deletionReason, setDeletionReason] = useState("");
   const [timerNow, setTimerNow] = useState(() => new Date().toISOString());
   const [guestTrackingPath, setGuestTrackingPath] = useState("");
   const [guestLinkCopied, setGuestLinkCopied] = useState(false);
@@ -516,12 +517,12 @@ export function WorkOrderDetailPage() {
 
   async function removeWorkOrder() {
     if (!detail || !currentUser || !canDeleteWorkOrder) return;
-    if (!window.confirm(`Delete ${detail.number}? This permanently removes the work order and uploaded images.`)) return;
+    if (!deletionReason.trim()) return;
 
     setBusy(true);
     setBusyAction("delete");
     try {
-      await api.deleteWorkOrder(detail.id, { actorId: currentUser.id });
+      await api.deleteWorkOrder(detail.id, { actorId: currentUser.id, reason: deletionReason.trim() });
       navigate("/work-orders", { replace: true });
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Unable to delete this work order.");
@@ -762,12 +763,15 @@ export function WorkOrderDetailPage() {
 
       {canDeleteWorkOrder && showDeleteAction ? (
         <div className="work-order-delete-confirmation">
-          <p>Delete {detail.number} and its uploaded images permanently?</p>
+          <p>Move {detail.number} to the archive? Its history and uploaded images will be preserved.</p>
+          <label>Reason for deletion (required)
+            <textarea required maxLength={2000} value={deletionReason} onChange={(event) => setDeletionReason(event.target.value)} placeholder="Explain why this work order is being deleted" />
+          </label>
           <div>
             <button type="button" className="secondary-action" onClick={() => setShowDeleteAction(false)}>Cancel</button>
-            <button type="button" className="delete-work-order-button" disabled={busy} onClick={removeWorkOrder}>
+            <button type="button" className="delete-work-order-button" disabled={busy || !deletionReason.trim()} onClick={removeWorkOrder}>
               <Trash2 size={15} aria-hidden="true" />
-              {busyAction === "delete" ? "Deleting..." : "Delete permanently"}
+              {busyAction === "delete" ? "Deleting..." : "Move to archive"}
             </button>
           </div>
         </div>

@@ -159,7 +159,9 @@ export type ActivityAction =
   | "cancelled"
   | "commented"
   | "attachment_added"
-  | "attachment_replaced";
+  | "attachment_replaced"
+  | "archived"
+  | "restored";
 
 export interface User {
   plantAccess: PlantAccess;
@@ -810,8 +812,15 @@ export interface UpsertIssueCategoryInput {
   active?: boolean;
 }
 
+export interface ArchivedWorkOrder extends WorkOrderDetail {
+  archivedAt: string;
+  archivedBy: string;
+  deletionReason: string;
+}
+
 export interface DeleteWorkOrderInput {
   actorId: string;
+  reason: string;
 }
 
 export type PmScheduleStatus = "scheduled" | "in_progress" | "submitted" | "verified";

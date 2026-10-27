@@ -126,6 +126,34 @@ try {
   assert.equal((await get(`/requester/work-orders/${pkOrder.id}/tracking?token=${guestToken}`)).ok, false);
   const deniedWrite = await fetch(base + `/work-orders/${sdOrder.id}/comments`, { method: "POST", headers: { Authorization: `Bearer ${pkSession.token}`, "Content-Type": "application/json", "X-CMMS-Plant": "port-klang" }, body: JSON.stringify({ actorId: pk.id, message: "Forbidden comment" }) });
   assert.equal(deniedWrite.ok, false);
+  // Exercise the public HTTP contract for required reasons, archive access and recovery.
+  const managerHeaders = { Authorization: `Bearer ${adminSession.token}`, "Content-Type": "application/json", "X-CMMS-Plant": "sendayan" };
+  for (const reason of [undefined, "", "   ", 123]) {
+    const rejected = await fetch(base + `/work-orders/${sdOrder.id}`, { method: "DELETE", headers: managerHeaders, body: JSON.stringify({ actorId: admin.id, reason }) });
+    assert.equal(rejected.ok, false);
+    assert.equal((await get(`/work-orders/${sdOrder.id}`, adminSession, "sendayan")).status, 200);
+  }
+  const deleted = await fetch(base + `/work-orders/${sdOrder.id}`, { method: "DELETE", headers: managerHeaders, body: JSON.stringify({ actorId: admin.id, reason: "Duplicate submitted during testing" }) });
+  assert.equal(deleted.status, 200, await deleted.text());
+  assert.equal((await get(`/work-orders/${sdOrder.id}`, adminSession, "sendayan")).status, 404);
+  assert.equal((await get("/work-order-archive", pkSession, "port-klang")).ok, false);
+  assert(!(await get("/work-order-archive", adminSession, "port-klang").then(r => r.json())).some(order => order.id === sdOrder.id));
+  const archive = await get("/work-order-archive", adminSession, "sendayan").then(r => r.json());
+  const entry = archive.find(order => order.id === sdOrder.id);
+  assert(entry);
+  assert.equal(entry.deletionReason, "Duplicate submitted during testing");
+  assert.equal(entry.archivedBy, admin.id);
+  assert(entry.activities.some(activity => activity.action === "archived"));
+  assert.equal((await fetch(media, { headers: { Authorization: `Bearer ${adminSession.token}` } })).status, 200);
+  assert.equal((await fetch(media, { headers: { Authorization: `Bearer ${sdSession.token}` } })).status, 403);
+  const crossRestore = await fetch(base + `/work-order-archive/${sdOrder.id}/restore`, { method: "POST", headers: { ...managerHeaders, "X-CMMS-Plant": "port-klang" } });
+  assert.equal(crossRestore.ok, false);
+  const deniedRestore = await fetch(base + `/work-order-archive/${sdOrder.id}/restore`, { method: "POST", headers: { ...managerHeaders, Authorization: `Bearer ${sdSession.token}` } });
+  assert.equal(deniedRestore.ok, false);
+  const recovered = await fetch(base + `/work-order-archive/${sdOrder.id}/restore`, { method: "POST", headers: managerHeaders });
+  assert.equal(recovered.status, 200, await recovered.text());
+  assert.equal((await get(`/work-orders/${sdOrder.id}`, adminSession, "sendayan")).status, 200);
+  assert(!(await get("/work-order-archive", adminSession, "sendayan").then(r => r.json())).some(order => order.id === sdOrder.id));
   const update = await fetch(base + `/users/${sd.id}`, { method: "PATCH", headers: { Authorization: `Bearer ${adminSession.token}`, "Content-Type": "application/json", "X-CMMS-Plant": "port-klang" }, body: JSON.stringify({ ...sd, actorId: admin.id, plantAccess: "both" }) });
   assert.equal(update.status, 200, await update.text());
   assert.equal((await get("/work-orders", sdSession, "sendayan")).status, 401);

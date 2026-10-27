@@ -5,6 +5,7 @@ import type { KeyboardEvent, MouseEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import type { MasterData, User, WorkOrder, WorkOrderStatus } from "@sugi-cmms/shared";
 import { workOrderDepartmentForUser, workOrderStatusLabels, workOrderTypeLabels } from "@sugi-cmms/shared";
+import { WorkOrderArchive } from "./WorkOrderArchive";
 import { api } from "../api/client";
 import { PriorityBadge, StatusBadge } from "../components/Badges";
 import { formatDateTime, formatLiveDuration, formatMinutes, userName } from "../utils/format";
@@ -48,6 +49,7 @@ export function WorkOrdersPage() {
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [masterData, setMasterData] = useState<MasterData>({ sections: [], machines: [], issueCategories: [] });
   const [params, setParams] = useSearchParams();
+  const [archiveOpen, setArchiveOpen] = useState(params.get("view") === "archive");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -81,6 +83,7 @@ export function WorkOrdersPage() {
 
   useEffect(() => {
     const next = new URLSearchParams();
+    if (archiveOpen) next.set("view", "archive");
     if (search) next.set("q", search);
     if (status !== "all") next.set("status", status);
     next.set("scope", scope);
@@ -88,7 +91,7 @@ export function WorkOrdersPage() {
     if (sectionId !== "all") next.set("section", sectionId);
     if (machineId !== "all") next.set("machine", machineId);
     setParams(next, { replace: true });
-  }, [search, status, scope, month, sectionId, machineId, setParams]);
+  }, [search, status, scope, month, sectionId, machineId, archiveOpen, setParams]);
 
   const accountDepartment = workOrderDepartmentForUser(currentUser?.department || "");
 
@@ -136,6 +139,8 @@ export function WorkOrdersPage() {
     setStatus((current) => current === nextStatus ? "all" : nextStatus);
   }
 
+  if (archiveOpen && canManageWorkOrders) return <WorkOrderArchive users={users} onBack={() => setArchiveOpen(false)} />;
+
   return (
     <section className="page-stack">
       <div className="page-title-row page-title-clean">
@@ -143,6 +148,7 @@ export function WorkOrdersPage() {
           <p className="eyebrow">Maintenance queue</p>
           <h1>Work Orders</h1>
         </div>
+        {canManageWorkOrders ? <button type="button" className="secondary-action" onClick={() => setArchiveOpen(true)}>Archive</button> : null}
         {currentUser?.role !== "technician" ? (
           <Link className="primary-action" to="/work-orders/new">
             <Plus size={17} aria-hidden="true" />

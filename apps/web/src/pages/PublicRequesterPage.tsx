@@ -381,11 +381,13 @@ export function PublicRequesterPage() {
 
   async function deleteRequesterWorkOrder(workOrder: WorkOrder) {
     if (!signedRequester || workOrder.requesterId !== currentUser.id) return;
-    if (!window.confirm(`Permanently delete ${workOrder.number}? Use this only for a test or accidental request. This cannot be undone.`)) return;
+    const reason = window.prompt(`Reason for deleting ${workOrder.number} (required). The request and its photos will be kept in the archive.`);
+    if (reason === null) return;
+    if (!reason.trim()) { setError("A deletion reason is required."); return; }
     setActionId(workOrder.id); setError("");
     try {
-      await api.deleteWorkOrder(workOrder.id, { actorId: currentUser.id });
-      setSuccess(`${workOrder.number} deleted.`); setDetail(null); await loadAccountWorkOrders();
+      await api.deleteWorkOrder(workOrder.id, { actorId: currentUser.id, reason: reason.trim() });
+      setSuccess(`${workOrder.number} moved to archive.`); setDetail(null); await loadAccountWorkOrders();
     } catch (nextError) { setError(nextError instanceof Error ? nextError.message : "Unable to delete the work order."); }
     finally { setActionId(""); }
   }
