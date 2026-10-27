@@ -35,7 +35,7 @@ export function WeeklyManagementReport() {
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = `cmms-weekly-${report.facts.start.slice(0, 10)}.html`; anchor.click(); URL.revokeObjectURL(url);
   }
   return <section className="weekly-management" aria-label="Weekly management email">
-    <div className="weekly-management-heading"><span><Mail size={23} /></span><div><p>WEEKLY MANAGEMENT EMAIL</p><h2>A clear view of maintenance, every week</h2><small>Charts, previous-week comparisons, equipment downtime and management actions in one email. Local AI adds the executive commentary.</small></div></div>
+    <div className="weekly-management-heading"><span><Mail size={23} /></span><div><p>WEEKLY MANAGEMENT EMAIL</p><h2>A clear view of maintenance, every week</h2><small>Repeat machine reports, line and area hotspots, issue patterns, downtime and a timestamped live backlog in one email. Local AI explains the recorded findings and priorities.</small></div></div>
     <div className="weekly-management-controls">
       <label>Week starting Monday<input type="date" value={week} disabled={Boolean(busy)} onChange={(e) => { setWeek(e.target.value); setReport(null); setError(""); }} /><small>Leave blank for the last completed week · Malaysia time</small></label>
       <button type="button" className="secondary-action" disabled={Boolean(busy)} onClick={() => void run("preview")}><RefreshCw size={16} />{busy === "preview" ? "Preparing…" : "Preview email"}</button>

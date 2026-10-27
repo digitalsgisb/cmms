@@ -1,5 +1,5 @@
 export { downtimeWindow } from "./downtime.js";
-export type { WeeklyMetrics, WeeklyReportFacts, WeeklyReport, WeeklyReportHistory } from "./weekly-report.js";
+export type { WeeklyMetrics, WeeklyReportFacts, WeeklyReport, WeeklyReportHistory, MachineReliability, LocationReliability, WeeklyReliabilityAnalysis } from "./weekly-report.js";
 export type PlantId = "port-klang" | "sendayan";
 export type PlantAccess = PlantId | "both";
 export const plantLabels: Record<PlantId, string> = { "port-klang": "Port Klang", sendayan: "Sendayan" };

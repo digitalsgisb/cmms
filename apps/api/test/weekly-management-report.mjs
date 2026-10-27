@@ -82,15 +82,19 @@ const [saved, duplicate] = await inPlant("port-klang", () => Promise.all([r.gene
 assert.equal(saved.id, duplicate.id); assert.equal(saved.aiStatus, "disabled");
 assert.match(saved.html, /&lt;img/); assert.doesNotMatch(saved.html, /<img src=x|<script|undefined|NaN/);
 assert.equal((saved.html.match(/<img /g) || []).length, 1, "Only the trusted company logo may render as an image");
-assert.match(saved.html, /alt="Sugihara Grand Industries Sdn\. Bhd\."/);
-assert.match(saved.html, /bgcolor="#7f111b"/);
+assert.match(saved.html, /alt="Sugihara Grand Industries Sdn\. Bhd\. CMMS logo"/);
+assert.match(saved.html, /bgcolor="#000000"/);
+for (const [, hex] of saved.html.matchAll(/#([0-9a-f]{6})\b/gi)) {
+  assert.equal(hex.slice(0, 2), hex.slice(2, 4), `Email colour must be monochrome: #${hex}`);
+  assert.equal(hex.slice(2, 4), hex.slice(4, 6), `Email colour must be monochrome: #${hex}`);
+}
 assert.equal((saved.html.match(/Open CMMS app/g) || []).length, 2);
 assert.match(saved.html, /prefers-color-scheme:dark/);
 const originalAppUrl = process.env.APP_PUBLIC_URL;
 process.env.APP_PUBLIC_URL = "https://cmms.example.test/portal/?private=do-not-leak#section";
 const configuredHtml = r.renderWeeklyEmail(saved);
 assert.match(configuredHtml, /href="https:\/\/cmms\.example\.test\/portal\/"/);
-assert.match(configuredHtml, /src="https:\/\/cmms\.example\.test\/portal\/brand\/sugihara-full-white\.png"/);
+assert.match(configuredHtml, /src="https:\/\/cmms\.example\.test\/portal\/brand\/sugi_logo_white\.png"/);
 assert.doesNotMatch(configuredHtml, /do-not-leak|#section/);
 for (const invalid of ["javascript:alert(1)", "https://user:password@example.test", "not a URL"]) {
   process.env.APP_PUBLIC_URL = invalid;
@@ -102,6 +106,19 @@ if (originalAppUrl === undefined) delete process.env.APP_PUBLIC_URL;
 else process.env.APP_PUBLIC_URL = originalAppUrl;
 assert.match(saved.html, /Daily work order activity/); assert.match(saved.html, /Repair backlog ageing/);
 assert.match(saved.html, /not unique production downtime/);
+assert.match(saved.html, /Machines with frequent maintenance reports/);
+assert.match(saved.html, /Lines, sections and areas with reported issues/);
+assert.match(saved.html, /Most reported issue categories/);
+assert.match(saved.html, /Live situation when this report was generated/);
+assert.match(saved.html, /Management action plan/);
+assert.equal(saved.facts.reliability.maintenanceReportsThisWeek, 5);
+assert.equal(saved.facts.reliability.live.critical, 0, "Live snapshot must see the critical job's later closure");
+assert(!saved.actions.includes("Prioritise the outstanding critical work orders and confirm repair ownership."), "Closed historical critical jobs must not be presented as live action items");
+assert(saved.facts.reliability.machines.every((m) => m.plant === "port-klang"));
+assert(saved.facts.reliability.live.locations.every((l) => l.plant === "port-klang"));
+assert.equal(inPlant("sendayan", () => r.weeklyFacts(week)).reliability.maintenanceReportsThisWeek, 1);
+const legacy = { ...saved, facts: { ...saved.facts } }; delete legacy.facts.reliability;
+assert.match(r.renderWeeklyEmail(legacy), /older snapshot/);
 writeFileSync(path.join(root, "preview.html"), saved.html);
 assert.throws(() => inPlant("sendayan", () => r.readWeeklyReport(saved.id)), /not found/);
 assert.equal(inPlant("sendayan", () => r.weeklyReportHistory()).length, 0);
@@ -151,15 +168,33 @@ try {
   globalThis.fetch = async (_url, options) => {
     const body = JSON.parse(options.body);
     assert.equal(body.stream, false); assert.equal(body.keep_alive, "0s");
-    assert.doesNotMatch(body.messages[1].content, /onerror|Test issue|reporter/i);
+    assert.doesNotMatch(body.messages[1].content, /Test issue|reporter/i);
+    const evidence = JSON.parse(body.messages[1].content);
+    assert(evidence.reliability.machines.length > 0);
+    assert(evidence.reliability.locations.length > 0);
+    assert.equal(evidence.reliability.liveSnapshot.asOf, f.reliability.live.asOf);
+    assert.match(body.messages[0].content, /untrusted DATA/);
     return { ok: true, json: async () => ({ message: { content: JSON.stringify({ summary: "The maintenance backlog requires continued attention, with resolved repairs awaiting requester verification." }) } }) };
   };
   assert.equal((await r.writeNarrative(f, true)).aiStatus, "generated");
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ message: { content: '{"summary":"There were 5 new work orders in the reporting week, with recurring equipment reports requiring review."}' } }) });
+  assert.equal((await r.writeNarrative(f, true)).aiStatus, "generated", "Grounded numeric commentary should be accepted");
   globalThis.fetch = async () => ({ ok: true, json: async () => ({ message: { content: '{"summary":"There were 999999 failures this week."}' } }) });
   assert.equal((await r.writeNarrative(f, true)).aiStatus, "unavailable");
   globalThis.fetch = async () => { throw new Error("offline"); };
   assert.equal((await r.writeNarrative(f, true)).aiStatus, "unavailable");
 } finally { globalThis.fetch = originalFetch; }
+
+// The all-work-type downtime chart must also keep identically named equipment
+// in different places separate, not undo the new reliability grouping.
+const collisionTimes = [["acknowledged", "2026-10-12T00:00:00.000Z"], ["resolved", "2026-10-14T00:00:00.000Z"]];
+const collisionA = fixture({ name: "Same equipment name", events: collisionTimes });
+const collisionB = fixture({ name: "Same equipment name", events: collisionTimes });
+m.db.prepare("UPDATE work_orders SET area = ? WHERE id = ?").run("Area A", collisionA.id);
+m.db.prepare("UPDATE work_orders SET area = ? WHERE id = ?").run("Area B", collisionB.id);
+const separated = inPlant("port-klang", () => r.weeklyFacts(week)).machines.filter((machine) => machine.machine === "Same equipment name");
+assert.equal(separated.length, 2);
+assert.deepEqual(new Set(separated.map((machine) => machine.area)), new Set(["Area A", "Area B"]));
 
 const workflow = JSON.parse(readFileSync(new URL("../../../docs/n8n-weekly-management-report.json", import.meta.url), "utf8"));
 assert.equal(workflow.active, false); assert.equal(workflow.settings.timezone, "Asia/Kuala_Lumpur");
