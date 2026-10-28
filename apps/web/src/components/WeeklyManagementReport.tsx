@@ -12,10 +12,33 @@ export function WeeklyManagementReport() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [confirmedNotSent, setConfirmedNotSent] = useState(false);
+  const [toEmail, setToEmail] = useState("");
+  const [ccEmail, setCcEmail] = useState("");
+  const [settingsBusy, setSettingsBusy] = useState(true);
+  const [settingsDirty, setSettingsDirty] = useState(false);
+  const [settingsSaved, setSettingsSaved] = useState(false);
   const version = useRef(0);
   useEffect(() => () => { version.current++; }, []);
   const loadHistory = useCallback(async () => { setHistory(await api.weeklyReportHistory()); }, []);
   useEffect(() => { void loadHistory().catch((e) => setError(e.message)); }, [loadHistory]);
+  useEffect(() => {
+    let cancelled = false;
+    void api.reportEmailSettings().then((settings) => {
+      if (cancelled) return;
+      setToEmail(settings.to.join(", ")); setCcEmail(settings.cc.join(", ")); setSettingsSaved(Boolean(settings.to.length));
+    }).catch((e) => { if (!cancelled) setError(e.message); }).finally(() => { if (!cancelled) setSettingsBusy(false); });
+    return () => { cancelled = true; };
+  }, []);
+  async function saveRecipients() {
+    setSettingsBusy(true); setError("");
+    const split = (value: string) => value.split(/[,;]/).map((v) => v.trim()).filter(Boolean);
+    try {
+      const settings = await api.saveReportEmailSettings(split(toEmail), split(ccEmail));
+      setToEmail(settings.to.join(", ")); setCcEmail(settings.cc.join(", "));
+      setSettingsDirty(false); setSettingsSaved(Boolean(settings.to.length));
+    } catch (e) { setError(e instanceof Error ? e.message : "Unable to save recipients."); }
+    finally { setSettingsBusy(false); }
+  }
   useEffect(() => {
     if (!report?.id || report.delivery !== "sending" || busy) return;
     let cancelled = false;
@@ -50,19 +73,27 @@ export function WeeklyManagementReport() {
   }
   return <section className="weekly-management" aria-label="Weekly management email">
     <div className="weekly-management-heading"><span><Mail size={23} /></span><div><p>WEEKLY MANAGEMENT EMAIL</p><h2>A clear view of maintenance, every week</h2><small>Repeat machine reports, line and area hotspots, issue patterns, downtime and a timestamped live backlog in one email. Local AI explains the recorded findings and priorities.</small></div></div>
+    <div className="weekly-email-settings" aria-label="Report email recipients">
+      <div><strong>Email recipients</strong><p>Saved for the selected plant view, including Both plants when selected. Used for Send email now and the weekly schedule.</p></div>
+      <label>To<input type="text" inputMode="email" autoComplete="off" placeholder="boss@company.com, manager@company.com" value={toEmail} disabled={settingsBusy || Boolean(busy)} onChange={(e) => { setToEmail(e.target.value); setSettingsDirty(true); }} /></label>
+      <label>CC (optional)<input type="text" inputMode="email" autoComplete="off" placeholder="maintenance@company.com" value={ccEmail} disabled={settingsBusy || Boolean(busy)} onChange={(e) => { setCcEmail(e.target.value); setSettingsDirty(true); }} /></label>
+      <small>Enter plain email addresses separated by commas. Up to 20 recipients in total.</small>
+      <div><button type="button" className="secondary-action" disabled={settingsBusy || Boolean(busy)} onClick={() => void saveRecipients()}>{settingsBusy ? "Loading / saving…" : "Save recipients"}</button><span role="status">{settingsDirty ? "Unsaved changes — save before sending." : settingsSaved ? "Recipients saved." : "Add and save at least one To recipient before sending."}</span></div>
+    </div>
     <div className="weekly-management-controls">
       <label>Reporting period<select value={current ? "current" : "completed"} disabled={Boolean(busy)} onChange={(e) => { setCurrent(e.target.value === "current"); setWeek(""); setReport(null); setError(""); }}><option value="current">This week so far</option><option value="completed">Completed week</option></select><small>Malaysia time · Monday to now, or a completed week</small></label>
       {!current ? <label>Week starting Monday<input type="date" value={week} disabled={Boolean(busy)} onChange={(e) => { setWeek(e.target.value); setReport(null); setError(""); }} /><small>Leave blank for the last completed week</small></label> : null}
       <button type="button" className="secondary-action" disabled={Boolean(busy)} onClick={() => void run("preview")}><RefreshCw size={16} />{busy === "preview" ? "Preparing…" : "Preview email"}</button>
       <button type="button" className="primary-action" disabled={Boolean(busy)} onClick={() => void run("generate")}><Sparkles size={16} />{busy === "generate" ? "Writing summary…" : "Generate & save report"}</button>
       {report ? <button type="button" className="secondary-action" onClick={download}><Download size={16} />Download email</button> : null}
-      {report?.id ? <button type="button" className="primary-action" disabled={Boolean(busy) || report.delivery !== "draft"} onClick={() => void run("send", report.id!)}><Mail size={16} />{busy === "send" || report.delivery === "sending" ? "Sending…" : report.delivery === "sent" ? "Email sent" : "Send email now"}</button> : null}
+      {report?.id ? <button type="button" className="primary-action" disabled={Boolean(busy) || report.delivery !== "draft" || settingsBusy || settingsDirty || !settingsSaved} onClick={() => void run("send", report.id!)}><Mail size={16} />{busy === "send" || report.delivery === "sending" ? "Sending…" : report.delivery === "sent" ? "Email sent" : "Send email now"}</button> : null}
     </div>
-    <p className="weekly-management-note">Generate and review the report, then use Send email now to email the recipients configured in n8n. This week so far includes Monday to the snapshot time. Monday's scheduled report runs separately. Preview and generation do not send email.</p>
+    <p className="weekly-management-note">Save the recipients above, generate and review the report, then use Send email now. This week so far includes Monday to the snapshot time. Monday's scheduled report runs separately. Preview and generation do not send email.</p>
     {error ? <p role="alert" className="error-line">{error}</p> : null}
     {busy === "generate" ? <p role="status">The local model may take up to two minutes. CMMS remains available while it writes.</p> : null}
     {report ? <><div className="weekly-management-meta"><strong>{report.subject}</strong><span>{report.aiStatus === "generated" ? "Local AI summary" : "Factual summary"} · {report.id ? `Saved · ${report.delivery}` : "Preview"}</span></div>
       <iframe className="weekly-email-preview" title="Weekly management email preview" sandbox="" srcDoc={report.html} />
+      {report.deliveryTo?.length ? <p className="weekly-management-note">Delivery recipients: {report.deliveryTo.join(", ")}{report.deliveryCc?.length ? ` · CC: ${report.deliveryCc.join(", ")}` : ""}</p> : null}
       {report.delivery === "sending" ? <p role="status">Delivery requested. Waiting for n8n to confirm the email result; this status updates automatically.</p> : null}
       {report.delivery === "sent" ? <p role="status">Email sent{report.sentAt ? ` · ${new Date(report.sentAt).toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur" })} MYT` : ""}.</p> : null}
       {report.deliveryError ? <p role="status" className="error-line">{report.deliveryError}</p> : null}

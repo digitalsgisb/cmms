@@ -4,6 +4,7 @@ import { downtimeWindow, plantLabels, workOrderStatusLabels, type PlantId, type 
 import { db } from "./db.js";
 import { plantContext } from "./plant-context.js";
 import { buildWeeklyReliability, type ReliabilityOrder } from "./weekly-reliability.js";
+import { initializeReportEmailSettings, reportDeliveryPacket, requireReportRecipients } from "./report-email-delivery.js";
 
 const day = 86_400_000;
 const offset = 8 * 3_600_000;
@@ -24,6 +25,10 @@ export function initializeWeeklyReports() {
   )`);
   const columns = db.prepare("PRAGMA table_info(weekly_management_reports)").all() as { name: string }[];
   if (!columns.some((c) => c.name === "manualDispatchToken")) db.exec("ALTER TABLE weekly_management_reports ADD COLUMN manualDispatchToken TEXT");
+  for (const name of ["recipientTo", "recipientCc"]) {
+    if (!columns.some((c) => c.name === name)) db.exec(`ALTER TABLE weekly_management_reports ADD COLUMN ${name} TEXT NOT NULL DEFAULT '[]'`);
+  }
+  initializeReportEmailSettings();
 }
 
 /** Half-open Monday-to-Monday boundaries, independent of the server timezone. */
@@ -183,7 +188,7 @@ export { escapeHtml, renderWeeklyEmail } from "./weekly-report-email.js";
 export async function previewWeeklyReport(week?: string, useAi = false, weekToDate = false): Promise<WeeklyReport> {
   const facts = weeklyFacts(week, Date.now(), weekToDate);
   const narrative = await writeNarrative(facts, useAi);
-  const report: WeeklyReport = { id: null, subject: `${weekToDate ? "Week-to-date" : "Weekly"} CMMS Management Report | ${facts.scope === "all" ? "Both plants" : plantLabels[facts.scope]} | ${dateLabel(facts.start)}${weekToDate ? ` | As of ${new Date(facts.end).toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur" })} MYT` : ""}`,
+  const report: WeeklyReport = { id: null, subject: `CMMS ${weekToDate ? "Maintenance Update" : "Weekly Maintenance Report"} | ${facts.scope === "all" ? "Both Plants" : plantLabels[facts.scope]} | ${dateLabel(facts.start)} – ${dateLabel(new Date(Date.parse(facts.end) - 1).toISOString())}`,
     facts, ...narrative, html: "", generatedAt: new Date().toISOString(), delivery: "draft", sentAt: null, deliveryError: "" };
   report.html = renderWeeklyEmail(report);
   return report;
@@ -191,9 +196,9 @@ export async function previewWeeklyReport(week?: string, useAi = false, weekToDa
 
 function scope(): Scope { return plantContext.getStore()?.plant ?? "port-klang"; }
 export function readWeeklyReport(id: string): WeeklyReport {
-  const record = db.prepare("SELECT payload, delivery, sentAt, deliveryError FROM weekly_management_reports WHERE id = ? AND scope = ?").get(id, scope()) as { payload: string; delivery: WeeklyReport["delivery"]; sentAt: string | null; deliveryError: string } | undefined;
+  const record = db.prepare("SELECT payload, delivery, sentAt, deliveryError, recipientTo, recipientCc FROM weekly_management_reports WHERE id = ? AND scope = ?").get(id, scope()) as { payload: string; delivery: WeeklyReport["delivery"]; sentAt: string | null; deliveryError: string; recipientTo: string; recipientCc: string } | undefined;
   if (!record) throw new Error("Report not found in this plant view.");
-  return { ...JSON.parse(record.payload), delivery: record.delivery, sentAt: record.sentAt, deliveryError: record.deliveryError };
+  return { ...JSON.parse(record.payload), delivery: record.delivery, sentAt: record.sentAt, deliveryError: record.deliveryError, deliveryTo: JSON.parse(record.recipientTo), deliveryCc: JSON.parse(record.recipientCc) };
 }
 export function weeklyReportHistory(): WeeklyReportHistory[] {
   return (db.prepare("SELECT id FROM weekly_management_reports WHERE scope = ? ORDER BY generatedAt DESC LIMIT 30").all(scope()) as { id: string }[]).map(({ id }) => {
@@ -217,14 +222,16 @@ export async function generateCurrentReport(): Promise<WeeklyReport> {
 
 /** Reserve before contacting n8n: a lost response must never permit a blind resend. */
 export async function sendReportNow(id: string) {
-  readWeeklyReport(id);
+  const report = readWeeklyReport(id);
   const configured = process.env.CMMS_REPORT_WEBHOOK_URL?.trim();
   const secret = process.env.CMMS_REPORT_WEBHOOK_TOKEN || "";
   if (!configured || secret.length < 32) throw new Error("Manual email is not configured. Set the n8n webhook URL and token on the CMMS server.");
   const url = new URL(configured);
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error("Invalid reporting webhook URL.");
+  const recipients = requireReportRecipients();
+  reportDeliveryPacket(report); // Validate the packaged logo before reserving delivery.
   const token = randomUUID();
-  const claimed = db.prepare("UPDATE weekly_management_reports SET delivery = 'sending', deliveryToken = ?, manualDispatchToken = ?, deliveryError = '' WHERE id = ? AND scope = ? AND delivery = 'draft'").run(token, token, id, scope()).changes;
+  const claimed = db.prepare("UPDATE weekly_management_reports SET delivery = 'sending', deliveryToken = ?, manualDispatchToken = ?, deliveryError = '', recipientTo = ?, recipientCc = ? WHERE id = ? AND scope = ? AND delivery = 'draft'").run(token, token, JSON.stringify(recipients.to), JSON.stringify(recipients.cc), id, scope()).changes;
   if (!claimed) throw new Error("This report is already sending or sent, or needs delivery recovery.");
   try {
     const response = await fetch(url, { method: "POST", redirect: "error", headers: { "Content-Type": "application/json", "X-CMMS-Webhook-Token": secret }, body: JSON.stringify({ reportId: id, plant: scope(), deliveryToken: token }), signal: AbortSignal.timeout(15_000) });
@@ -237,9 +244,10 @@ export async function sendReportNow(id: string) {
 }
 
 export function acceptManualDelivery(id: string, token: string) {
-  readWeeklyReport(id);
+  const report = readWeeklyReport(id);
+  const email = reportDeliveryPacket(report);
   const claimed = db.prepare("UPDATE weekly_management_reports SET manualDispatchToken = NULL WHERE id = ? AND scope = ? AND delivery = 'sending' AND deliveryToken = ? AND manualDispatchToken = ?").run(id, scope(), token, token).changes === 1;
-  return claimed ? { ...readWeeklyReport(id), claimed: true, deliveryToken: token } : { claimed: false };
+  return claimed ? { ...report, claimed: true, deliveryToken: token, email } : { claimed: false };
 }
 export function generateWeeklyReport(week?: string, regenerate = false): Promise<WeeklyReport> {
   const period = weeklyPeriod(week); const plant = scope(); const key = `${plant}:${period.start}`;
@@ -262,10 +270,13 @@ export function generateWeeklyReport(week?: string, regenerate = false): Promise
 }
 
 export function claimWeeklyDelivery(id: string) {
-  readWeeklyReport(id);
+  const report = readWeeklyReport(id);
+  if (report.delivery !== "draft") return { claimed: false, deliveryToken: null };
+  const recipients = requireReportRecipients();
+  const email = reportDeliveryPacket({ ...report, deliveryTo: recipients.to, deliveryCc: recipients.cc });
   const deliveryToken = randomUUID();
-  const claimed = db.prepare("UPDATE weekly_management_reports SET delivery = 'sending', deliveryToken = ?, deliveryError = '' WHERE id = ? AND scope = ? AND delivery = 'draft'").run(deliveryToken, id, scope()).changes === 1;
-  return { claimed, deliveryToken: claimed ? deliveryToken : null };
+  const claimed = db.prepare("UPDATE weekly_management_reports SET delivery = 'sending', deliveryToken = ?, deliveryError = '', recipientTo = ?, recipientCc = ? WHERE id = ? AND scope = ? AND delivery = 'draft'").run(deliveryToken, JSON.stringify(recipients.to), JSON.stringify(recipients.cc), id, scope()).changes === 1;
+  return claimed ? { claimed, deliveryToken, email } : { claimed, deliveryToken: null };
 }
 export function completeWeeklyDelivery(id: string, token: string, sent: boolean) {
   // A callback retry must be safe if its first response was lost.

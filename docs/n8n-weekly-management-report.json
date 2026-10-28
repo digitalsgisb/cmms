@@ -58,18 +58,12 @@
               "name": "fromEmail",
               "value": "cmms@example.com",
               "type": "string"
-            },
-            {
-              "id": "to",
-              "name": "toEmail",
-              "value": "boss@example.com",
-              "type": "string"
             }
           ]
         },
         "options": {}
       },
-      "notes": "Set the CMMS URL, plant (port-klang / sendayan / all), sender and recipients. Replace example addresses before activating."
+      "notes": "Set CMMS URL, sender and plant (manual plant comes from the webhook). Recipients are managed in CMMS Reports → Email recipients. Keep SMTP credentials in n8n."
     },
     {
       "id": "generate",
@@ -180,17 +174,19 @@
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
       "position": [
-        650,
+        880,
         -80
       ],
       "parameters": {
         "fromEmail": "={{ $('Report configuration').first().json.fromEmail }}",
-        "toEmail": "={{ $('Report configuration').first().json.toEmail }}",
-        "subject": "={{ $('Generate weekly report').first().json.subject }}",
+        "toEmail": "={{ $json.toEmail }}",
+        "subject": "={{ $json.subject }}",
         "emailFormat": "html",
-        "html": "={{ $('Generate weekly report').first().json.html }}",
+        "html": "={{ $json.html }}",
         "options": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "ccEmail": "={{ $json.ccEmail }}",
+          "attachments": "cmmsLogo"
         }
       },
       "credentials": {
@@ -291,6 +287,21 @@
       "parameters": {
         "errorMessage": "CMMS management email delivery failed or is uncertain. Check SMTP and the saved report before retrying."
       }
+    },
+    {
+      "id": "prepare-email",
+      "name": "Prepare email with inline logo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        -80
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "jsCode": "const email = $input.first().json.email;\nif (!email || !email.toEmail || !email.logo || !email.logo.data) {\n  throw new Error('Missing CMMS recipients or inline logo. Save recipients in CMMS and update the CMMS application.');\n}\nreturn [{\n  json: { subject: email.subject, html: email.html, toEmail: email.toEmail, ccEmail: email.ccEmail || '' },\n  binary: { cmmsLogo: { data: email.logo.data, mimeType: 'image/png', fileName: 'cmms-logo.png' } }\n}];"
+      },
+      "notes": "Converts the CMMS-packaged PNG into an inline attachment. HTML references cid:cmmsLogo; no external image download is needed."
     }
   ],
   "connections": {
@@ -342,7 +353,7 @@
       "main": [
         [
           {
-            "node": "Send management email",
+            "node": "Prepare email with inline logo",
             "type": "main",
             "index": 0
           }
@@ -373,6 +384,24 @@
         [
           {
             "node": "Flag delivery failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare email with inline logo": {
+      "main": [
+        [
+          {
+            "node": "Send management email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record failed delivery",
             "type": "main",
             "index": 0
           }

@@ -5,3 +5,4 @@
 @media print{.weekly-management{display:none}}
 
 .weekly-management-controls select{padding:10px;border:1px solid #d8dee8;border-radius:8px;background:white;color:#25344b}
+.weekly-email-settings{display:grid;gap:12px;padding:18px;margin-top:20px;border:1px solid #e3e7ee;border-radius:12px;background:#fafbfc;font-size:13px}.weekly-email-settings p{margin:5px 0 0;font-size:12px;line-height:1.6;color:#68758a}.weekly-email-settings label{display:grid;gap:6px;font-weight:650}.weekly-email-settings input{width:100%;box-sizing:border-box;padding:10px;border:1px solid #d8dee8;border-radius:8px;background:white;color:#25344b}.weekly-email-settings small,.weekly-email-settings span{font-size:11px;color:#68758a}.weekly-email-settings>div:last-child{display:flex;gap:12px;align-items:center;flex-wrap:wrap}

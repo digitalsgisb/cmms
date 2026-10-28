@@ -87,6 +87,8 @@ export interface WeeklyReportFacts {
   reliability?: WeeklyReliabilityAnalysis;
 }
 export interface WeeklyReport {
+  deliveryTo?: string[];
+  deliveryCc?: string[];
   id: string | null;
   subject: string;
   html: string;

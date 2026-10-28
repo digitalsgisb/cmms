@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { Router, type Request, type Response, type NextFunction } from "express";
 import type { PlantId } from "@sugi-cmms/shared";
 import { plantContext } from "./plant-context.js";
+import { reportEmailSettings, saveReportEmailSettings } from "./report-email-delivery.js";
 import { acceptManualDelivery, claimWeeklyDelivery, completeWeeklyDelivery, generateCurrentReport, generateWeeklyReport, previewWeeklyReport, readWeeklyReport, resetWeeklyDelivery, sendReportNow, weeklyReportHistory } from "./weekly-report.js";
 
 const asyncRoute = (handler: (req: Request, res: Response) => Promise<void>) => (req: Request, res: Response, next: NextFunction) => { handler(req, res).catch(next); };
@@ -54,6 +55,8 @@ export function weeklyManagementRouter() {
   });
   router.get("/preview", asyncRoute(async (req, res) => { res.json(await previewWeeklyReport(week(req), false, req.query.current === "true")); }));
   router.get("/history", (_req, res) => { res.json(weeklyReportHistory()); });
+  router.get("/email-settings", (_req, res) => { res.json(reportEmailSettings()); });
+  router.put("/email-settings", (req, res) => { res.json(saveReportEmailSettings(req.body)); });
   router.get("/:id", (req, res) => { res.json(readWeeklyReport(req.params.id)); });
   router.post("/generate", asyncRoute(async (req, res) => { res.json(await generateWeeklyReport(week(req), req.body?.regenerate === true)); }));
   router.post("/current", asyncRoute(async (_req, res) => { res.json(await generateCurrentReport()); }));

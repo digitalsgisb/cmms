@@ -61,10 +61,10 @@ function reliabilitySections(r: WeeklyReliabilityAnalysis, partial = false) {
     + section("Data coverage", note(`${r.unidentifiedMachineReports30d} maintenance reports in the 30-day window lack identifiable equipment and are excluded from machine rankings; ${r.missingLocationReports30d} lack a usable section/area. A registered machine ID is preferred. Without one, plant, department, section, area and normalised machine name identify a group. Duplicate requests can inflate report frequency; a returned repair is tracked separately and does not create a new incident. Projects, KAIZEN, office work and cancelled requests are excluded from maintenance incident counts. No operating-hours data is available to calculate a failure rate or MTBF.`));
 }
 
-export function renderWeeklyEmail(report: WeeklyReport) {
+export function renderWeeklyEmail(report: WeeklyReport, logoSource?: "cid:cmmsLogo") {
   const f = report.facts; const c = f.current; const p = f.previous;
   const partial = f.periodMode === "week-to-date";
-  const url = appUrl(); const logo = new URL("brand/sugi_logo_white.png", url).href;
+  const url = appUrl(); const logo = logoSource || new URL("brand/sugi_logo_white.png", url).href;
   const delta = (value: number) => value > 0 ? `+${value}` : String(value);
   const dailyMax = Math.max(1, ...f.daily.flatMap((d) => [d.created, d.resolved, d.closed]));
   const dailyChart = note("Distinct work orders per day. A returned job resolved on another day can appear again; weekly totals count each job once.")

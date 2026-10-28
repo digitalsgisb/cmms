@@ -139,6 +139,8 @@ export const api = {
   sendWeeklyReport: (id: string) => request<WeeklyReport>(`/api/reports/weekly/${encodeURIComponent(id)}/send`, { method: "POST" }),
   generateWeeklyReport: (week?: string, regenerate = false) => request<WeeklyReport>("/api/reports/weekly/generate", { method: "POST", body: JSON.stringify({ week, regenerate }) }),
   weeklyReportHistory: () => request<WeeklyReportHistory[]>("/api/reports/weekly/history"),
+  reportEmailSettings: () => request<{ to: string[]; cc: string[]; updatedAt: string | null }>("/api/reports/weekly/email-settings"),
+  saveReportEmailSettings: (to: string[], cc: string[]) => request<{ to: string[]; cc: string[]; updatedAt: string | null }>("/api/reports/weekly/email-settings", { method: "PUT", body: JSON.stringify({ to, cc }) }),
   weeklyReport: (id: string) => request<WeeklyReport>(`/api/reports/weekly/${encodeURIComponent(id)}`),
   resetWeeklyDelivery: (id: string) => request<WeeklyReport>(`/api/reports/weekly/${encodeURIComponent(id)}/reset-delivery`, { method: "POST", body: JSON.stringify({ confirmedNotSent: true }) }),
   createPmPlan: (input: UpdatePmPlanInput) => request<PmPlan>("/api/pm/plans", { method: "POST", body: JSON.stringify(input) }),
