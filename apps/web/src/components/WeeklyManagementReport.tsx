@@ -72,7 +72,7 @@ export function WeeklyManagementReport() {
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = `cmms-weekly-${report.facts.start.slice(0, 10)}.html`; anchor.click(); URL.revokeObjectURL(url);
   }
   return <section className="weekly-management" aria-label="Weekly management email">
-    <div className="weekly-management-heading"><span><Mail size={23} /></span><div><p>WEEKLY MANAGEMENT EMAIL</p><h2>A clear view of maintenance, every week</h2><small>Repeat machine reports, line and area hotspots, issue patterns, downtime and a timestamped live backlog in one email. Local AI explains the recorded findings and priorities.</small></div></div>
+    <div className="weekly-management-heading"><span><Mail size={23} /></span><div><p>MANAGEMENT EMAIL</p><h1>Email reports</h1><small>Manage recipients, prepare a maintenance summary and review delivery history. Each email includes repeat machine reports, location hotspots, downtime and local AI commentary.</small></div></div>
     <div className="weekly-email-settings" aria-label="Report email recipients">
       <div><strong>Email recipients</strong><p>Saved for the selected plant view, including Both plants when selected. Used for Send email now and the weekly schedule.</p></div>
       <label>To<input type="text" inputMode="email" autoComplete="off" placeholder="boss@company.com, manager@company.com" value={toEmail} disabled={settingsBusy || Boolean(busy)} onChange={(e) => { setToEmail(e.target.value); setSettingsDirty(true); }} /></label>

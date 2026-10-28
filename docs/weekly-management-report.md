@@ -42,7 +42,7 @@ Set `OLLAMA_MODEL` to the downloaded tag and restart the CMMS service. Open n8n 
 ## Configure weekly email
 
 1. Import `docs/n8n-weekly-management-report.json` into n8n. It is initially inactive.
-2. In **Report configuration**, set the CMMS URL, plant (`port-klang`, `sendayan`, or `all`) and sender address. In **CMMS → Reports → Email recipients**, save To and optional CC addresses for that same plant view. Recipients are managed in CMMS; the sender and SMTP credentials stay in n8n. The updated workflow prepares the inline logo before sending.
+2. In **Report configuration**, set the CMMS URL, plant (`port-klang`, `sendayan`, or `all`) and sender address. In **CMMS → Reports → Email reports → Email recipients**, save To and optional CC addresses for that same plant view. Recipients are managed in CMMS; the sender and SMTP credentials stay in n8n. The updated workflow prepares the inline logo before sending.
 3. Create a **Header Auth** credential named **CMMS reporting token**: header name `X-CMMS-Report-Token`, value equal to `CMMS_REPORT_TOKEN`. Select it on every HTTP Request node.
 4. Configure **CMMS SMTP** with your company's SMTP host, port, authentication and TLS settings, then select it on **Send management email**. Credentials live in n8n, not the report or browser. No Outlook/Gmail account has been connected by this implementation.
 5. Generate and review a report in CMMS. Test the workflow with your own address. Testing sends real email, so use a test recipient deliberately. A successfully sent week will not send again automatically; use an isolated test database if you need to rehearse the same period repeatedly.

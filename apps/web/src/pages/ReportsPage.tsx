@@ -44,7 +44,7 @@ import {
 import { api } from "../api/client";
 import { useCurrentUser } from "../state/UserContext";
 import { PlantSelector } from "../components/PlantSelector";
-import { WeeklyManagementReport } from "../components/WeeklyManagementReport";
+import { ReportNavigation } from "../components/ReportNavigation";
 
 type PresetId = "daily" | "monthly" | "annual" | "work-orders" | "inventory" | "pm";
 type RangeId = "7d" | "30d" | "ytd";
@@ -326,6 +326,7 @@ export function ReportsPage() {
 
   return (
     <section className="reports-page page-stack">
+      <ReportNavigation />
       {loadError ? <div className="ux-load-error" role="alert"><span>Some information could not load. Displayed figures may be incomplete or out of date. {loadError}</span><button className="secondary-action" type="button" onClick={() => void loadData()}>Try again</button></div> : null}
       <div className="analytics-plant-filter"><span>Report plant</span><PlantSelector allowCombined compact /></div>
       <header className="reports-hero">
@@ -346,8 +347,6 @@ export function ReportsPage() {
           <span>{closure}% work order closure</span>
         </div>
       </header>
-
-      <WeeklyManagementReport key={selectedPlant()} />
 
       <section className="reports-library">
         <div className="reports-section-heading"><div><span>Report library</span><h2>Choose the conversation you need to lead</h2></div><small>Every pack uses the same live source of truth.</small></div>

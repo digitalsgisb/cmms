@@ -71,7 +71,7 @@ export function selectedPlant(): PlantId | "all" {
   }
   const guestPlant = null;
   const stored = guestPlant || sessionStorage.getItem("cmms-selected-plant") || "port-klang";
-  if (stored === "all") return ["/reports", "/performance"].includes(window.location.pathname) ? "all" : sessionStorage.getItem("cmms-operational-plant") === "sendayan" ? "sendayan" : "port-klang";
+  if (stored === "all") return ["/reports", "/reports/email", "/performance"].includes(window.location.pathname) ? "all" : sessionStorage.getItem("cmms-operational-plant") === "sendayan" ? "sendayan" : "port-klang";
   return stored === "sendayan" ? "sendayan" : "port-klang";
 }
 export function setSelectedPlant(plant: PlantId | "all") {

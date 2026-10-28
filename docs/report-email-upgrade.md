@@ -1,6 +1,6 @@
 # CMMS-managed recipients and an inline company logo
 
-The recipient list now lives in **CMMS → Reports → Weekly management email → Email recipients**. Enter To and optional CC addresses, separated by commas, and click **Save recipients**. Up to 20 recipients are supported. Settings are separate for Port Klang, Sendayan and Both plants: select the same view used by the n8n workflow before saving its recipients. Only executive, admin and developer users can change them.
+The recipient list now lives in **CMMS → Reports → Email reports → Email recipients**. Enter To and optional CC addresses, separated by commas, and click **Save recipients**. Up to 20 recipients are supported. Settings are separate for Port Klang, Sendayan and Both plants: select the same view used by the n8n workflow before saving its recipients. Only executive, admin and developer users can change them.
 
 Both manual and scheduled deliveries capture the saved recipient list when delivery is reserved. Changes apply to later deliveries; a report already sending keeps its original recipients. The To and CC list used is shown with the saved report. Recipients are never included in AI prompts. Sender and SMTP credentials remain in n8n.
 

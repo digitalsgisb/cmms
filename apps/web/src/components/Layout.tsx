@@ -29,7 +29,6 @@ import { useLiveRefresh } from "../hooks/useLiveRefresh";
 import { usePageScrollRestoration } from "../hooks/usePageScrollRestoration";
 
 const navItems = [
-  { to: "/reports", label: "Reports", icon: Boxes },
   { to: "/users", label: "Users", icon: Users },
   { to: "/settings", label: "Settings", icon: Settings }
 ];
@@ -88,6 +87,8 @@ export function Layout() {
   const sparePartsActive = location.pathname.startsWith("/spare-parts");
   const preventiveActive = location.pathname.startsWith("/preventive-maintenance");
   const performanceActive = location.pathname === "/performance";
+  const reportsActive = location.pathname === "/reports" || location.pathname.startsWith("/reports/");
+  const [reportsOpen, setReportsOpen] = useState(reportsActive);
   const performanceFocus = new URLSearchParams(location.search).get("focus") || "all";
   const [performanceOpen, setPerformanceOpen] = useState(performanceActive);
   const [workOrdersOpen, setWorkOrdersOpen] = useState(workOrdersActive);
@@ -97,6 +98,7 @@ export function Layout() {
   useEffect(() => {
     if (performanceActive) setPerformanceOpen(true);
   }, [performanceActive, location.search]);
+  useEffect(() => { setReportsOpen(reportsActive); }, [reportsActive, location.pathname]);
 
   async function loadNotifications() {
     if (!currentUser) {
@@ -154,6 +156,7 @@ export function Layout() {
       { match: "/spare-parts", label: "Spare Parts" },
       { match: "/preventive-maintenance", label: "Preventive Maintenance" },
       { match: "/performance", label: "Performance" },
+      { match: "/reports/email", label: "Email reports" },
       { match: "/reports", label: "Reports" },
       { match: "/developer/usage", label: "User Sessions" },
       { match: "/users", label: "Users" },
@@ -562,6 +565,20 @@ export function Layout() {
               })}
             </div>
           </div> : <span className="nav-item locked" aria-disabled="true"><ChartNoAxesCombined size={18} aria-hidden="true" /><span>Performance</span><LockKeyhole className="nav-lock" size={14} aria-hidden="true" /></span>}
+
+          {hasDeveloperAccess ? <div className={`nav-group ${reportsOpen ? "open" : ""}`}>
+            <Link to="/reports" className={`nav-item nav-parent ${reportsActive ? "active" : ""}`} aria-expanded={reportsOpen} onClick={(event) => {
+              if (reportsActive) { event.preventDefault(); setReportsOpen((open) => !open); }
+              else setReportsOpen(true);
+            }}>
+              <Boxes size={18} aria-hidden="true" /><span>Reports</span>
+              {reportsOpen ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
+            </Link>
+            <div className="nav-subitems" aria-hidden={!reportsOpen}>
+              <NavLink to="/reports" end tabIndex={reportsOpen ? 0 : -1} className={({ isActive }) => isActive ? "active" : ""} onClick={() => setMobileNavOpen(false)}>Report library</NavLink>
+              <NavLink to="/reports/email" tabIndex={reportsOpen ? 0 : -1} className={({ isActive }) => isActive ? "active" : ""} onClick={() => setMobileNavOpen(false)}>Email reports</NavLink>
+            </div>
+          </div> : <span className="nav-item locked" aria-disabled="true"><Boxes size={18} aria-hidden="true" /><span>Reports</span><LockKeyhole className="nav-lock" size={14} aria-hidden="true" /></span>}
 
           {navItems.map((item) => (
             (hasDeveloperAccess || (currentUser.role === "executive" && ["/performance", "/reports"].includes(item.to)) || (item.to === "/settings" && currentUser.plantAccess === "both")) ? (

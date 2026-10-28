@@ -2,7 +2,7 @@
 
 For existing installations, follow [the recipients and inline-logo upgrade guide](report-email-upgrade.md) to update both n8n workflows. Recipients are now managed in CMMS rather than n8n.
 
-In **Reports → Weekly management email**, choose **This week so far**, click **Generate & save report**, review the email, then click **Send email now**. The server prepares the AI summary using Monday-to-snapshot data in Malaysia time. Previous-week comparisons use the same elapsed period seven days earlier. Machine/location analysis, charts and the monochrome CMMS logo template are included.
+In **Reports → Email reports**, choose **This week so far**, click **Generate & save report**, review the email, then click **Send email now**. The server prepares the AI summary using Monday-to-snapshot data in Malaysia time. Previous-week comparisons use the same elapsed period seven days earlier. Machine/location analysis, charts and the monochrome CMMS logo template are included.
 
 You can also select a completed week and send its saved draft. Sent snapshots cannot be sent again. Generate a new week-to-date snapshot when you deliberately need a later update. Sending an interim report does not consume or change Monday's scheduled report.
 
@@ -10,7 +10,7 @@ You can also select a completed week and send its saved draft. Sent snapshots ca
 
 Keep the existing weekly workflow. Import `docs/n8n-manual-management-report.json` as a **second** workflow in your existing n8n.
 
-1. In **Report configuration**, set `cmmsUrl` to `http://172.19.3.62:3300` and your sender address. Plant is supplied by CMMS; leave that expression in place. In **CMMS → Reports → Email recipients**, save To and optional CC addresses for the selected plant view. The workflow reads recipients from CMMS.
+1. In **Report configuration**, set `cmmsUrl` to `http://172.19.3.62:3300` and your sender address. Plant is supplied by CMMS; leave that expression in place. In **CMMS → Reports → Email reports → Email recipients**, save To and optional CC addresses for the selected plant view. The workflow reads recipients from CMMS.
 2. Select the existing **CMMS reporting token** Header Auth credential on all HTTP Request nodes. This uses header `X-CMMS-Report-Token` with the existing `CMMS_REPORT_TOKEN`. Select your existing **CMMS SMTP** credential on the email node.
 3. Generate a separate manual-webhook secret:
 

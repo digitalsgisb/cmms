@@ -26,6 +26,7 @@ import { useCurrentUser } from "./state/UserContext";
 
 const PerformancePage = lazy(() => import("./pages/PerformancePage"));
 const ReportsPage = lazy(() => import("./pages/ReportsPage"));
+const EmailReportsPage = lazy(() => import("./pages/EmailReportsPage"));
 
 export function App() {
   const location = useLocation();
@@ -67,6 +68,7 @@ export function App() {
         <Route path="/preventive-maintenance/*" element={<RestrictedFeature name="Preventive Maintenance"><PreventiveMaintenancePage /></RestrictedFeature>} />
         <Route path="/performance" element={<RestrictedFeature name="Performance"><Suspense fallback={<div className="performance-loading">Preparing live performance view...</div>}><PerformancePage /></Suspense></RestrictedFeature>} />
         <Route path="/reports" element={<RestrictedFeature name="Reports"><Suspense fallback={<div className="performance-loading">Building live report...</div>}><ReportsPage /></Suspense></RestrictedFeature>} />
+        <Route path="/reports/email" element={<RestrictedFeature name="Reports"><Suspense fallback={<div className="performance-loading">Loading email reports...</div>}><EmailReportsPage /></Suspense></RestrictedFeature>} />
         <Route path="/users" element={<RestrictedFeature name="Users"><AdminPage /></RestrictedFeature>} />
         <Route path="/profile" element={<TechnicianProfilePage />} />
         <Route path="/settings" element={<RestrictedFeature name="Settings"><SettingsPage /></RestrictedFeature>} />
