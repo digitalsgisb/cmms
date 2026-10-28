@@ -120,8 +120,8 @@ export function CreateWorkOrderPage() {
       const customMachineName = form.customMachineName.trim();
       if (rules.section === "required" && !form.sectionId) throw new Error("Choose a section or select Others.");
       if (rules.section !== "hidden" && form.sectionId === otherOptionValue && !form.customSection.trim()) throw new Error("Specify the section.");
-      if (rules.area === "required" && !form.area) throw new Error("Choose an area or select Others.");
-      if (rules.area !== "hidden" && form.area === otherOptionValue && !form.customArea.trim()) throw new Error("Specify the area.");
+      if (rules.area === "required" && !form.area) throw new Error("Choose an area/line or select Others.");
+      if (rules.area !== "hidden" && form.area === otherOptionValue && !form.customArea.trim()) throw new Error("Specify the area/line.");
       if (rules.machine === "required" && !form.machineId) throw new Error("Choose a machine or select Others.");
       if (rules.machine !== "hidden" && form.machineId === otherOptionValue && !customMachineName) throw new Error("Specify the machine or equipment.");
       if (rules.issueCategory === "required" && !form.issueCategoryId) throw new Error("Choose an issue category or select Others.");
@@ -225,10 +225,10 @@ export function CreateWorkOrderPage() {
           /> : null}
 
           {rules.area !== "hidden" ? <SearchableSelect
-            label={`Area${rules.area === "optional" ? " (optional)" : ""}`}
+            label={`Area/Line${rules.area === "optional" ? " (optional)" : ""}`}
             value={form.area}
             options={areaOptions}
-            placeholder="Choose an area"
+            placeholder="Choose an area/line"
             disabled={submitting || Boolean(createdOrderId)}
             onChange={(area) => setForm({ ...form, area, customArea: "", machineId: "", customMachineName: "" })}
           /> : null}
@@ -243,7 +243,7 @@ export function CreateWorkOrderPage() {
 
         {rules.area !== "hidden" && form.area === otherOptionValue ? (
           <label>
-            Specify area
+            Specify area/line
             <input value={form.customArea} onChange={(event) => setForm({ ...form, customArea: event.target.value })} required />
           </label>
         ) : null}

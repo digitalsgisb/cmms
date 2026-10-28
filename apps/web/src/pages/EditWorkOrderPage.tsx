@@ -228,7 +228,7 @@ export function EditWorkOrderPage() {
               <input value={form.customMachineName} onChange={(event) => setForm({ ...form, customMachineName: event.target.value })} required />
             </label>
             <label>
-              Area
+              Area/Line
               <input value={form.customArea} onChange={(event) => setForm({ ...form, customArea: event.target.value })} placeholder="General" />
             </label>
           </div>
