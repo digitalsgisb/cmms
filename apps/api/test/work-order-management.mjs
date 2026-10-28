@@ -167,6 +167,17 @@ assert.equal(updated.responsibleDepartment, "SHE");
 assert.equal(updated.shiftGroup, "N/A");
 assert.equal(inPlant(() => m.getWorkOrderDetail(workOrder.id)).activities[0].action, "edited");
 
+// Names must be explicitly supplied; never substitute a shared account name.
+const namedInput = { requesterId: requester.id, type: "maintenance", issueDescription: "Name validation", reportedByName: "  Actual Reporter  " };
+for (const reportedByName of [undefined, null, "", "   ", 123, false, {}]) {
+  assert.throws(() => inPlant(() => m.validateCreateWorkOrderInput({ ...namedInput, reportedByName })), /Requester name is required/i);
+  assert.throws(() => inPlant(() => m.createWorkOrder({ ...namedInput, reportedByName })), /Requester name is required/i);
+  assert.throws(() => inPlant(() => m.validateUpdateWorkOrderInput({ ...updateBody, reportedByName })), /Requester name is required/i);
+}
+const namedOrder = inPlant(() => m.createWorkOrder(m.validateCreateWorkOrderInput(namedInput)));
+assert.equal(namedOrder.reportedByName, "Actual Reporter");
+assert.equal(inPlant(() => m.getWorkOrder(namedOrder.id)).reportedByName, "Actual Reporter");
+
 const requesterTestOrder = createOrder("Requester delete test");
 await assert.rejects(inPlant(() => m.deleteWorkOrder(requesterTestOrder.id, secondRequester.id, "Test or duplicate request")), /requester account/i);
 await inPlant(() => m.deleteWorkOrder(requesterTestOrder.id, requester.id, "Test or duplicate request"));

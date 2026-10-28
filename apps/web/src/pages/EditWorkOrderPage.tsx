@@ -111,6 +111,7 @@ export function EditWorkOrderPage() {
       return;
     }
 
+    if (!form.reportedByName.trim()) { setError("Requester name is required."); return; }
     setSaving(true);
     setError("");
     try {
@@ -125,7 +126,7 @@ export function EditWorkOrderPage() {
         machineId: selectedMachine?.id || null,
         area: selectedMachine?.area || form.customArea.trim() || "General",
         machineName,
-        reportedByName: form.reportedByName,
+        reportedByName: form.reportedByName.trim(),
         reportedByDepartment: form.reportedByDepartment,
         responsibleDepartment: form.responsibleDepartment,
         issueCategoryId: form.issueCategoryId === otherOptionValue ? null : form.issueCategoryId || null,
@@ -243,7 +244,7 @@ export function EditWorkOrderPage() {
           </label>
           <label>
             <UserRound size={15} aria-hidden="true" />
-            Reported by
+            Reported by (required)
             <input value={form.reportedByName} onChange={(event) => setForm({ ...form, reportedByName: event.target.value })} required />
           </label>
           <label>

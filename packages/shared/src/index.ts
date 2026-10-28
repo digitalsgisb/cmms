@@ -428,7 +428,7 @@ export interface CreateWorkOrderInput {
   machineId?: string | null;
   area?: string;
   machineName?: string;
-  reportedByName?: string;
+  reportedByName: string;
   reportedByDepartment?: string;
   responsibleDepartment?: WorkOrderDepartment;
   issueCategoryId?: string | null;

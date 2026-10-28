@@ -33,7 +33,7 @@ inPlant(() => m.db.prepare(`INSERT INTO users (id, username, name, role, departm
   VALUES ('photo-developer', 'photo-developer', 'Photo Developer', 'developer', 'IT', 'Developer', 1, 'both')`).run());
 const developer = m.getUser("photo-developer");
 const createOrder = () => inPlant(() => m.createWorkOrder(m.validateCreateWorkOrderInput({
-  requesterId: requester.id, type: "maintenance", title: "Photo correction", issueDescription: "Repair fixture", responsibleDepartment: "Production"
+  requesterId: requester.id, reportedByName: requester.name, type: "maintenance", title: "Photo correction", issueDescription: "Repair fixture", responsibleDepartment: "Production"
 })));
 const order = createOrder();
 const anotherOrder = createOrder();

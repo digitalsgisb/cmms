@@ -27,7 +27,7 @@ const sd = createUser("sendayan", "requester");
 const pkTech = createUser("port-klang", "technician");
 const sdTech = createUser("sendayan", "technician");
 const section = inPlant("sendayan", () => m.createSection({ actorId: admin.id, name: "Conversion" }));
-const createOrder = (user) => inPlant(user.plantAccess, () => m.createWorkOrder(m.validateCreateWorkOrderInput({ requesterId: user.id, type: "maintenance", title: "Plant isolation test", issueDescription: "Test repair", responsibleDepartment: "Production" })));
+const createOrder = (user) => inPlant(user.plantAccess, () => m.createWorkOrder(m.validateCreateWorkOrderInput({ requesterId: user.id, reportedByName: user.name, type: "maintenance", title: "Plant isolation test", issueDescription: "Test repair", responsibleDepartment: "Production" })));
 const pkOrder = createOrder(pk), sdOrder = createOrder(sd);
 const photoDir = path.join(process.env.CMMS_UPLOADS_DIR, "work-orders", sdOrder.id);
 mkdirSync(photoDir, { recursive: true });
@@ -97,7 +97,15 @@ try {
   assert.equal((await get(`/pm/dashboard?actorId=${sdTech.id}`, m.createAuthSession(sdTech.username, password), "sendayan")).status, 200);
   const concurrent = await Promise.all(Array.from({ length: 8 }, (_, i) => get("/work-orders", i % 2 ? pkSession : sdSession, i % 2 ? "port-klang" : "sendayan").then((response) => response.json())));
   concurrent.forEach((orders, i) => assert(orders.every((order) => order.plantId === (i % 2 ? "port-klang" : "sendayan"))));
-  const guest = await fetch(base + "/requester/work-orders", { method: "POST", headers: { "Content-Type": "application/json", "X-CMMS-Plant": "sendayan" }, body: JSON.stringify({ type: "maintenance", title: "Guest Sendayan", issueDescription: "Guest repair", responsibleDepartment: "Production" }) }).then((response) => response.json());
+  for (const reportedByName of [undefined, "", "  ", 123]) {
+    for (const route of ["/requester/work-orders", "/work-orders"]) {
+      const rejected = await fetch(base + route, { method: "POST", headers: { "Content-Type": "application/json", "X-CMMS-Plant": "sendayan", ...(route === "/work-orders" ? { Authorization: `Bearer ${sdSession.token}` } : {}) }, body: JSON.stringify({ requesterId: sd.id, type: "maintenance", issueDescription: "Reject missing requester", responsibleDepartment: "Production", reportedByName }) });
+      assert.equal(rejected.status, 400);
+      assert.match((await rejected.json()).error, /Requester name is required/i, `${route} name=${JSON.stringify(reportedByName)}
+${logs}`);
+    }
+  }
+  const guest = await fetch(base + "/requester/work-orders", { method: "POST", headers: { "Content-Type": "application/json", "X-CMMS-Plant": "sendayan" }, body: JSON.stringify({ type: "maintenance", title: "Guest Sendayan", reportedByName: "Guest reporter", issueDescription: "Guest repair", responsibleDepartment: "Production" }) }).then((response) => response.json());
   assert.equal(guest.workOrder.plantId, "sendayan");
   const requesterOrders = await (await get("/work-orders", sdSession, "sendayan")).json();
   const technicianOrders = await (await get("/work-orders", sdTechSession, "sendayan")).json();
@@ -116,7 +124,7 @@ try {
   const staffEvents = await get("/events", sdTechSession, "sendayan");
   const staffEventReader = staffEvents.body.getReader();
   await staffEventReader.read();
-  await fetch(base + "/requester/work-orders", { method: "POST", headers: { "Content-Type": "application/json", "X-CMMS-Plant": "sendayan" }, body: JSON.stringify({ type: "maintenance", title: "Live event test", issueDescription: "Instant technician refresh", responsibleDepartment: "Production" }) });
+  await fetch(base + "/requester/work-orders", { method: "POST", headers: { "Content-Type": "application/json", "X-CMMS-Plant": "sendayan" }, body: JSON.stringify({ type: "maintenance", title: "Live event test", reportedByName: "Event reporter", issueDescription: "Instant technician refresh", responsibleDepartment: "Production" }) });
   const liveChunk = await Promise.race([
     staffEventReader.read(),
     new Promise((_, reject) => setTimeout(() => reject(new Error("Timed out waiting for work-order live event")), 3000))

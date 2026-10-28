@@ -3829,6 +3829,11 @@ export function getWorkOrderDetail(id: string, archived = false): WorkOrderDetai
   return { ...workOrder, requester, assignedTo, supportingTechnicians, section, machine, issueCategory, activities, attachments };
 }
 
+function requireRequesterName(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) throw new Error("Requester name is required.");
+  return value.trim();
+}
+
 export function createWorkOrder(input: CreateWorkOrderInput): WorkOrder {
   const id = randomUUID();
   const createdAt = now();
@@ -3844,7 +3849,7 @@ export function createWorkOrder(input: CreateWorkOrderInput): WorkOrder {
   const title = input.title?.trim() || `${machineName} - ${issueCategoryName}`;
   const description = input.description?.trim() || issueDescription;
   const workDate = input.workDate || createdAt.slice(0, 10);
-  const reportedByName = input.reportedByName?.trim() || requester.name;
+  const reportedByName = requireRequesterName(input.reportedByName);
   const reportedByDepartment = input.reportedByDepartment?.trim() || requester.department;
   const responsibleDepartment = normalizeWorkOrderDepartment(input.responsibleDepartment || reportedByDepartment);
   if (section && section.department !== responsibleDepartment) {
@@ -5067,7 +5072,7 @@ export function validateCreateWorkOrderInput(body: Partial<CreateWorkOrderInput>
     machineId: body.machineId ? String(body.machineId) : null,
     area: body.area ? String(body.area) : undefined,
     machineName: body.machineName ? String(body.machineName) : undefined,
-    reportedByName: body.reportedByName ? String(body.reportedByName) : undefined,
+    reportedByName: requireRequesterName(body.reportedByName),
     reportedByDepartment: body.reportedByDepartment ? String(body.reportedByDepartment) : undefined,
     responsibleDepartment,
     issueCategoryId: body.issueCategoryId ? String(body.issueCategoryId) : null,
@@ -5083,7 +5088,7 @@ export function validateUpdateWorkOrderInput(body: Partial<UpdateWorkOrderInput>
   getUser(String(body.actorId));
 
   const issueDescription = String(body.issueDescription || "").trim();
-  const reportedByName = String(body.reportedByName || "").trim();
+  const reportedByName = requireRequesterName(body.reportedByName);
   const reportedByDepartment = String(body.reportedByDepartment || "").trim();
   const workDate = String(body.workDate || "").trim();
   if (!issueDescription || !reportedByName || !reportedByDepartment || !workDate) {

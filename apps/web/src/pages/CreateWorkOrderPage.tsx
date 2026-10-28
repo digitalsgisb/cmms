@@ -66,7 +66,7 @@ export function CreateWorkOrderPage() {
             sectionId: current.sectionId || nextMasterData.sections.find((section) => section.active && section.department === responsibleDepartment)?.id || "",
             issueCategoryId: current.issueCategoryId || nextMasterData.issueCategories.find((category) => category.active && category.department === responsibleDepartment)?.id || "",
             customMachineName: current.customMachineName || assetFromQuery,
-            reportedByName: current.reportedByName || currentUser?.name || "",
+            reportedByName: current.reportedByName,
             reportedByDepartment: current.reportedByDepartment || currentUser?.department || "",
             responsibleDepartment
           };
@@ -116,6 +116,7 @@ export function CreateWorkOrderPage() {
     setError("");
 
     try {
+      if (!form.reportedByName.trim()) throw new Error("Requester name is required.");
       const selectedMachine = filteredMachines.find((machine) => machine.id === form.machineId);
       const customMachineName = form.customMachineName.trim();
       if (rules.section === "required" && !form.sectionId) throw new Error("Choose a section or select Others.");
@@ -137,7 +138,7 @@ export function CreateWorkOrderPage() {
         machineId: rules.machine === "hidden" || form.machineId === otherOptionValue ? null : selectedMachine?.id || null,
         area: rules.area === "hidden" ? "Not applicable" : form.area === otherOptionValue ? form.customArea.trim() : form.area || selectedMachine?.area || "General",
         machineName: rules.machine === "hidden" ? "Not applicable" : selectedMachine?.name || customMachineName || "Not specified",
-        reportedByName: form.reportedByName,
+        reportedByName: form.reportedByName.trim(),
         reportedByDepartment: form.reportedByDepartment === otherOptionValue ? form.customReportedByDepartment.trim() : form.reportedByDepartment,
         responsibleDepartment: form.responsibleDepartment,
         issueCategoryId: rules.issueCategory === "hidden" || form.issueCategoryId === otherOptionValue ? null : form.issueCategoryId || null,
@@ -267,8 +268,8 @@ export function CreateWorkOrderPage() {
         <div className="form-grid two-columns">
           <label>
             <UserRound size={15} aria-hidden="true" />
-            Reported by
-            <input value={form.reportedByName} onChange={(event) => setForm({ ...form, reportedByName: event.target.value })} required />
+            Reported by (required)
+            <input placeholder="Enter requester name" autoComplete="name" value={form.reportedByName} onChange={(event) => setForm({ ...form, reportedByName: event.target.value })} required />
           </label>
 
           <label>

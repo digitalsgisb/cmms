@@ -186,3 +186,33 @@ test("TV Open in app navigates to the requester's tracking detail instead of a s
   assert.equal(url.searchParams.get("workOrder"), "target-order");
   assert.equal(env.states[4], "tracking");
 });
+
+for (const route of ["staff", "account", "guest"]) {
+  test(`${route} requires an explicitly entered requester name`, async () => {
+    let creates = 0;
+    let submitted;
+    const api = {
+      createWorkOrder: async input => { creates++; submitted = input; return { id: "order", number: "WO-1" }; },
+      createRequesterWorkOrder: async input => { creates++; submitted = input; return { workOrder: { id: "order" }, tracking: { path: "/tracking?token=test" } }; },
+      uploadAttachments: async () => {}, uploadRequesterAttachments: async () => {}, workOrders: async () => []
+    };
+    const staff = route === "staff";
+    const values = { ...formValues, type: "maintenance", responsibleDepartment: "Production", workDate: "2026-10-28", shiftGroup: "A", reportedByName: "   " };
+    const env = load(staff ? "../src/pages/CreateWorkOrderPage.tsx" : "../src/pages/PublicRequesterPage.tsx", {
+      currentUser: route === "guest" ? null : user, api,
+      overrides: staff ? { 1: values, 2: true, 6: [photo] } : { 5: "Production", 7: "maintenance", 9: values, 10: [photo] }
+    });
+    const submit = () => {
+      const page = env.render(staff ? "CreateWorkOrderPage" : "PublicRequesterPage");
+      const form = find(page, node => staff ? node.type === "form" : Boolean(node.props.onSubmit && node.props.issueFiles));
+      return form.props.onSubmit({ preventDefault() {} });
+    };
+    await submit();
+    assert.equal(creates, 0, "Blank names cannot fall back to the account name");
+    assert.match(env.states[staff ? 4 : 12], /name/i);
+    env.states[staff ? 1 : 9] = { ...values, reportedByName: "  Actual Reporter  " };
+    await submit();
+    assert.equal(creates, 1);
+    assert.equal(submitted.reportedByName, "Actual Reporter");
+  });
+}

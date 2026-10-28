@@ -415,6 +415,7 @@ export function WorkOrderDetailPage() {
       setBriefError("Choose a lead technician before adding supporting technicians.");
       return;
     }
+    if (!briefDraft.reportedByName.trim()) { setBriefError("Requester name is required."); return; }
     setBriefSaving(true);
     setBriefError("");
     try {
@@ -429,7 +430,7 @@ export function WorkOrderDetailPage() {
         machineId: selectedMachine?.id || null,
         area: selectedMachine?.area || briefDraft.area.trim() || "General",
         machineName,
-        reportedByName: briefDraft.reportedByName,
+        reportedByName: briefDraft.reportedByName.trim(),
         reportedByDepartment: briefDraft.reportedByDepartment,
         responsibleDepartment: briefDraft.responsibleDepartment,
         issueCategoryId: briefDraft.issueCategoryId === otherBriefOption ? null : briefDraft.issueCategoryId || null,
@@ -635,7 +636,7 @@ export function WorkOrderDetailPage() {
         <label>Section<select value={briefDraft.sectionId} onChange={(event) => setBriefDraft({ ...briefDraft, sectionId: event.target.value, machineId: "", machineName: "", area: "" })}><option value="">No section / office</option>{briefSections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}</select></label>
         <label>Machine / equipment<select value={briefDraft.machineId || otherBriefOption} onChange={(event) => { const machineId = event.target.value === otherBriefOption ? "" : event.target.value; const machine = briefMasterData.machines.find((item) => item.id === machineId); setBriefDraft({ ...briefDraft, machineId, machineName: machine?.name || "", area: machine?.area || "" }); }}><option value={otherBriefOption}>Other / unregistered</option>{briefMachines.map((machine) => <option key={machine.id} value={machine.id}>{machine.name}</option>)}</select></label>
         {!briefDraft.machineId ? <><label>Machine, equipment, or place<input required value={briefDraft.machineName} onChange={(event) => setBriefDraft({ ...briefDraft, machineName: event.target.value })} /></label><label>Area/Line<input value={briefDraft.area} onChange={(event) => setBriefDraft({ ...briefDraft, area: event.target.value })} placeholder="General" /></label></> : <label>Area/Line<input value={briefDraft.area} readOnly /></label>}
-        <label>Reported by<input required value={briefDraft.reportedByName} onChange={(event) => setBriefDraft({ ...briefDraft, reportedByName: event.target.value })} /></label>
+        <label>Reported by (required)<input required value={briefDraft.reportedByName} onChange={(event) => setBriefDraft({ ...briefDraft, reportedByName: event.target.value })} /></label>
         <label>Reported by department<select required value={briefDraft.reportedByDepartment} onChange={(event) => setBriefDraft({ ...briefDraft, reportedByDepartment: event.target.value })}><option value="">Choose department</option>{briefDraft.reportedByDepartment && !workOrderDepartments.includes(briefDraft.reportedByDepartment as WorkOrderDepartment) ? <option value={briefDraft.reportedByDepartment}>{briefDraft.reportedByDepartment}</option> : null}{workOrderDepartments.map((department) => <option key={department} value={department}>{department}</option>)}</select></label>
         <label>Issue category<select value={briefDraft.issueCategoryId} onChange={(event) => setBriefDraft({ ...briefDraft, issueCategoryId: event.target.value, issueCategoryName: "" })}>{briefIssueCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}<option value={otherBriefOption}>Others</option></select></label>
         {briefDraft.issueCategoryId === otherBriefOption ? <label>Specify issue category<input required value={briefDraft.issueCategoryName} onChange={(event) => setBriefDraft({ ...briefDraft, issueCategoryName: event.target.value })} /></label> : null}

@@ -31,7 +31,7 @@ const cutoff = "2026-10-18T16:00:00.000Z";
 const week = "2026-10-12";
 function fixture({ plant = "port-klang", name = "Test machine", created = start, events = [], priority = "medium", dueDate = null }) {
   return inPlant(plant, () => {
-    const o = m.createWorkOrder(m.validateCreateWorkOrderInput({ requesterId: admin.id, type: "maintenance", machineName: name, area: "Test", location: "Test section", reportedByDepartment: "Production", responsibleDepartment: "Production", issueDescription: "Test issue" }));
+    const o = m.createWorkOrder(m.validateCreateWorkOrderInput({ requesterId: admin.id, reportedByName: admin.name, type: "maintenance", machineName: name, area: "Test", location: "Test section", reportedByDepartment: "Production", responsibleDepartment: "Production", issueDescription: "Test issue" }));
     m.db.prepare("DELETE FROM work_order_activities WHERE workOrderId = ?").run(o.id);
     m.db.prepare("UPDATE work_orders SET createdAt = ?, updatedAt = ?, priority = ?, dueDate = ?, status = ? WHERE id = ?").run(created, events.at(-1)?.[1] || created, priority, dueDate, events.at(-1)?.[0] || "open", o.id);
     const actions = { open: "created", acknowledged: "acknowledged", resolved: "resolved", closed: "closed", returned: "returned", pending_material: "pending_material" };
