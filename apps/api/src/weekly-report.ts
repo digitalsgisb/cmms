@@ -22,6 +22,8 @@ export function initializeWeeklyReports() {
     sentAt TEXT, deliveryError TEXT NOT NULL DEFAULT '', deliveryToken TEXT,
     UNIQUE(scope, periodStart, periodEnd)
   )`);
+  const columns = db.prepare("PRAGMA table_info(weekly_management_reports)").all() as { name: string }[];
+  if (!columns.some((c) => c.name === "manualDispatchToken")) db.exec("ALTER TABLE weekly_management_reports ADD COLUMN manualDispatchToken TEXT");
 }
 
 /** Half-open Monday-to-Monday boundaries, independent of the server timezone. */
@@ -38,9 +40,11 @@ export function weeklyPeriod(week?: string, now = Date.now()) {
   return { start, end: start + 7 * day };
 }
 
-export function weeklyFacts(week?: string, asOf = Date.now()): WeeklyReportFacts {
+export function weeklyFacts(week?: string, asOf = Date.now(), weekToDate = false): WeeklyReportFacts {
   const scope = plantContext.getStore()?.plant ?? "port-klang";
-  const { start, end } = weeklyPeriod(week);
+  const completed = weeklyPeriod(weekToDate ? undefined : week, asOf);
+  const start = weekToDate ? completed.end : completed.start;
+  const end = weekToDate ? Math.max(start + 1, asOf) : completed.end;
   const snapshotAt = Math.max(asOf, end);
   const allOrders = db.prepare("SELECT id, number, plantId, type, responsibleDepartment, machineId, machineName, sectionId, location, area, issueCategoryName, priority, dueDate, createdAt, assignedToId, status FROM scoped_work_orders WHERE createdAt < ?").all(new Date(snapshotAt + 1).toISOString()) as Order[];
   const orders = allOrders.filter((o) => Date.parse(o.createdAt) < end);
@@ -78,7 +82,7 @@ export function weeklyFacts(week?: string, asOf = Date.now()): WeeklyReportFacts
       missingAcknowledgement: resolvedRecords.length - durations.length };
   };
   const current = metrics(orders, start, end);
-  const previous = metrics(orders, start - 7 * day, start);
+  const previous = metrics(orders, start - 7 * day, weekToDate ? end - 7 * day : start);
   const backlog = orders.filter((o) => active(statusAt(o, end)));
   const ageing = [{ label: "Under 2 days", min: 0, max: 2 }, { label: "2–7 days", min: 2, max: 7 }, { label: "7–14 days", min: 7, max: 14 }, { label: "14+ days", min: 14, max: Infinity }]
     .map((b) => ({ label: b.label, count: backlog.filter((o) => { const age = (end - Date.parse(o.createdAt)) / day; return age >= b.min && age < b.max; }).length }));
@@ -94,8 +98,8 @@ export function weeklyFacts(week?: string, asOf = Date.now()): WeeklyReportFacts
   const exceptions = orders.filter((o) => { const status = statusAt(o, end); return status === "resolved" || active(status) && (o.priority === "critical" || isOverdue(o, end) || ["pending_material", "on_hold", "returned"].includes(status) || end - Date.parse(o.createdAt) >= 7 * day); })
     .sort((a, b) => Number(b.priority === "critical") - Number(a.priority === "critical") || Number(isOverdue(b, end)) - Number(isOverdue(a, end)) || a.createdAt.localeCompare(b.createdAt));
   const plants: PlantId[] = scope === "all" ? ["port-klang", "sendayan"] : [scope];
-  return { scope, start: new Date(start).toISOString(), end: new Date(end).toISOString(), timezone: "Asia/Kuala_Lumpur", current, previous,
-    daily: Array.from({ length: 7 }, (_, i) => { const m = metrics(orders, start + i * day, start + (i + 1) * day); return { date: localDate(start + i * day), created: m.created, resolved: m.resolved, closed: m.closed }; }),
+  return { ...(weekToDate ? { periodMode: "week-to-date" as const } : {}), scope, start: new Date(start).toISOString(), end: new Date(end).toISOString(), timezone: "Asia/Kuala_Lumpur", current, previous,
+    daily: Array.from({ length: Math.ceil((end - start) / day) }, (_, i) => { const m = metrics(orders, start + i * day, Math.min(end, start + (i + 1) * day)); return { date: localDate(start + i * day), created: m.created, resolved: m.resolved, closed: m.closed }; }),
     statuses: (Object.keys(workOrderStatusLabels) as WorkOrderStatus[]).map((status) => ({ status, count: orders.filter((o) => statusAt(o, end) === status).length })),
     ageing, plants: plants.map((plant) => ({ plant, metrics: metrics(orders.filter((o) => o.plantId === plant), start, end) })),
     machines: [...machineMap.values()].sort((a, b) => b.minutes - a.minutes).slice(0, 5).map((m) => ({ ...m, minutes: round(m.minutes) })),
@@ -118,14 +122,14 @@ function factualNarrative(f: WeeklyReportFacts) {
   ];
   if (!actions.length) actions.push("Continue monitoring new requests and review the backlog at the next maintenance meeting.");
   const analytical = f.reliability?.findings.slice(0, 2).join(" ");
-  return { summary: `${c.created} work orders were raised, ${c.resolved} reached repair resolution and ${c.closed} reached requester closure during the week. At the reporting cutoff, ${c.backlog} remained awaiting repair and ${c.awaitingVerification} awaited verification. The repair backlog ${change === 0 ? "was unchanged" : change > 0 ? `increased by ${change}` : `decreased by ${-change}`} compared with the previous week.${analytical ? ` ${analytical}` : ""}`, actions: [...new Set(actions)].slice(0, 8) };
+  return { summary: `${c.created} work orders were raised, ${c.resolved} reached repair resolution and ${c.closed} reached requester closure during ${f.periodMode ? "this week so far" : "the week"}. At the reporting cutoff, ${c.backlog} remained awaiting repair and ${c.awaitingVerification} awaited verification. The repair backlog ${change === 0 ? "was unchanged" : change > 0 ? `increased by ${change}` : `decreased by ${-change}`} compared with ${f.periodMode ? "the same elapsed period last week" : "the previous week"}.${analytical ? ` ${analytical}` : ""}`, actions: [...new Set(actions)].slice(0, 8) };
 }
 
 function aiReportEvidence(facts: WeeklyReportFacts) {
   const r = facts.reliability;
   // Curated aggregates include named equipment and locations, never raw issue
   // descriptions, personal details or arbitrary full work-order records.
-  return { reportingPeriod: { start: facts.start, endExclusive: facts.end, timezone: facts.timezone }, current: facts.current, previous: facts.previous, statuses: facts.statuses, ageing: facts.ageing,
+  return { reportingPeriod: { start: facts.start, endExclusive: facts.end, timezone: facts.timezone, mode: facts.periodMode || "completed-week", comparison: facts.periodMode ? "Incomplete week: compare the same elapsed period seven days earlier, not a full prior week. Explicitly say week-to-date." : "Completed reporting week versus previous completed week" }, current: facts.current, previous: facts.previous, statuses: facts.statuses, ageing: facts.ageing,
     reliability: r ? { lookbackStart: r.lookbackStart, lookbackEndExclusive: r.lookbackEnd, maintenanceReportsThisWeek: r.maintenanceReportsThisWeek, maintenanceReportsPreviousWeek: r.maintenanceReportsPreviousWeek, maintenanceReports30d: r.maintenanceReports30d, repeatMachines30d: r.repeatMachines30d,
       machines: r.machines.map(({ key: _key, ...m }) => ({ ...m, downtimeHours: round(m.downtimeMinutes / 60) })),
       locations: r.locations.map(({ key: _key, ...l }) => ({ ...l, downtimeHours: round(l.downtimeMinutes / 60) })),
@@ -176,10 +180,10 @@ export async function writeNarrative(facts: WeeklyReportFacts, useAi: boolean): 
 
 export { escapeHtml, renderWeeklyEmail } from "./weekly-report-email.js";
 
-export async function previewWeeklyReport(week?: string, useAi = false): Promise<WeeklyReport> {
-  const facts = weeklyFacts(week);
+export async function previewWeeklyReport(week?: string, useAi = false, weekToDate = false): Promise<WeeklyReport> {
+  const facts = weeklyFacts(week, Date.now(), weekToDate);
   const narrative = await writeNarrative(facts, useAi);
-  const report: WeeklyReport = { id: null, subject: `Weekly CMMS Management Report | ${facts.scope === "all" ? "Both plants" : plantLabels[facts.scope]} | ${dateLabel(facts.start)}`,
+  const report: WeeklyReport = { id: null, subject: `${weekToDate ? "Week-to-date" : "Weekly"} CMMS Management Report | ${facts.scope === "all" ? "Both plants" : plantLabels[facts.scope]} | ${dateLabel(facts.start)}${weekToDate ? ` | As of ${new Date(facts.end).toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur" })} MYT` : ""}`,
     facts, ...narrative, html: "", generatedAt: new Date().toISOString(), delivery: "draft", sentAt: null, deliveryError: "" };
   report.html = renderWeeklyEmail(report);
   return report;
@@ -198,11 +202,50 @@ export function weeklyReportHistory(): WeeklyReportHistory[] {
   });
 }
 const pending = new Map<string, Promise<WeeklyReport>>();
+export async function generateCurrentReport(): Promise<WeeklyReport> {
+  const key = `${scope()}:current`;
+  const running = pending.get(key); if (running) return running;
+  const task = (async () => {
+    const report = await previewWeeklyReport(undefined, true, true);
+    report.id = randomUUID();
+    db.prepare("INSERT INTO weekly_management_reports (id, scope, periodStart, periodEnd, payload, generatedAt) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(report.id, scope(), report.facts.start, report.facts.end, JSON.stringify(report), report.generatedAt);
+    return readWeeklyReport(report.id);
+  })();
+  pending.set(key, task); void task.finally(() => pending.delete(key)).catch(() => {}); return task;
+}
+
+/** Reserve before contacting n8n: a lost response must never permit a blind resend. */
+export async function sendReportNow(id: string) {
+  readWeeklyReport(id);
+  const configured = process.env.CMMS_REPORT_WEBHOOK_URL?.trim();
+  const secret = process.env.CMMS_REPORT_WEBHOOK_TOKEN || "";
+  if (!configured || secret.length < 32) throw new Error("Manual email is not configured. Set the n8n webhook URL and token on the CMMS server.");
+  const url = new URL(configured);
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error("Invalid reporting webhook URL.");
+  const token = randomUUID();
+  const claimed = db.prepare("UPDATE weekly_management_reports SET delivery = 'sending', deliveryToken = ?, manualDispatchToken = ?, deliveryError = '' WHERE id = ? AND scope = ? AND delivery = 'draft'").run(token, token, id, scope()).changes;
+  if (!claimed) throw new Error("This report is already sending or sent, or needs delivery recovery.");
+  try {
+    const response = await fetch(url, { method: "POST", redirect: "error", headers: { "Content-Type": "application/json", "X-CMMS-Webhook-Token": secret }, body: JSON.stringify({ reportId: id, plant: scope(), deliveryToken: token }), signal: AbortSignal.timeout(15_000) });
+    if (!response.ok) throw new Error("Webhook rejected request");
+  } catch {
+    db.prepare("UPDATE weekly_management_reports SET deliveryError = ? WHERE id = ? AND scope = ? AND delivery = 'sending' AND deliveryToken = ?")
+      .run("n8n did not confirm the trigger. Delivery is uncertain; check n8n and the sent mailbox before allowing another attempt.", id, scope(), token);
+  }
+  return readWeeklyReport(id);
+}
+
+export function acceptManualDelivery(id: string, token: string) {
+  readWeeklyReport(id);
+  const claimed = db.prepare("UPDATE weekly_management_reports SET manualDispatchToken = NULL WHERE id = ? AND scope = ? AND delivery = 'sending' AND deliveryToken = ? AND manualDispatchToken = ?").run(id, scope(), token, token).changes === 1;
+  return claimed ? { ...readWeeklyReport(id), claimed: true, deliveryToken: token } : { claimed: false };
+}
 export function generateWeeklyReport(week?: string, regenerate = false): Promise<WeeklyReport> {
   const period = weeklyPeriod(week); const plant = scope(); const key = `${plant}:${period.start}`;
   const running = pending.get(key); if (running) return running;
   const task = (async () => {
-    const existing = db.prepare("SELECT id FROM weekly_management_reports WHERE scope = ? AND periodStart = ?").get(plant, new Date(period.start).toISOString()) as { id: string } | undefined;
+    const existing = db.prepare("SELECT id FROM weekly_management_reports WHERE scope = ? AND periodStart = ? AND periodEnd = ?").get(plant, new Date(period.start).toISOString(), new Date(period.end).toISOString()) as { id: string } | undefined;
     if (existing) {
       const report = readWeeklyReport(existing.id);
       if (!regenerate) return report;
@@ -235,7 +278,7 @@ export function completeWeeklyDelivery(id: string, token: string, sent: boolean)
 }
 export function resetWeeklyDelivery(id: string) {
   readWeeklyReport(id);
-  const changes = db.prepare("UPDATE weekly_management_reports SET delivery = 'draft', deliveryToken = NULL, deliveryError = '' WHERE id = ? AND scope = ? AND delivery IN ('failed', 'sending')").run(id, scope()).changes;
+  const changes = db.prepare("UPDATE weekly_management_reports SET delivery = 'draft', deliveryToken = NULL, manualDispatchToken = NULL, deliveryError = '' WHERE id = ? AND scope = ? AND delivery IN ('failed', 'sending')").run(id, scope()).changes;
   if (changes !== 1) throw new Error("Only failed or uncertain delivery can be reset.");
   return readWeeklyReport(id);
 }

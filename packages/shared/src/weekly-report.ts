@@ -69,6 +69,7 @@ export interface WeeklyReliabilityAnalysis {
   };
 }
 export interface WeeklyReportFacts {
+  periodMode?: "week-to-date";
   scope: PlantId | "all";
   start: string;
   end: string;

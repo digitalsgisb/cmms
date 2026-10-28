@@ -25,6 +25,8 @@ services:
       OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
       OLLAMA_MODEL: "${OLLAMA_MODEL:-}"
       CMMS_REPORT_TOKEN: "${CMMS_REPORT_TOKEN:-}"
+      CMMS_REPORT_WEBHOOK_URL: "${CMMS_REPORT_WEBHOOK_URL:-}"
+      CMMS_REPORT_WEBHOOK_TOKEN: "${CMMS_REPORT_WEBHOOK_TOKEN:-}"
       CMMS_REPORT_PLANTS: "${CMMS_REPORT_PLANTS:-port-klang}"
     volumes:
       - cmms-data:/app/apps/api/data

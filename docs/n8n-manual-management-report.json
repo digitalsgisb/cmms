@@ -1,0 +1,345 @@
+{
+  "name": "SUGI CMMS - Send Management Email Now",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Kuala_Lumpur",
+    "executionTimeout": 300,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  },
+  "nodes": [
+    {
+      "id": "manual-webhook",
+      "name": "Send now webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -500,
+        0
+      ],
+      "webhookId": "cmms-management-send-now",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "cmms-management-send-now",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "CMMS manual webhook token"
+        }
+      },
+      "notes": "Header Auth name: X-CMMS-Webhook-Token. Use a separate random secret matching CMMS_REPORT_WEBHOOK_TOKEN. Use the production webhook URL and activate/publish this workflow."
+    },
+    {
+      "id": "config",
+      "name": "Report configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -280,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "url",
+              "name": "cmmsUrl",
+              "value": "http://172.19.3.62:3300",
+              "type": "string"
+            },
+            {
+              "id": "plant",
+              "name": "plant",
+              "value": "={{ $('Send now webhook').first().json.body.plant }}",
+              "type": "string"
+            },
+            {
+              "id": "from",
+              "name": "fromEmail",
+              "value": "cmms@example.com",
+              "type": "string"
+            },
+            {
+              "id": "to",
+              "name": "toEmail",
+              "value": "boss@example.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "notes": "Set CMMS URL, sender and boss recipients. Plant comes from the authenticated CMMS request. Use the same SMTP and CMMS reporting credentials as the scheduled workflow."
+    },
+    {
+      "id": "generate",
+      "name": "Load requested report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -40,
+        0
+      ],
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-CMMS-Plant",
+              "value": "={{ $('Report configuration').first().json.plant }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 180000
+        },
+        "method": "POST",
+        "url": "={{ $('Report configuration').first().json.cmmsUrl + '/api/integrations/management-reports/weekly/' + encodeURIComponent($('Send now webhook').first().json.body.reportId) + '/accept-manual' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { deliveryToken: $('Send now webhook').first().json.body.deliveryToken } }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "CMMS reporting token"
+        }
+      }
+    },
+    {
+      "id": "if",
+      "name": "Delivery claimed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        420,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "claimed",
+              "leftValue": "={{ $json.claimed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "email",
+      "name": "Send management email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        650,
+        -80
+      ],
+      "parameters": {
+        "fromEmail": "={{ $('Report configuration').first().json.fromEmail }}",
+        "toEmail": "={{ $('Report configuration').first().json.toEmail }}",
+        "subject": "={{ $('Load requested report').first().json.subject }}",
+        "emailFormat": "html",
+        "html": "={{ $('Load requested report').first().json.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "smtp": {
+          "name": "CMMS SMTP"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "notes": "Do not enable retries here. SMTP can accept a message even when its reply is lost. Review delivery before resetting a failed or uncertain report."
+    },
+    {
+      "id": "sent",
+      "name": "Record successful delivery",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        -140
+      ],
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-CMMS-Plant",
+              "value": "={{ $('Report configuration').first().json.plant }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 180000
+        },
+        "method": "POST",
+        "url": "={{ $('Report configuration').first().json.cmmsUrl + '/api/integrations/management-reports/weekly/' + $('Load requested report').first().json.id + '/delivery' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { deliveryToken: $('Load requested report').first().json.deliveryToken, sent: true } }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "CMMS reporting token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "failed",
+      "name": "Record failed delivery",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        100
+      ],
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-CMMS-Plant",
+              "value": "={{ $('Report configuration').first().json.plant }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 180000
+        },
+        "method": "POST",
+        "url": "={{ $('Report configuration').first().json.cmmsUrl + '/api/integrations/management-reports/weekly/' + $('Load requested report').first().json.id + '/delivery' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { deliveryToken: $('Load requested report').first().json.deliveryToken, sent: false } }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "CMMS reporting token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "delivery-error",
+      "name": "Flag delivery failure",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        100
+      ],
+      "parameters": {
+        "errorMessage": "CMMS management email delivery failed or is uncertain. Check SMTP and the saved report before retrying."
+      }
+    }
+  ],
+  "connections": {
+    "Report configuration": {
+      "main": [
+        [
+          {
+            "node": "Load requested report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delivery claimed": {
+      "main": [
+        [
+          {
+            "node": "Send management email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Send management email": {
+      "main": [
+        [
+          {
+            "node": "Record successful delivery",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record failed delivery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record failed delivery": {
+      "main": [
+        [
+          {
+            "node": "Flag delivery failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send now webhook": {
+      "main": [
+        [
+          {
+            "node": "Report configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load requested report": {
+      "main": [
+        [
+          {
+            "node": "Delivery claimed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "tags": []
+}

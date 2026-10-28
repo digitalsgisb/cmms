@@ -16,6 +16,7 @@ const where = (o: { plant: keyof typeof plantLabels; section: string; area: stri
  * All inputs are plant-scoped by the caller. No operating hours are inferred. */
 export function buildWeeklyReliability(records: ReliabilityOrder[], events: ReliabilityEvent[], start: number, end: number, asOf: number): WeeklyReliabilityAnalysis {
   const lookback = end - 30 * day;
+  const priorLabel = end - start < 7 * day ? "in the same elapsed period last week" : "the previous week";
   const timelines = new Map<string, ReliabilityEvent[]>();
   for (const event of events) {
     const list = timelines.get(event.workOrderId) || []; list.push(event); timelines.set(event.workOrderId, list);
@@ -25,7 +26,7 @@ export function buildWeeklyReliability(records: ReliabilityOrder[], events: Reli
   const inPeriod = (o: ReliabilityOrder, from: number, to: number) => Date.parse(o.createdAt) >= from && Date.parse(o.createdAt) < to && state(o, to) !== "cancelled";
   const maintenance = records.filter((o) => o.type === "maintenance");
   const weekly = maintenance.filter((o) => inPeriod(o, start, end));
-  const previous = maintenance.filter((o) => inPeriod(o, start - 7 * day, start));
+  const previous = maintenance.filter((o) => inPeriod(o, start - 7 * day, end - 7 * day));
   const recent = maintenance.filter((o) => inPeriod(o, lookback, end));
   const weeklyIds = new Set(weekly.map((o) => o.id));
   const previousIds = new Set(previous.map((o) => o.id));
@@ -101,12 +102,12 @@ export function buildWeeklyReliability(records: ReliabilityOrder[], events: Reli
   const recommendedActions: string[] = [];
   const top = machines.find((m) => m.reports30d > 0);
   if (top) {
-    findings.push(`${top.machine} (${where(top)}) recorded ${top.reports30d} maintenance reports in the 30-day window, including ${top.weekReports} this week versus ${top.previousWeekReports} the previous week.${top.repeatedIssue ? ` The category “${top.repeatedIssue}” appeared on ${top.repeatedIssueReports} distinct reports.` : ""}`);
+    findings.push(`${top.machine} (${where(top)}) recorded ${top.reports30d} maintenance reports in the 30-day window, including ${top.weekReports} this week versus ${top.previousWeekReports} ${priorLabel}.${top.repeatedIssue ? ` The category “${top.repeatedIssue}” appeared on ${top.repeatedIssueReports} distinct reports.` : ""}`);
     if (top.reports30d >= 2) recommendedActions.push(`Review the repair history and inspect ${top.machine} (${where(top)}) for recurring ${top.repeatedIssue || "reported"} issues before deciding corrective work.`);
   }
   const hotspot = locations.find((l) => l.weekReports > 0);
   if (hotspot) {
-    findings.push(`${where(hotspot)} had the highest weekly maintenance-report volume: ${hotspot.weekReports} reports versus ${hotspot.previousWeekReports} the previous week, with ${hotspot.repairBacklog} repairs outstanding at the weekly cutoff.`);
+    findings.push(`${where(hotspot)} had the highest weekly maintenance-report volume: ${hotspot.weekReports} reports versus ${hotspot.previousWeekReports} ${priorLabel}, with ${hotspot.repairBacklog} repairs outstanding at the weekly cutoff.`);
     recommendedActions.push(`Review the reporting-week incidents, maintenance coverage and current repair status for ${where(hotspot)}.`);
   }
   const downtimeTop = [...machineGroups.values()].filter((m) => m.downtimeSamples > 0).sort((a, b) => b.downtimeMinutes - a.downtimeMinutes || a.key.localeCompare(b.key))[0];

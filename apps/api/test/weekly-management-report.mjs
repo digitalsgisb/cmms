@@ -18,7 +18,7 @@ const { weeklyAutomationRouter, weeklyManagementRouter } = await import("../dist
 const { plantContext } = await import("../dist/plant-context.js");
 const { downtimeWindow } = await import("@sugi-cmms/shared");
 const inPlant = (plant, fn) => plantContext.run({ plant }, fn);
-m.migrate(); r.initializeWeeklyReports();
+m.migrate(); r.initializeWeeklyReports(); r.initializeWeeklyReports();
 inPlant("port-klang", () => m.seed());
 // Keep fixtures isolated from demonstration work orders.
 m.db.prepare("DELETE FROM work_order_activities").run();
@@ -144,6 +144,12 @@ assert.throws(() => inPlant("port-klang", () => r.resetWeeklyDelivery(saved.id))
 process.env.CMMS_REPORT_TOKEN = "test-only-token-with-more-than-thirty-two-characters";
 process.env.CMMS_REPORT_PLANTS = "port-klang";
 const app = express(); app.use(express.json());
+let webhookCalls = 0; let dispatch; let webhookStatus = 200;
+app.post("/test-webhook", (req, res) => {
+  webhookCalls++; dispatch = req.body;
+  assert.equal(req.header("x-cmms-webhook-token"), process.env.CMMS_REPORT_WEBHOOK_TOKEN);
+  res.status(webhookStatus).json({ accepted: true });
+});
 app.use("/integration", weeklyAutomationRouter());
 app.use("/management", (req, _res, next) => { req.cmmsUser = { role: req.header("x-test-role") }; plantContext.run({ plant: "port-klang" }, next); }, weeklyManagementRouter());
 app.use((e, _req, res, _next) => res.status(400).json({ error: e.message }));
@@ -159,6 +165,39 @@ try {
   assert.equal((await fetch(base + "/management/history", { headers: { "x-test-role": "technician" } })).status, 403);
   assert.equal((await fetch(base + "/management/history", { headers: { "x-test-role": "executive" } })).status, 200);
   assert.equal((await fetch(base + "/management/preview?week=2026-10-13", { headers: { "x-test-role": "executive" } })).status, 400);
+  const managementHeaders = { "Content-Type": "application/json", "x-test-role": "executive" };
+  const currentResponse = await fetch(base + "/management/current", { method: "POST", headers: managementHeaders });
+  assert.equal(currentResponse.status, 200);
+  const interim = await currentResponse.json();
+  assert.equal(interim.facts.periodMode, "week-to-date");
+  assert.match(interim.html, /Interim report:|same elapsed period/);
+  assert.match(interim.subject, /Week-to-date/);
+  assert.equal((await fetch(base + `/management/${interim.id}/send`, { method: "POST", headers: managementHeaders })).status, 400, "Missing webhook settings must not reserve a draft");
+  assert.equal(inPlant("port-klang", () => r.readWeeklyReport(interim.id)).delivery, "draft");
+  process.env.CMMS_REPORT_WEBHOOK_URL = base + "/test-webhook";
+  process.env.CMMS_REPORT_WEBHOOK_TOKEN = "separate-test-manual-webhook-token-at-least-32-characters";
+  assert.equal((await fetch(base + `/management/${interim.id}/send`, { method: "POST", headers: { "x-test-role": "technician" } })).status, 403);
+  const results = await Promise.all([1, 2].map(() => fetch(base + `/management/${interim.id}/send`, { method: "POST", headers: managementHeaders })));
+  assert.deepEqual(results.map(v => v.status).sort(), [200, 400]);
+  assert.equal(webhookCalls, 1, "Double click must trigger n8n only once");
+  assert.equal(dispatch.reportId, interim.id); assert.equal(dispatch.plant, "port-klang");
+  assert.equal(inPlant("port-klang", () => r.readWeeklyReport(interim.id)).delivery, "sending", "Webhook acceptance is not delivery success");
+  const accept = token => fetch(base + `/integration/weekly/${interim.id}/accept-manual`, { method: "POST", headers, body: JSON.stringify({ deliveryToken: token }) });
+  assert.equal((await (await accept("wrong-token")).json()).claimed, false);
+  const accepted = await (await accept(dispatch.deliveryToken)).json();
+  assert.equal(accepted.claimed, true); assert.equal(accepted.html, interim.html);
+  assert.equal((await (await accept(dispatch.deliveryToken)).json()).claimed, false, "Webhook replays must not send twice");
+  assert.throws(() => inPlant("sendayan", () => r.acceptManualDelivery(interim.id, dispatch.deliveryToken)), /not found/);
+  const completed = await fetch(base + `/integration/weekly/${interim.id}/delivery`, { method: "POST", headers, body: JSON.stringify({ deliveryToken: dispatch.deliveryToken, sent: true }) });
+  assert.equal((await completed.json()).delivery, "sent");
+  assert.equal((await fetch(base + `/management/${interim.id}/send`, { method: "POST", headers: managementHeaders })).status, 400);
+  const uncertain = await inPlant("port-klang", () => r.generateCurrentReport());
+  webhookStatus = 500;
+  const uncertainResult = await inPlant("port-klang", () => r.sendReportNow(uncertain.id));
+  assert.equal(uncertainResult.delivery, "sending"); assert.match(uncertainResult.deliveryError, /uncertain/);
+  const staleToken = dispatch.deliveryToken;
+  inPlant("port-klang", () => r.resetWeeklyDelivery(uncertain.id));
+  assert.equal(inPlant("port-klang", () => r.acceptManualDelivery(uncertain.id, staleToken)).claimed, false);
 } finally { server.close(); }
 
 // Mock the local model: inspect grounding, JSON shape, malformed output and failure.
@@ -196,11 +235,32 @@ const separated = inPlant("port-klang", () => r.weeklyFacts(week)).machines.filt
 assert.equal(separated.length, 2);
 assert.deepEqual(new Set(separated.map((machine) => machine.area)), new Set(["Area A", "Area B"]));
 
+fixture({ name: "Prior Thursday excluded from comparison", created: "2026-10-08T00:00:00.000Z" });
+fixture({ name: "Future Thursday excluded from interim", created: "2026-10-15T00:00:00.000Z" });
+const partial = inPlant("port-klang", () => r.weeklyFacts(undefined, Date.parse("2026-10-14T04:00:00.000Z"), true));
+assert.equal(partial.start, start); assert.equal(partial.end, "2026-10-14T04:00:00.000Z");
+assert.equal(partial.daily.length, 3, "Interim daily chart must not contain future days");
+assert.equal(inPlant("port-klang", () => r.weeklyFacts("2026-10-12", Date.parse("2026-10-14T04:00:00.000Z"), true)).start, start, "Reopening a current report must not validate its Monday as a completed week");
+assert.equal(partial.previous.created, 0, "Compare Monday to Wednesday last week, not the full week");
+assert.equal(partial.reliability.maintenanceReportsPreviousWeek, 0);
+assert(!partial.reliability.machines.some(m => m.machine === "Future Thursday excluded from interim"));
+assert.equal((await inPlant("port-klang", () => r.generateWeeklyReport(week))).id, saved.id, "Scheduled snapshots must stay separate from interim reports");
+const sameStartId = randomUUID();
+m.db.prepare("INSERT INTO weekly_management_reports (id, scope, periodStart, periodEnd, payload, generatedAt) VALUES (?, ?, ?, ?, ?, ?)").run(sameStartId, "sendayan", partial.start, partial.end, JSON.stringify({ ...saved, id: sameStartId, facts: { ...partial, scope: "sendayan" } }), new Date().toISOString());
+const laterWeekly = await inPlant("sendayan", () => r.generateWeeklyReport(week));
+assert.notEqual(laterWeekly.id, sameStartId, "Interim and completed reports with the same Monday must have separate IDs");
+assert.equal(laterWeekly.facts.end, cutoff);
+
 const workflow = JSON.parse(readFileSync(new URL("../../../docs/n8n-weekly-management-report.json", import.meta.url), "utf8"));
 assert.equal(workflow.active, false); assert.equal(workflow.settings.timezone, "Asia/Kuala_Lumpur");
 const names = new Set(workflow.nodes.map((n) => n.name));
 for (const output of Object.values(workflow.connections)) for (const branch of output.main) for (const edge of branch) assert(names.has(edge.node));
 assert.equal(workflow.nodes.find((n) => n.name === "Send management email").onError, "continueErrorOutput");
 assert.equal(workflow.nodes.find((n) => n.name === "Send management email").retryOnFail, undefined);
+const manual = JSON.parse(readFileSync(new URL("../../../docs/n8n-manual-management-report.json", import.meta.url), "utf8"));
+const manualNames = new Set(manual.nodes.map(n => n.name));
+for (const output of Object.values(manual.connections)) for (const branch of output.main) for (const edge of branch) assert(manualNames.has(edge.node));
+assert.equal(manual.nodes.find(n => n.type === "n8n-nodes-base.webhook").parameters.authentication, "headerAuth");
+assert.equal(manual.nodes.find(n => n.name === "Send management email").retryOnFail, undefined);
 console.log(`Weekly management report checks passed. Preview: ${path.join(root, "preview.html")}`);
 m.db.close();

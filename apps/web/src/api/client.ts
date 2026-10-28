@@ -134,7 +134,9 @@ export function mediaUrl(url: string) {
 }
 
 export const api = {
-  weeklyReportPreview: (week?: string) => request<WeeklyReport>(`/api/reports/weekly/preview${week ? `?week=${encodeURIComponent(week)}` : ""}`),
+  weeklyReportPreview: (week?: string, current = false) => request<WeeklyReport>(`/api/reports/weekly/preview?${new URLSearchParams({ ...(week ? { week } : {}), ...(current ? { current: "true" } : {}) })}`),
+  generateCurrentReport: () => request<WeeklyReport>("/api/reports/weekly/current", { method: "POST" }),
+  sendWeeklyReport: (id: string) => request<WeeklyReport>(`/api/reports/weekly/${encodeURIComponent(id)}/send`, { method: "POST" }),
   generateWeeklyReport: (week?: string, regenerate = false) => request<WeeklyReport>("/api/reports/weekly/generate", { method: "POST", body: JSON.stringify({ week, regenerate }) }),
   weeklyReportHistory: () => request<WeeklyReportHistory[]>("/api/reports/weekly/history"),
   weeklyReport: (id: string) => request<WeeklyReport>(`/api/reports/weekly/${encodeURIComponent(id)}`),
