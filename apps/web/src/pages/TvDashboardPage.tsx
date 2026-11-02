@@ -1,5 +1,5 @@
 import { Clock, MonitorCheck, Volume2, VolumeX } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { TvWorkOrder, WorkOrderStatus } from "@sugi-cmms/shared";
 import { workOrderStatusLabels } from "@sugi-cmms/shared";
 import { api } from "../api/client";
@@ -15,7 +15,6 @@ const columns: Array<{ title: string; statuses: WorkOrderStatus[]; tone: string 
 ];
 
 const rotationIntervalMs = 10_000;
-const workOrdersPerPage = 3;
 const workOrderAlertSound = "/sounds/tv-work-order-alert.mp3";
 
 export function TvDashboardPage() {
@@ -23,6 +22,8 @@ export function TvDashboardPage() {
   const [workOrders, setWorkOrders] = useState<TvWorkOrder[]>([]);
   const [now, setNow] = useState(new Date());
   const [rotationStep, setRotationStep] = useState(0);
+  const [workOrdersPerPage, setWorkOrdersPerPage] = useState(1);
+  const cardListRef = useRef<HTMLDivElement | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [arrivalNotice, setArrivalNotice] = useState("");
   const knownWorkOrderIdsRef = useRef<Set<string> | null>(null);
@@ -94,13 +95,24 @@ export function TvDashboardPage() {
 
   useLiveRefresh(["work-orders"], loadWorkOrders, { fallbackMs: 3000 });
 
+  useEffect(() => {
+    const list = cardListRef.current;
+    if (!list) return;
+    // Reserve enough room for the complete card instead of squeezing three into a short TV panel.
+    const observer = new ResizeObserver(([entry]) => {
+      setWorkOrdersPerPage(Math.max(1, Math.min(3, Math.floor((entry.contentRect.height + 8) / 148))));
+    });
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, []);
+
   const activeCount = useMemo(
     () => workOrders.filter((workOrder) => !["closed", "cancelled"].includes(workOrder.status)).length,
     [workOrders]
   );
 
   return (
-    <main className="tv-dashboard">
+    <main className="tv-dashboard" style={{ "--tv-page-size": workOrdersPerPage } as CSSProperties}>
       <audio ref={alertAudioRef} src={workOrderAlertSound} preload="auto" />
       {loadError ? <div className="ux-load-error" role="status">{loadError}</div> : null}
       {arrivalNotice ? <div className="tv-arrival-notice" role="status" aria-live="assertive"><Volume2 size={22} />{arrivalNotice}</div> : null}
@@ -144,8 +156,8 @@ export function TvDashboardPage() {
                 <strong>{columnWorkOrders.length}</strong>
               </div>
               <div
+                ref={column.title === "New" ? cardListRef : undefined}
                 className={`tv-card-list${pageCount > 1 ? " is-rotating" : ""}`}
-                key={`${column.title}-${currentPage}`}
               >
                 {visibleWorkOrders.map((workOrder) => (
                   <article className="tv-card" key={workOrder.id}>
@@ -162,7 +174,7 @@ export function TvDashboardPage() {
                   </article>
                 ))}
               </div>
-              {pageCount > 1 && (
+              {pageCount > 1 ? (
                 <div
                   className="tv-rotation-status"
                   aria-label={`Showing work orders ${pageStart + 1} to ${pageEnd} of ${columnWorkOrders.length}. Page ${currentPage + 1} of ${pageCount}.`}
@@ -173,7 +185,7 @@ export function TvDashboardPage() {
                   </span>
                   <span>Page {currentPage + 1}/{pageCount}</span>
                 </div>
-              )}
+              ) : <div className="tv-rotation-status" aria-hidden="true" />}
             </div>
           );
         })}
