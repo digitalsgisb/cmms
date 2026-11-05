@@ -110,6 +110,20 @@ export function requesterCanVerifyWorkOrder(
       workOrderDepartmentForUser(requester.department) === workOrder.responsibleDepartment);
 }
 
+export function requesterCreationBlockers(
+  requester: Pick<User, "id" | "role" | "department">,
+  orders: WorkOrder[],
+  target: Pick<WorkOrder, "responsibleDepartment" | "sectionId" | "location">,
+  sections: Pick<Section, "id" | "name">[]
+): WorkOrder[] {
+  const sectionKey = (order: Pick<WorkOrder, "sectionId" | "location">) =>
+    (sections.find((section) => section.id === order.sectionId)?.name || order.location || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (workOrderDepartmentForUser(requester.department) === "Production" && target.responsibleDepartment === "Production") {
+    return orders.filter((order) => requesterCanVerifyWorkOrder(requester, order) && order.responsibleDepartment === "Production" && sectionKey(order) === sectionKey(target));
+  }
+  return orders.filter((order) => requester.role === "requester" && order.requesterId === requester.id && order.status === "resolved");
+}
+
 export interface Section {
   id: string;
   department: WorkOrderDepartment;

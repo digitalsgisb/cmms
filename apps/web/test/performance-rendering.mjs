@@ -26,7 +26,7 @@ function renderPage(focus, pageSource = source, fixture = {}) {
   };
   const mocks = {
     react: hooks, "lucide-react": components, recharts: components,
-    "react-router-dom": { Link: placeholder, useNavigate: () => () => {}, useSearchParams: () => [params, (update) => fixture.onParams?.(update(params))] },
+    "react-router-dom": { Link: placeholder, useNavigate: () => (path) => fixture.onNavigate?.(path), useSearchParams: () => [params, (update) => fixture.onParams?.(update(params))] },
     "@sugi-cmms/shared": shared,
     "../api/client": { api: {} },
     "../state/UserContext": { useCurrentUser: () => ({ currentUser: { id: "test-user" } }) },
@@ -34,7 +34,10 @@ function renderPage(focus, pageSource = source, fixture = {}) {
   };
   const compiled = ts.transpileModule(pageSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const exports = {};
-  vm.runInNewContext(compiled, { exports, require: (name) => mocks[name] || require(name), Date, URLSearchParams, console });
+  vm.runInNewContext(compiled, { exports, require: (name) => mocks[name] || require(name), Date, URLSearchParams, console,
+    window: { setTimeout: (callback) => { callback(); return 0; } },
+    document: { getElementById: (id) => ({ scrollIntoView: () => fixture.onScroll?.(id) }) }
+  });
   return exports.PerformancePage();
 }
 
@@ -118,7 +121,7 @@ const crossMonthOrders = [
 test("October report uses work order date regardless of closure or resolution date", () => {
   const page = renderPage("work-orders", source, { params: { view: "all" }, workOrders: crossMonthOrders });
   assert.equal(findElements(page, (element) => element.props.label === "Total work orders")[0].props.value, "2");
-  assert.equal(findElements(page, (element) => element.props.label === "WO Closure (Close)")[0].props.value, "50%");
+  assert.equal(findElements(page, (element) => element.props.label === "WO Closure (Close)")[0].props.value, "50.00%");
   assert.deepEqual(findElements(page, (element) => element.props.className?.includes("performance-order-row")).map((row) => row.key), ["october-work", "october-closed"]);
   const chart = findElements(page, (element) => element.props.data?.[0]?.label === "Week 1" && "closeRate" in element.props.data[0])[0];
   assert.equal(chart.props.data.reduce((sum, bucket) => sum + bucket.standard, 0), 2);
@@ -165,40 +168,40 @@ test("closed orders without a closed date remain visible by their work order dat
 test("empty work order percentages are 100% while counts remain zero", () => {
   const page = renderPage("all", source, { sections: departmentSections });
   for (const label of ["WO Closure (Close)", "WO Resolved (Resolved)", "Standard maintenance", "KAIZEN"]) {
-    assert.equal(findElements(page, (element) => element.props.label === label)[0].props.value, "100%");
+    assert.equal(findElements(page, (element) => element.props.label === label)[0].props.value, "100.00%");
   }
   assert.equal(findElements(page, (element) => element.props.label === "Total work orders")[0].props.value, "0");
   const conversion = findElements(page, (element) => element.type === "tr" && element.key === "conversion")[0];
   assert.equal(conversion.props.children[1].props.children, 0);
-  assert.equal(conversion.props.children[2].props.children.join(""), "0 (100%)");
-  assert.equal(conversion.props.children[3].props.children.join(""), "0 (100%)");
+  assert.equal(conversion.props.children[2].props.children.join(""), "0 (100.00%)");
+  assert.equal(conversion.props.children[3].props.children.join(""), "0 (100.00%)");
   assert.equal(conversion.props.children[4].props.children, 0);
-  assert.equal(findElements(page, (element) => element.props.label === "PM compliance")[0].props.value, "0%");
+  assert.equal(findElements(page, (element) => element.props.label === "PM compliance")[0].props.value, "0.00%");
 });
 
 test("existing unclosed work still reports 0% closure rather than 100%", () => {
   const page = renderPage("work-orders", source, { workOrders: [departmentOrders[0], { ...departmentOrders[0], id: "resolved", status: "resolved" }] });
-  assert.equal(findElements(page, (element) => element.props.label === "WO Closure (Close)")[0].props.value, "0%");
-  assert.equal(findElements(page, (element) => element.props.label === "WO Resolved (Resolved)")[0].props.value, "50%");
+  assert.equal(findElements(page, (element) => element.props.label === "WO Closure (Close)")[0].props.value, "0.00%");
+  assert.equal(findElements(page, (element) => element.props.label === "WO Resolved (Resolved)")[0].props.value, "50.00%");
 });
 
 test("on-hold work remains in totals and tables without reducing closure percentages", () => {
   const workOrders = [...departmentOrders.slice(0, 2), { ...departmentOrders[0], id: "held-1", status: "on_hold" }, { ...departmentOrders[0], id: "held-2", status: "on_hold" }];
   const page = renderPage("work-orders", source, { workOrders, sections: departmentSections });
   assert.equal(findElements(page, (element) => element.props.label === "Total work orders")[0].props.value, "4");
-  assert.equal(findElements(page, (element) => element.props.label === "WO Closure (Close)")[0].props.value, "50%");
-  assert.equal(findElements(page, (element) => element.props.label === "Standard maintenance")[0].props.value, "50%");
+  assert.equal(findElements(page, (element) => element.props.label === "WO Closure (Close)")[0].props.value, "50.00%");
+  assert.equal(findElements(page, (element) => element.props.label === "Standard maintenance")[0].props.value, "50.00%");
   assert.equal(findElements(page, (element) => element.props.className?.includes("performance-order-row")).length, 4);
   const conversion = findElements(page, (element) => element.type === "tr" && element.key === "conversion")[0];
   assert.equal(conversion.props.children[1].props.children, 4);
-  assert.equal(conversion.props.children[2].props.children.join(""), "1 (50%)");
+  assert.equal(conversion.props.children[2].props.children.join(""), "1 (50.00%)");
   const chart = findElements(page, (element) => element.props.data?.[0]?.label === "Week 1" && "closeRate" in element.props.data[0])[0];
   assert.equal(chart.props.data[0].closeRate, 50);
 });
 
 test("all-held groups keep 100% closure with a nonzero total count", () => {
   const page = renderPage("work-orders", source, { workOrders: [{ ...departmentOrders[0], status: "on_hold" }] });
-  assert.equal(findElements(page, (element) => element.props.label === "WO Closure (Close)")[0].props.value, "100%");
+  assert.equal(findElements(page, (element) => element.props.label === "WO Closure (Close)")[0].props.value, "100.00%");
   assert.equal(findElements(page, (element) => element.props.label === "Total work orders")[0].props.value, "1");
 });
 
@@ -220,6 +223,42 @@ test("changing the month resets the table to all work orders", () => {
   findElements(page, (element) => element.props["aria-label"] === "September 2026")[0].props.onClick();
   assert.equal(updated.get("view"), "all");
   assert.equal(updated.get("month"), "2026-09");
+});
+
+test("percentage displays preserve two decimal places without whole-number rounding", () => {
+  const workOrders = Array.from({ length: 33 }, (_, index) => ({ ...departmentOrders[1], id: `closed-${index}` }));
+  workOrders.push(departmentOrders[0], { ...departmentOrders[0], id: "held", status: "on_hold" });
+  const page = renderPage("work-orders", source, { workOrders, sections: departmentSections });
+  assert.equal(findElements(page, (element) => element.props.label === "WO Closure (Close)")[0].props.value, "97.06%");
+  assert.equal(findElements(page, (element) => element.props.label === "WO Resolved (Resolved)")[0].props.value, "0.00%");
+  const conversion = findElements(page, (element) => element.type === "tr" && element.key === "conversion")[0];
+  assert.equal(conversion.props.children[2].props.children.join(""), "33 (97.06%)");
+});
+
+test("a single attention item opens work order details from its card or row", () => {
+  const destinations = [];
+  const page = renderPage("work-orders", source, { workOrders: [{ ...departmentOrders[0], status: "pending_material" }], onNavigate: (path) => destinations.push(path) });
+  const card = findElements(page, (element) => element.props.label === "Needs attention")[0];
+  assert.equal(card.props.value, "1");
+  assert.equal(card.props.note, "Open item details");
+  card.props.onClick();
+  const section = findElements(page, (element) => element.props.id === "performance-exceptions")[0];
+  const row = findElements(section, (element) => element.type === "tr" && Boolean(element.props.onClick))[0];
+  row.props.onClick({ target: { closest: () => null } });
+  assert.deepEqual(destinations, ["/work-orders/production-open", "/work-orders/production-open"]);
+  assert.equal(findElements(row, (element) => element.props.to)[0].props.to, "/work-orders/production-open");
+});
+
+test("multiple attention items open a complete list of clickable work orders", () => {
+  let scrolledTo;
+  const workOrders = Array.from({ length: 5 }, (_, index) => ({ ...departmentOrders[0], id: `pending-${index}`, status: "pending_material" }));
+  const page = renderPage("work-orders", source, { workOrders, onScroll: (id) => { scrolledTo = id; } });
+  const card = findElements(page, (element) => element.props.label === "Needs attention")[0];
+  assert.equal(card.props.value, "5");
+  card.props.onClick();
+  assert.equal(scrolledTo, "performance-exceptions");
+  const section = findElements(page, (element) => element.props.id === "performance-exceptions")[0];
+  assert.equal(findElements(section, (element) => element.type === "tr" && Boolean(element.props.onClick)).length, 5);
 });
 
 test("regression check detects the original conflicting header/content keys", () => {

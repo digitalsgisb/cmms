@@ -35,7 +35,10 @@ function load(relativePath, { overrides = {}, currentUser = user, api = {}, onNa
     ...React,
     useState(initial) {
       const index = stateIndex++;
-      if (!(index in states)) states[index] = index in overrides ? overrides[index] : typeof initial === "function" ? initial() : initial;
+      if (!(index in states)) states[index] = index in overrides ? overrides[index] :
+        relativePath.includes("CreateWorkOrderPage") && index === 9 ? true :
+        relativePath.includes("PublicRequesterPage") && index === 29 ? "2026-11-05T00:00:00Z" :
+        typeof initial === "function" ? initial() : initial;
       return [states[index], (next) => { states[index] = typeof next === "function" ? next(states[index]) : next; }];
     },
     useEffect() {}, useMemo: (callback) => callback(), useId: () => "photo-picker",
@@ -64,6 +67,71 @@ function load(relativePath, { overrides = {}, currentUser = user, api = {}, onNa
     document: { querySelector: () => null }
   });
   return { exports, states, render(name, props) { stateIndex = 0; return exports[name](props); } };
+}
+
+for (const route of ["account", "staff"]) {
+  test(`${route} creation waits for account verification and links to Verify`, () => {
+    const staff = route === "staff";
+    const pending = { id: "pending", requesterId: user.id, responsibleDepartment: "SHE", status: "resolved" };
+    const env = load(staff ? "../src/pages/CreateWorkOrderPage.tsx" : "../src/pages/PublicRequesterPage.tsx", {
+      currentUser: { ...user, department: "SHE" },
+      overrides: staff ? { 8: [pending] } : { 1: [pending], 4: "new" }
+    });
+    const render = () => env.render(staff ? "CreateWorkOrderPage" : "PublicRequesterPage");
+    let page = render();
+    const warning = find(page, (node) => node.props.count === 1);
+    assert.ok(warning, "Own resolved work blocks creation, even for a different department");
+    assert.equal(find(page, (node) => node.type === "form" || Boolean(node.props.issueFiles)), undefined);
+    assert.equal(find(page, (node) => node.props.className?.includes("requester-category-gate")), undefined);
+    if (!staff) {
+      warning.props.onVerify();
+      assert.equal(env.states[4], "verify");
+      env.states[4] = "new";
+    }
+    env.states[staff ? 8 : 1] = [{ ...pending, status: "closed" }];
+    page = render();
+    assert.equal(find(page, (node) => node.props.count === 1), undefined);
+    assert.ok(find(page, (node) => staff ? node.type === "form" : node.props.className?.includes("requester-category-gate")));
+    env.states[staff ? 8 : 1] = [{ ...pending, requesterId: "colleague", responsibleDepartment: "Production" }];
+    assert.equal(find(render(), (node) => node.props.count === 1), undefined, "Colleague's pending work does not block this account");
+  });
+}
+
+test("requester creation stays unavailable until pending verification has been checked", () => {
+  const env = load("../src/pages/PublicRequesterPage.tsx", { overrides: { 29: null } });
+  const page = env.render("PublicRequesterPage");
+  assert.ok(find(page, (node) => node.props.role === "status"));
+  assert.equal(find(page, (node) => node.props.className?.includes("requester-category-gate")), undefined);
+});
+
+for (const blockedSection of ["conversion", "roll-making"]) {
+  test(`Production starts with sections and routes pending ${blockedSection} repairs to Verify`, () => {
+    const sections = [{ id: "cv", name: "Conversion", department: "Production", active: true }, { id: "rm", name: "Roll Making", department: "Production", active: true }];
+    const blockedId = blockedSection === "conversion" ? "cv" : "rm";
+    const otherSection = blockedSection === "conversion" ? "roll-making" : "conversion";
+    const env = load("../src/pages/PublicRequesterPage.tsx", { overrides: {
+      0: { sections, machines: [], issueCategories: [] },
+      1: [{ id: "pending", requesterId: "another-requester", responsibleDepartment: "Production", sectionId: blockedId, status: "resolved" }],
+      4: "new"
+    } });
+    const render = () => env.render("PublicRequesterPage");
+    let page = render();
+    assert.ok(find(page, node => node.props.id === "production-section-title"));
+    assert.equal(find(page, node => node.props.id === "requester-category-title"), undefined, "Department gate is skipped");
+    find(page, node => node.props["data-production-section"] === blockedSection).props.onClick();
+    page = render();
+    assert.equal(env.states[4], "verify");
+    assert.equal(env.states[32], blockedSection);
+    assert.match(env.states[12], /verification/);
+    assert.ok(find(page, node => node.props.role === "alert"));
+    assert.equal(find(page, node => node.props.notes)?.props.workOrders.length, 1);
+    env.states[4] = "new";
+    find(render(), node => node.props["data-production-section"] === otherSection).props.onClick();
+    assert.equal(env.states[31], otherSection);
+    assert.equal(env.states[5], "Production");
+    assert.equal(env.states[9].sectionId, blockedId === "cv" ? "rm" : "cv");
+    assert.ok(find(render(), node => node.props.id === "requester-category-title"), "Clear section continues to work type selection");
+  });
 }
 
 for (const type of ["maintenance", "project", "kaizen", "office"]) {

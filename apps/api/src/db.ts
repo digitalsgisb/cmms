@@ -81,7 +81,7 @@ import type {
   UpdateWorkOrderSyncSettingsInput,
   WorkOrderType
 } from "@sugi-cmms/shared";
-import { longProductionDowntimeMinutes, requesterCanVerifyWorkOrder, technicianCanAccessWorkOrder, workOrderDepartmentForUser, workOrderStatusLabels } from "@sugi-cmms/shared";
+import { longProductionDowntimeMinutes, requesterCreationBlockers, requesterCanVerifyWorkOrder, technicianCanAccessWorkOrder, workOrderDepartmentForUser, workOrderStatusLabels } from "@sugi-cmms/shared";
 import { productionAssets2026 } from "./production-assets-2026.js";
 import { emitNotificationCreated } from "./notification-events.js";
 
@@ -3838,6 +3838,16 @@ export function createWorkOrder(input: CreateWorkOrderInput): WorkOrder {
   const id = randomUUID();
   const createdAt = now();
   const requester = getUser(input.requesterId);
+  if (requester.role === "requester" && requester.id !== publicRequesterId) {
+    const pending = requesterCreationBlockers(requester, listWorkOrders(requester), {
+      responsibleDepartment: normalizeWorkOrderDepartment(input.responsibleDepartment || input.reportedByDepartment || requester.department),
+      sectionId: input.sectionId || null,
+      location: input.location || ""
+    }, listMasterData().sections);
+    if (pending.length) {
+      throw new Error(`New work order blocked: ${pending.length} resolved work order${pending.length === 1 ? " is" : "s are"} awaiting your verification (${pending.map((order) => order.number).join(", ")}). Open Verify and check each repair: close it if the work is OK, or send it back if the problem remains, before creating a new work order.`);
+    }
+  }
   const section = input.sectionId ? getSection(input.sectionId) : null;
   const machine = input.machineId ? getMachine(input.machineId) : null;
   const issueCategory = input.issueCategoryId ? getIssueCategory(input.issueCategoryId) : null;

@@ -7,7 +7,7 @@ import {
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import type { MasterData, NotificationRecord, ShiftGroup, User, WorkOrder, WorkOrderDepartment, WorkOrderDetail, WorkOrderStatus, WorkOrderType } from "@sugi-cmms/shared";
-import { longProductionDowntimeMinutes, requesterCanVerifyWorkOrder, workOrderDepartmentForUser, workOrderDepartments, workOrderFormRulesForDepartment, workOrderTypeLabels } from "@sugi-cmms/shared";
+import { longProductionDowntimeMinutes, requesterCreationBlockers, requesterCanVerifyWorkOrder, workOrderDepartmentForUser, workOrderDepartments, workOrderFormRulesForDepartment, workOrderTypeLabels } from "@sugi-cmms/shared";
 import { api, mediaUrl } from "../api/client";
 import { MultiPhotoPicker } from "../components/MultiPhotoPicker";
 import { ImageLightbox } from "../components/ImageLightbox";
@@ -18,6 +18,7 @@ import { ProductionSectionFilter } from "../components/ProductionSectionFilter";
 import { ProductionTvDashboard } from "./ProductionTvDashboard";
 import { filterProductionSection, type ProductionSection } from "../utils/productionDashboard";
 import { StatusBadge } from "../components/Badges";
+import { RequesterCreationWarning } from "../components/RequesterCreationWarning";
 import { formatDateTime, formatLiveDuration, formatMinutes } from "../utils/format";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
@@ -100,6 +101,8 @@ export function PublicRequesterPage() {
   const [sectionFilter, setSectionFilter] = useState<ProductionSection>("all");
   const [lastWorkOrderUpdate, setLastWorkOrderUpdate] = useState<string | null>(null);
   const [workOrderLoadError, setWorkOrderLoadError] = useState("");
+  const [newProductionSection, setNewProductionSection] = useState<ProductionSection>("all");
+  const [verifySection, setVerifySection] = useState<ProductionSection>("all");
 
   async function loadMasterData() {
     const next = await api.masterData();
@@ -130,7 +133,9 @@ export function PublicRequesterPage() {
     return () => window.clearInterval(timer);
   }, []);
   useEffect(() => {
+    setNewProductionSection("all"); setVerifySection("all");
     if (signedRequester) {
+      setLastWorkOrderUpdate(null);
       setView("dashboard");
       setTrackingScope("department");
       setSelectedDepartment(null); setSelectedType(null); setChoosingOtherDepartment(false);
@@ -138,7 +143,7 @@ export function PublicRequesterPage() {
       loadAccountWorkOrders().catch(console.error);
       loadRequesterNotifications().catch(console.error);
     } else {
-      setWorkOrders([]); setNotifications([]); setNotificationsOpen(false); setView("new"); setSelectedDepartment(null); setSelectedType(null);
+      setWorkOrders([]); setLastWorkOrderUpdate(null); setNotifications([]); setNotificationsOpen(false); setView("new"); setSelectedDepartment(null); setSelectedType(null);
     }
   }, [currentUser?.id]);
   const requestedView = searchParams.get("view");
@@ -195,6 +200,10 @@ export function PublicRequesterPage() {
     ? workOrders.filter((item) => requesterCanVerifyWorkOrder(currentUser, item))
     : [], [currentUser, workOrders]);
   const unreadNotifications = useMemo(() => notifications.filter((notification) => !notification.readAt).length, [notifications]);
+  const productionAccount = signedRequester && accountDepartment === "Production";
+  const creationBlockers = signedRequester && (!productionAccount || newProductionSection !== "all") ? requesterCreationBlockers(currentUser, workOrders, { responsibleDepartment: selectedDepartment || "Production", sectionId: form.sectionId || null, location: form.customSection }, masterData.sections) : [];
+  const creationBlocked = creationBlockers.length > 0;
+  const checkingCreation = signedRequester && !lastWorkOrderUpdate;
   const visibleWorkOrders = useMemo(() => {
     const scopedWorkOrders = trackingScope === "department" ? homeWorkOrders : prioritizedWorkOrders;
     const byStatus = statusFilter === "all" ? scopedWorkOrders : scopedWorkOrders.filter((item) => statusesByFilter[statusFilter].includes(item.status));
@@ -209,6 +218,21 @@ export function PublicRequesterPage() {
     setError("");
   }
 
+  function chooseProductionSection(section: Exclude<ProductionSection, "all">) {
+    const label = section === "conversion" ? "Conversion" : "Roll Making";
+    const masterSection = masterData.sections.find((item) => item.active && item.department === "Production" && item.name.toLowerCase().replace(/[^a-z0-9]/g, "") === label.toLowerCase().replace(/[^a-z0-9]/g, ""));
+    if (!masterSection) { setError(`${label} is unavailable. Please refresh or contact maintenance.`); return; }
+    const pending = requesterCreationBlockers(currentUser!, workOrders, { responsibleDepartment: "Production", sectionId: masterSection.id, location: label }, masterData.sections);
+    if (pending.length) {
+      openView("verify");
+      setVerifySection(section);
+      setError(`${label}: ${pending.length} resolved work order${pending.length === 1 ? " needs" : "s need"} verification. Check and close each repair, or send it back if the problem remains, before issuing a new ${label} work order.`);
+      return;
+    }
+    setSelectedDepartment("Production"); setNewProductionSection(section); setError("");
+    setForm((current) => ({ ...current, sectionId: masterSection.id, customSection: "", area: "", customArea: "", machineId: "", placeOrEquipment: "", issueCategoryId: "", customIssueCategory: "" }));
+  }
+
   function chooseType(type: WorkOrderType) {
     if (categoryClosing || !selectedDepartment) return;
     setCategoryClosing(true); setError(""); setSuccess("");
@@ -218,6 +242,8 @@ export function PublicRequesterPage() {
 
   function openView(next: RequesterView) {
     setView(next); setError("");
+    setVerifySection("all");
+    if (next === "new") { setNewProductionSection("all"); setSelectedDepartment(null); setSelectedType(null); }
     if (next === "production-tv") {
       const params = new URLSearchParams(searchParams);
       params.set("view", "production-tv");
@@ -282,6 +308,7 @@ export function PublicRequesterPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (creationBlocked || checkingCreation) return;
     if (!selectedType || !selectedDepartment || submitting) return;
     const selectedMachine = filteredMachines.find((machine) => machine.id === form.machineId);
     const place = form.placeOrEquipment.trim();
@@ -416,20 +443,40 @@ export function PublicRequesterPage() {
       {signedRequester && accountDepartment === "Production" && view === "account" ? <button className="production-tv-launch" type="button" onClick={() => openView("production-tv")}><Eye size={26} /><span><strong>Production TV Dashboard</strong><small>Conversion, Roll Making, live status and completion analysis</small></span><ArrowLeft className="production-tv-launch-arrow" size={20} /></button> : null}
       {signedRequester && accountDepartment === "Production" && view === "tracking" && trackingScope === "department" ? <ProductionSectionFilter value={sectionFilter} onChange={setSectionFilter} /> : null}
       {success ? <div className="requester-app-toast success"><CheckCircle2 size={18} />{success}<button type="button" onClick={() => setSuccess("")} aria-label="Dismiss"><X size={15} /></button></div> : null}
-      {error ? <div className="requester-app-toast error"><RefreshCcw size={18} />{error}<button type="button" onClick={() => setError("")} aria-label="Dismiss"><X size={15} /></button></div> : null}
+      {error ? <div className="requester-app-toast error" role="alert"><RefreshCcw size={18} />{error}<button type="button" onClick={() => setError("")} aria-label="Dismiss"><X size={15} /></button></div> : null}
       {signedRequester && view === "dashboard" ? <>{accountDepartment === "Production" ? <ProductionSectionFilter value={sectionFilter} onChange={setSectionFilter} /> : null}{workOrderLoadError ? <p className="error-line" role="status">{workOrderLoadError}</p> : null}<RequesterDashboard key={accountDepartment === "Production" ? sectionFilter : "department"} user={currentUser} workOrders={homeWorkOrders} stats={stats} pendingVerification={pendingVerification.filter((order) => homeWorkOrders.some((item) => item.id === order.id))} timerNow={timerNow} onStatus={showStatus} onView={openView} onDetail={openDetail} /></> : null}
-      {view === "new" ? <section className={`requester-new-view ${selectedType ? "" : "requester-new-view-locked"}`} aria-hidden={!selectedType}>
+      {view === "new" && creationBlocked ? <RequesterCreationWarning count={creationBlockers.length} sectionLabel={productionAccount ? newProductionSection === "conversion" ? "Conversion" : "Roll Making" : undefined} onVerify={() => { openView("verify"); if (productionAccount) setVerifySection(newProductionSection); }} /> : null}
+      {view === "new" && checkingCreation && !creationBlocked ? <section className="requester-form-panel" role="status"><p>{workOrderLoadError || "Checking for work orders awaiting verification..."}</p><button type="button" className="secondary-action" onClick={() => void loadAccountWorkOrders()}>Refresh</button></section> : null}
+      {view === "new" && !creationBlocked && !checkingCreation ? <section className={`requester-new-view ${selectedType ? "" : "requester-new-view-locked"}`} aria-hidden={!selectedType}>
         <div className="requester-new-heading"><div><p>{signedRequester ? "Account request" : "Guest request"}</p><h1>New Work Order</h1><span>{signedRequester ? "This request will be saved under your account." : "No account needed. Submit an issue in a few simple steps."}</span></div>{!signedRequester ? <button type="button" onClick={() => setLoginOpen(true)}><ShieldCheck size={16} />Sign in to track</button> : null}</div>
-        {selectedType && selectedDepartment && rules ? <RequesterForm selectedType={selectedType} selectedDepartment={selectedDepartment} rules={rules} form={form} setForm={setForm} isOffice={isOffice} sectionOptions={sectionOptions} areaOptions={areaOptions} machineOptions={machineOptions} issueCategoryOptions={issueOptions} issueFiles={issueFiles} setIssueFiles={setIssueFiles} submitting={submitting} signedRequester={signedRequester} invalidField={invalidField} clearInvalidField={() => setInvalidField("")} onChangeType={() => setSelectedType(null)} onSubmit={submit} /> : <section className="requester-form-panel requester-form-locked"><div className="requester-panel-heading"><span className="requester-panel-icon"><ShieldCheck size={18} /></span><div><h2>Choose a department and category</h2><span>The request form opens after your selections.</span></div></div></section>}
+        {selectedType && selectedDepartment && rules ? <RequesterForm selectedType={selectedType} selectedDepartment={selectedDepartment} rules={rules} form={form} setForm={setForm} isOffice={isOffice} sectionOptions={productionAccount ? sectionOptions.filter((option) => option.value === form.sectionId) : sectionOptions} areaOptions={areaOptions} machineOptions={machineOptions} issueCategoryOptions={issueOptions} issueFiles={issueFiles} setIssueFiles={setIssueFiles} submitting={submitting} signedRequester={signedRequester} invalidField={invalidField} clearInvalidField={() => setInvalidField("")} onChangeType={() => setSelectedType(null)} onSubmit={submit} /> : <section className="requester-form-panel requester-form-locked"><div className="requester-panel-heading"><span className="requester-panel-icon"><ShieldCheck size={18} /></span><div><h2>Choose a department and category</h2><span>The request form opens after your selections.</span></div></div></section>}
       </section> : null}
       {signedRequester && view === "tracking" ? <RequesterTracking workOrders={visibleWorkOrders} departmentLabel={accountDepartment || "My requests"} scope={trackingScope} statusFilter={statusFilter} search={search} detailLoading={detailLoading} timerNow={timerNow} onScope={setTrackingScope} onFilter={setStatusFilter} onSearch={setSearch} onDetail={openDetail} onNew={() => openView("new")} /> : null}
-      {signedRequester && view === "verify" ? <RequesterVerification workOrders={pendingVerification} notes={verificationNotes} actionId={actionId} detailLoading={detailLoading} timerNow={timerNow} onNote={(id, note) => setVerificationNotes((current) => ({ ...current, [id]: note }))} onVerify={verifyWorkOrder} onDetail={openDetail} /> : null}
+      {signedRequester && view === "verify" && productionAccount ? <ProductionSectionFilter value={verifySection} onChange={setVerifySection} /> : null}
+      {signedRequester && view === "verify" ? <RequesterVerification workOrders={productionAccount ? filterProductionSection(pendingVerification, masterData.sections, verifySection) : pendingVerification} notes={verificationNotes} actionId={actionId} detailLoading={detailLoading} timerNow={timerNow} onNote={(id, note) => setVerificationNotes((current) => ({ ...current, [id]: note }))} onVerify={verifyWorkOrder} onDetail={openDetail} /> : null}
       {signedRequester && view === "account" ? <section className="requester-account-view"><div className="requester-account-avatar">{initialsFor(currentUser.name)}</div><p>Department requester</p><h1>{currentUser.name}</h1><span>{currentUser.title}</span><dl><div><dt>Department</dt><dd>{currentUser.department}</dd></div><div><dt>Username</dt><dd>{currentUser.username}</dd></div><div><dt>Tracked requests</dt><dd>{departmentWorkOrders.length}</dd></div></dl><PwaInstallButton /><PushNotificationControl /><button className="requester-signout" type="button" onClick={() => { logout(); setSuccess("Signed out. You can continue as a guest."); }}><LogOut size={17} />Sign out and continue as guest</button></section> : null}
     </main>
 
     <nav className="requester-app-tabbar" aria-label="Requester navigation">{signedRequester ? <><RequesterTab active={view === "dashboard"} label="Home" Icon={Home} onClick={() => openView("dashboard")} /><RequesterTab active={view === "new"} label="New" Icon={Send} onClick={() => openView("new")} /><RequesterTab active={view === "tracking"} label="Track" Icon={History} onClick={() => openView("tracking")} /><RequesterTab active={view === "verify"} label="Verify" Icon={ShieldCheck} badge={pendingVerification.length} onClick={() => openView("verify")} /><RequesterTab active={view === "account"} label="Account" Icon={UserCircle2} onClick={() => openView("account")} /></> : <><RequesterTab active label="New Request" Icon={Send} onClick={() => openView("new")} /><RequesterTab active={false} label="Sign in to track" Icon={LogIn} onClick={() => setLoginOpen(true)} /></>}</nav>
 
-    {view === "new" && !selectedType ? <div className={`requester-category-gate ${categoryClosing ? "is-exiting" : ""}`} role="dialog" aria-modal="true" aria-labelledby="requester-category-title" aria-busy={categoryClosing} onClick={(event) => { if (signedRequester && event.target === event.currentTarget) openView("dashboard"); }}><section className="requester-category-card" key={selectedDepartment ? "request-type" : choosingOtherDepartment ? "other-department" : "primary-department"}>{signedRequester ? <button className="requester-category-close" type="button" disabled={categoryClosing} onClick={() => openView("dashboard")} aria-label="Cancel new work order and return home"><X size={20} /></button> : null}{!signedRequester ? <div className="requester-category-home-row"><Link className="requester-category-home" to="/login" aria-label="Home — return to login page"><Home size={17} aria-hidden="true" />Home</Link></div> : null}<div className="requester-category-heading"><span><img src="/brand/sugi_logo_white.png" alt="" /></span><div><p>{selectedDepartment ? `FOR ${selectedDepartment.toUpperCase()}` : signedRequester ? "ACCOUNT REQUEST" : "CONTINUE AS GUEST"}</p><h1 id="requester-category-title">{selectedDepartment ? "What type of work is needed?" : choosingOtherDepartment ? "Which department is responsible?" : "Which department is this for?"}</h1></div></div><p className="requester-category-copy">{selectedDepartment ? "Choose Maintenance, Project, or Kaizen." : choosingOtherDepartment ? "Select the department PIC who should prioritize this work order." : "Choose Production for production issues, or Others for SHE and the remaining departments."}</p>{selectedDepartment ? <div className="requester-type-grid">{requestTypes.map(({ type, Icon, title, description }) => <button className={`requester-type-card type-${type}`} type="button" key={type} disabled={categoryClosing} onClick={() => chooseType(type)}><span><Icon size={24} /></span><strong>{title}</strong><small>{description}</small></button>)}</div> : choosingOtherDepartment ? <div className="requester-department-grid">{otherDepartments.map((department) => <button type="button" key={department} onClick={() => chooseDepartment(department)}><Building2 size={20} /><strong>{department}</strong></button>)}</div> : <div className="requester-type-grid requester-department-primary"><button className="requester-type-card type-production" type="button" onClick={() => chooseDepartment("Production")}><span><Factory size={24} /></span><strong>Production</strong><small>Production-owned issue</small></button><button className="requester-type-card type-others" type="button" onClick={() => setChoosingOtherDepartment(true)}><span><Building2 size={24} /></span><strong>Others</strong><small>SHE, Logistic, DTU, R&amp;D, Account, Management, or Business Development</small></button></div>}{selectedDepartment || choosingOtherDepartment ? <button className="requester-category-back" type="button" onClick={() => { setSelectedDepartment(null); setChoosingOtherDepartment(false); }}><ArrowLeft size={15} />Change department</button> : null}<small className="requester-category-note"><ShieldCheck size={14} />{signedRequester ? `Signed in as ${currentUser.name}` : "Guest access · new requests only"}</small>{!signedRequester ? currentUser ? <a className="requester-category-signin" href="/"><Home size={15} />Return to staff CMMS</a> : <button className="requester-category-signin" type="button" onClick={() => setLoginOpen(true)}><LogIn size={15} />Department user? Sign in to track</button> : null}</section></div> : null}
+    {view === "new" && !creationBlocked && !checkingCreation && !selectedType && (!productionAccount || newProductionSection !== "all") ? <div className={`requester-category-gate ${categoryClosing ? "is-exiting" : ""}`} role="dialog" aria-modal="true" aria-labelledby="requester-category-title" aria-busy={categoryClosing} onClick={(event) => { if (signedRequester && event.target === event.currentTarget) openView("dashboard"); }}><section className="requester-category-card" key={selectedDepartment ? "request-type" : choosingOtherDepartment ? "other-department" : "primary-department"}>{signedRequester ? <button className="requester-category-close" type="button" disabled={categoryClosing} onClick={() => openView("dashboard")} aria-label="Cancel new work order and return home"><X size={20} /></button> : null}{!signedRequester ? <div className="requester-category-home-row"><Link className="requester-category-home" to="/login" aria-label="Home — return to login page"><Home size={17} aria-hidden="true" />Home</Link></div> : null}<div className="requester-category-heading"><span><img src="/brand/sugi_logo_white.png" alt="" /></span><div><p>{selectedDepartment ? `FOR ${selectedDepartment.toUpperCase()}` : signedRequester ? "ACCOUNT REQUEST" : "CONTINUE AS GUEST"}</p><h1 id="requester-category-title">{selectedDepartment ? "What type of work is needed?" : choosingOtherDepartment ? "Which department is responsible?" : "Which department is this for?"}</h1></div></div><p className="requester-category-copy">{selectedDepartment ? "Choose Maintenance, Project, or Kaizen." : choosingOtherDepartment ? "Select the department PIC who should prioritize this work order." : "Choose Production for production issues, or Others for SHE and the remaining departments."}</p>{selectedDepartment ? <div className="requester-type-grid">{requestTypes.map(({ type, Icon, title, description }) => <button className={`requester-type-card type-${type}`} type="button" key={type} disabled={categoryClosing} onClick={() => chooseType(type)}><span><Icon size={24} /></span><strong>{title}</strong><small>{description}</small></button>)}</div> : choosingOtherDepartment ? <div className="requester-department-grid">{otherDepartments.map((department) => <button type="button" key={department} onClick={() => chooseDepartment(department)}><Building2 size={20} /><strong>{department}</strong></button>)}</div> : <div className="requester-type-grid requester-department-primary"><button className="requester-type-card type-production" type="button" onClick={() => chooseDepartment("Production")}><span><Factory size={24} /></span><strong>Production</strong><small>Production-owned issue</small></button><button className="requester-type-card type-others" type="button" onClick={() => setChoosingOtherDepartment(true)}><span><Building2 size={24} /></span><strong>Others</strong><small>SHE, Logistic, DTU, R&amp;D, Account, Management, or Business Development</small></button></div>}{selectedDepartment || choosingOtherDepartment ? <button className="requester-category-back" type="button" onClick={() => { setSelectedDepartment(null); setChoosingOtherDepartment(false); if (productionAccount) setNewProductionSection("all"); }}><ArrowLeft size={15} />{productionAccount ? "Change section" : "Change department"}</button> : null}<small className="requester-category-note"><ShieldCheck size={14} />{signedRequester ? `Signed in as ${currentUser.name}` : "Guest access · new requests only"}</small>{!signedRequester ? currentUser ? <a className="requester-category-signin" href="/"><Home size={15} />Return to staff CMMS</a> : <button className="requester-category-signin" type="button" onClick={() => setLoginOpen(true)}><LogIn size={15} />Department user? Sign in to track</button> : null}</section></div> : null}
+
+    {view === "new" && productionAccount && newProductionSection === "all" && !checkingCreation ? <div className="requester-category-gate" role="dialog" aria-modal="true" aria-labelledby="production-section-title">
+      <section className="requester-category-card">
+        <button className="requester-category-close" type="button" onClick={() => openView("dashboard")} aria-label="Cancel new work order"><X size={20} /></button>
+        <div className="requester-category-heading"><span><Factory size={32} /></span><div><p>PRODUCTION · NEW WORK ORDER</p><h1 id="production-section-title">Conversion or Roll Making?</h1></div></div>
+        <p className="requester-category-copy">Choose where the issue happened. Completed repairs in that section must be verified before you can issue another work order.</p>
+        <div className="requester-type-grid requester-department-primary">
+          {(["conversion", "roll-making"] as const).map((section) => {
+            const label = section === "conversion" ? "Conversion" : "Roll Making";
+            const count = filterProductionSection(pendingVerification.filter((order) => order.responsibleDepartment === "Production"), masterData.sections, section).length;
+            return <button key={section} data-production-section={section} type="button" className={`requester-type-card production-section-choice ${count ? "needs-verification" : ""}`} onClick={() => chooseProductionSection(section)}>
+              <span><Factory size={30} /></span><strong>{label}</strong><small>{count ? `${count} completed repair${count === 1 ? "" : "s"} to verify — open Verify` : "Issue a new work order"}</small>{count ? <b><AlertTriangle size={16} />Verification required</b> : <b><Send size={16} />Start request</b>}
+            </button>;
+          })}
+        </div>
+      </section>
+    </div> : null}
 
     {loginOpen ? <div className="requester-login-backdrop"><form className="requester-login-card" role="dialog" aria-modal="true" aria-labelledby="requester-login-title" onSubmit={submitLogin}><button className="requester-dialog-close" type="button" onClick={() => setLoginOpen(false)} aria-label="Close sign in"><X size={18} /></button><span className="requester-login-icon"><ShieldCheck size={24} /></span><p>Department access</p><h2 id="requester-login-title">Sign in to your requester account</h2><small>Track department work orders, review maintenance updates, and verify work that you requested.</small><label>Username<input value={loginUsername} onChange={(event) => setLoginUsername(event.target.value.toLowerCase())} autoComplete="username" autoCapitalize="none" spellCheck={false} required /></label><label>Password<input type="password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} autoComplete="current-password" required /></label>{loginError ? <p className="error-line" role="alert">{loginError}</p> : null}<button className="primary-action" type="submit" disabled={loginBusy}>{loginBusy ? "Signing in..." : "Open my requester app"}<LogIn size={17} /></button><button className="requester-guest-continue" type="button" onClick={() => setLoginOpen(false)}>Continue as guest</button></form></div> : null}
     {detail ? <RequesterDetailDialog detail={detail} canVerify={Boolean(currentUser && requesterCanVerifyWorkOrder(currentUser, detail))} isOwner={detail.requesterId === currentUser?.id} timerNow={timerNow} onClose={() => setDetail(null)} onVerify={verifyWorkOrder} onSaveReason={saveDowntimeReason} onCancel={cancelRequesterWorkOrder} onDelete={deleteRequesterWorkOrder} actionId={actionId} note={verificationNotes[detail.id] || ""} onNote={(note) => setVerificationNotes((current) => ({ ...current, [detail.id]: note }))} /> : null}

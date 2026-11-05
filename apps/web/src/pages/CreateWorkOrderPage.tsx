@@ -1,12 +1,13 @@
 import { ArrowLeft, CalendarDays, Factory, Send, UserRound } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
-import type { MasterData, ShiftGroup, WorkOrderDepartment, WorkOrderType } from "@sugi-cmms/shared";
-import { workOrderDepartmentForUser, workOrderDepartments, workOrderFormRulesForDepartment, workOrderTypeLabels } from "@sugi-cmms/shared";
+import type { MasterData, ShiftGroup, WorkOrder, WorkOrderDepartment, WorkOrderType } from "@sugi-cmms/shared";
+import { requesterCreationBlockers, workOrderDepartmentForUser, workOrderDepartments, workOrderFormRulesForDepartment, workOrderTypeLabels } from "@sugi-cmms/shared";
 import { api } from "../api/client";
 import { SearchableSelect } from "../components/SearchableSelect";
 import { MultiPhotoPicker } from "../components/MultiPhotoPicker";
 import { useCurrentUser } from "../state/UserContext";
+import { RequesterCreationWarning } from "../components/RequesterCreationWarning";
 
 function todayDate() {
   const now = new Date();
@@ -53,6 +54,27 @@ export function CreateWorkOrderPage() {
   const [submitting, setSubmitting] = useState(false);
   const [issueFiles, setIssueFiles] = useState<File[]>([]);
   const [photoRequiredError, setPhotoRequiredError] = useState(false);
+  const [verificationOrders, setVerificationOrders] = useState<WorkOrder[]>([]);
+  const [verificationReady, setVerificationReady] = useState(false);
+  const [verificationError, setVerificationError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setVerificationReady(false);
+    setVerificationOrders([]);
+    setVerificationError("");
+    if (currentUser?.role === "requester") {
+      api.workOrders().then((orders) => {
+        if (!cancelled) { setVerificationOrders(orders); setVerificationReady(true); }
+      }).catch(() => {
+        if (!cancelled) setVerificationError("Unable to check pending verification. Reload this page to try again.");
+      });
+    }
+    return () => { cancelled = true; };
+  }, [currentUser?.id]);
+  const creationBlockers = currentUser?.role === "requester"
+    ? requesterCreationBlockers(currentUser, verificationOrders, { responsibleDepartment: form.responsibleDepartment, sectionId: form.sectionId || null, location: form.customSection }, masterData.sections) : [];
+  const checkingVerification = currentUser?.role === "requester" && !verificationReady;
 
   useEffect(() => {
     api.masterData()
@@ -102,7 +124,7 @@ export function CreateWorkOrderPage() {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!currentUser || submitting || !masterReady) {
+    if (!currentUser || submitting || !masterReady || (!createdOrderId && (checkingVerification || creationBlockers.length > 0))) {
       return;
     }
 
@@ -174,7 +196,7 @@ export function CreateWorkOrderPage() {
         </Link>
       </div>
 
-      <form className="form-panel" onSubmit={handleSubmit} aria-busy={submitting}>
+      {!createdOrderId && creationBlockers.length > 0 ? <RequesterCreationWarning count={creationBlockers.length} /> : !createdOrderId && checkingVerification ? <p role="status">{verificationError || "Checking for work orders awaiting verification..."}</p> : <form className="form-panel" onSubmit={handleSubmit} aria-busy={submitting}>
         <p className="ux-form-help">Describe the issue and where it happened. At least one before photo is required to submit a work order.</p>
         <fieldset className="ux-form-fields" disabled={submitting || Boolean(createdOrderId)}>
         <div className="form-grid two-columns">
@@ -319,7 +341,7 @@ export function CreateWorkOrderPage() {
             {submitting ? "Submitting..." : createdOrderId ? "Retry photo upload" : "Create work order"}
           </button>
         </div>
-      </form>
+      </form>}
     </section>
   );
 }

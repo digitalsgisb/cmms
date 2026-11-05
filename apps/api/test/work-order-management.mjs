@@ -342,6 +342,11 @@ assert.deepEqual(resolvedFairTimingOrder.supportingTechnicianIds, []);
 assert.deepEqual(inPlant(() => m.getWorkOrderDetail(fairTimingOrder.id)).supportingTechnicians, []);
 assert(resolvedFairTimingOrder.maintenanceStartedAt);
 assert(resolvedFairTimingOrder.resolvedAt);
+assert.throws(() => createOrder("Blocked pending verification"), /New work order blocked:.*awaiting your verification/i);
+assert.throws(() => createOrder("Blocked project", "project"), /New work order blocked/i);
+assert.throws(() => createOrder("Blocked kaizen", "kaizen"), /New work order blocked/i);
+// A colleague can still raise a request while this account has a resolved job.
+assert(inPlant(() => m.createWorkOrder({ ...namedInput, requesterId: sheColleague.id })).id);
 assert(inPlant(() => m.listNotifications(executive.id)).some((item) => item.workOrderId === fairTimingOrder.id && /ready for verification/i.test(item.title)));
 inPlant(() => m.claimWorkOrder(customCategoryOrder.id, technician.id));
 inPlant(() => m.addAttachment({
@@ -389,6 +394,7 @@ const closedFairTimingOrder = inPlant(() => m.updateWorkOrderStatus(fairTimingOr
   note: "Executive verified on behalf of production"
 }));
 assert.equal(closedFairTimingOrder.productionDowntimeReason, "Waiting for technician");
+assert(createOrder("Allowed after verification").id);
 
 const disposable = createOrder("Delete permission check");
 await assert.rejects(inPlant(() => m.deleteWorkOrder(disposable.id, technician.id, "Test or duplicate request")), /Executive, admin, or developer/i);
@@ -485,5 +491,39 @@ assert(inPlant(() => m.listArchivedWorkOrders(admin.id)).some(order => order.id 
 const archivedAirLeak = inPlant(() => m.upsertAppSheetAirLeak({ airLeakId: "ALD-TEST-001", date: "2026-09-18", section: "Luggage Mat", machine: "Ignored", issuedBy: "Tester", issue: "Do not resurrect" }));
 assert.equal(archivedAirLeak.status, "Archived");
 assert.throws(() => inPlant(() => m.getWorkOrder(airLeak.workOrderId)), /not found/i);
+// Clear every pending decision before allowing another request; returning a
+// failed repair also completes the requester's verification decision.
+const pendingOne = createOrder("Verification queue one");
+const pendingTwo = createOrder("Verification queue two");
+inPlant(() => m.db.prepare("UPDATE work_orders SET status = 'resolved' WHERE id IN (?, ?)").run(pendingOne.id, pendingTwo.id));
+assert.throws(() => createOrder("Two pending"), /2 resolved work orders/i);
+inPlant(() => m.updateWorkOrderStatus(pendingOne.id, { actorId: requester.id, status: "closed", note: "Repair checked" }));
+assert.throws(() => createOrder("One still pending"), /1 resolved work order/i);
+inPlant(() => m.updateWorkOrderStatus(pendingTwo.id, { actorId: requester.id, status: "returned", note: "Issue persists" }));
+assert(createOrder("All decisions complete").id);
+// Guest submissions share a system identity, so one guest's pending repair
+// must not block every other guest or the AppSheet integration.
+const guestInput = { ...namedInput, requesterId: m.publicRequesterIdForUploads(), responsibleDepartment: "Production" };
+const guestPending = inPlant(() => m.createWorkOrder(guestInput));
+inPlant(() => m.db.prepare("UPDATE work_orders SET status = 'resolved' WHERE id = ?").run(guestPending.id));
+assert(inPlant(() => m.createWorkOrder(guestInput)).id);
+// Production verification gates apply to the chosen section, including work
+// raised by other accounts in the department.
+const scopeRequester = createUser("requester", "section-scope");
+const conversionSection = masterData.sections.find((item) => item.name === "Conversion");
+const rollSection = masterData.sections.find((item) => item.name === "Roll Making");
+const sectionOrder = (sectionId, requesterId = scopeRequester.id) => inPlant(() => m.createWorkOrder({ ...namedInput, requesterId, sectionId, responsibleDepartment: "Production" }));
+const conversionPending = sectionOrder(conversionSection.id);
+inPlant(() => m.db.prepare("UPDATE work_orders SET status = 'resolved' WHERE id = ?").run(conversionPending.id));
+assert.throws(() => sectionOrder(conversionSection.id), /New work order blocked/i);
+assert.throws(() => sectionOrder(conversionSection.id, requester.id), /New work order blocked/i);
+const rollPending = sectionOrder(rollSection.id);
+inPlant(() => m.db.prepare("UPDATE work_orders SET status = 'resolved' WHERE id = ?").run(rollPending.id));
+assert.throws(() => sectionOrder(rollSection.id), /New work order blocked/i);
+inPlant(() => m.updateWorkOrderStatus(conversionPending.id, { actorId: scopeRequester.id, status: "closed", note: "Conversion checked" }));
+assert(sectionOrder(conversionSection.id).id);
+assert.throws(() => sectionOrder(rollSection.id), /New work order blocked/i);
+inPlant(() => m.updateWorkOrderStatus(rollPending.id, { actorId: scopeRequester.id, status: "returned", note: "Roll Making issue persists" }));
+assert(sectionOrder(rollSection.id).id);
 m.db.close();
 console.log("PASS: work-order management, technician-team routing, project assignment rules, stable identifiers, edit history, and hold/resume permissions.");

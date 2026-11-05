@@ -99,7 +99,11 @@ const focusHeaders: Record<Focus, { title: string; subtitle: string; icon: typeo
 };
 
 function percent(value: number, total: number) {
-  return total > 0 ? Math.round((value / total) * 100) : 0;
+  return total > 0 ? Math.round((value / total) * 10000) / 100 : 0;
+}
+
+function formatPercent(value: number) {
+  return `${value.toFixed(2)}%`;
 }
 
 function workOrderPercent(value: number, total: number) {
@@ -423,12 +427,12 @@ export function PerformancePage() {
   ], [woStats.rate, pmStats.compliance, pmStats.total, pmStats.overdue, partsAvailability, inventory]);
 
   const exceptions = useMemo(() => {
-    const rows: Array<{ area: string; item: string; severity: "Critical" | "Watch"; owner: string; action: string }> = [];
+    const rows: Array<{ area: string; item: string; severity: "Critical" | "Watch"; owner: string; action: string; href: string }> = [];
     woStats.open
       .filter((item) => item.status !== "cancelled" && (item.priority === "critical" || item.status === "pending_material"))
-      .slice(0, 2)
       .forEach((item) => rows.push({
         area: "Work order",
+        href: `/work-orders/${item.id}`,
         item: `${item.number} · ${item.machineName || item.title}`,
         severity: item.priority === "critical" ? "Critical" : "Watch",
         owner: item.assignedToId ? "Assigned technician" : "Planner",
@@ -437,16 +441,17 @@ export function PerformancePage() {
     (inventory?.parts ?? [])
       .filter((item) => item.currentStock <= item.minStock)
       .sort((a, b) => a.currentStock - b.currentStock)
-      .slice(0, 2)
       .forEach((item) => rows.push({
         area: "Spare part",
+        href: `/spare-parts/${encodeURIComponent(item.itemNo)}`,
         item: `${item.itemNo} · ${item.searchName || item.description}`,
         severity: item.currentStock <= 0 ? "Critical" : "Watch",
         owner: "Store / Buyer",
         action: item.currentStock <= 0 ? "Expedite replenishment" : "Raise reorder"
       }));
-    scopedPm.filter((item) => item.overdue).slice(0, 2).forEach((item) => rows.push({
+    scopedPm.filter((item) => item.overdue).forEach((item) => rows.push({
       area: "PM",
+      href: `/preventive-maintenance/${item.id}`,
       item: `${item.machineName} · ${item.scheduledDate}`,
       severity: "Critical",
       owner: item.technicianName,
@@ -458,28 +463,28 @@ export function PerformancePage() {
   const meetingRows = [
     {
       kpi: "Standard WO closure",
-      actual: `${woStats.standardRate}%`,
+      actual: formatPercent(woStats.standardRate),
       target: period === "daily" ? "≥ 80%" : "≥ 90%",
       good: woStats.standardRate >= (period === "daily" ? 80 : 90),
       message: woStats.standardRate >= 90 ? "Sustain close-out discipline" : "Review oldest open maintenance jobs"
     },
     {
       kpi: "KAIZEN closure",
-      actual: `${woStats.kaizenRate}%`,
+      actual: formatPercent(woStats.kaizenRate),
       target: "≥ 85%",
       good: woStats.kaizenRate >= 85,
       message: "Protect improvement capacity from breakdown work"
     },
     {
       kpi: "Parts availability",
-      actual: `${partsAvailability}%`,
+      actual: formatPercent(partsAvailability),
       target: "≥ 98%",
       good: partsAvailability >= 98,
       message: "Prioritise A-rank shortages and long lead items"
     },
     {
       kpi: "PM compliance",
-      actual: `${pmStats.compliance}%`,
+      actual: formatPercent(pmStats.compliance),
       target: "≥ 95%",
       good: pmStats.compliance >= 95,
       message: "Recover overdue schedule before adding new work"
@@ -561,15 +566,15 @@ export function PerformancePage() {
 
       <div className="performance-kpi-grid" aria-busy={loading}>
         {showWorkOrders ? <>
-          <Kpi icon={Wrench} label="WO Closure (Close)" value={`${woStats.rate}%`} note={woStats.total ? `${woStats.closed} of ${woStats.eligible} eligible orders closed` : "No work orders in this period"} tone="maroon" onClick={() => showOrders("closed")} />
-          <Kpi icon={CheckCircle2} label="WO Resolved (Resolved)" value={`${woStats.resolvedRate}%`} note={woStats.total ? `${woStats.resolved} of ${woStats.eligible} eligible orders resolved` : "No work orders in this period"} tone="teal" onClick={() => showOrders("resolved")} />
+          <Kpi icon={Wrench} label="WO Closure (Close)" value={formatPercent(woStats.rate)} note={woStats.total ? `${woStats.closed} of ${woStats.eligible} eligible orders closed` : "No work orders in this period"} tone="maroon" onClick={() => showOrders("closed")} />
+          <Kpi icon={CheckCircle2} label="WO Resolved (Resolved)" value={formatPercent(woStats.resolvedRate)} note={woStats.total ? `${woStats.resolved} of ${woStats.eligible} eligible orders resolved` : "No work orders in this period"} tone="teal" onClick={() => showOrders("resolved")} />
           <Kpi icon={Activity} label="Total work orders" value={String(woStats.total)} note="Work order date in selected period" tone="navy" onClick={() => showOrders("all")} />
-          <Kpi icon={TrendingUp} label="Standard maintenance" value={`${woStats.standardRate}%`} note="Close rate" tone="teal" onClick={() => showOrders("maintenance")} />
-          <Kpi icon={Sparkles} label="KAIZEN" value={`${woStats.kaizenRate}%`} note="Improvement close rate" tone="gold" onClick={() => showOrders("kaizen")} />
+          <Kpi icon={TrendingUp} label="Standard maintenance" value={formatPercent(woStats.standardRate)} note="Close rate" tone="teal" onClick={() => showOrders("maintenance")} />
+          <Kpi icon={Sparkles} label="KAIZEN" value={formatPercent(woStats.kaizenRate)} note="Improvement close rate" tone="gold" onClick={() => showOrders("kaizen")} />
         </> : null}
-        {showSpares ? <Kpi icon={PackageCheck} label="Parts availability" value={`${partsAvailability}%`} note={`${inventory?.summary.outOfStock ?? 0} stock-outs`} tone="green" onClick={() => showArea("spares", "performance-spares")} /> : null}
-        {showPm ? <Kpi icon={ShieldCheck} label="PM compliance" value={`${pmStats.compliance}%`} note={`${pmStats.overdue} overdue`} tone="navy" onClick={() => showArea("pm", "performance-pm")} /> : null}
-        <Kpi icon={AlertTriangle} label="Active exceptions" value={String(exceptions.length)} note="Require meeting action" tone={exceptions.length > 0 ? "red" : "green"} onClick={() => showArea(focus, "performance-exceptions")} />
+        {showSpares ? <Kpi icon={PackageCheck} label="Parts availability" value={formatPercent(partsAvailability)} note={`${inventory?.summary.outOfStock ?? 0} stock-outs`} tone="green" onClick={() => showArea("spares", "performance-spares")} /> : null}
+        {showPm ? <Kpi icon={ShieldCheck} label="PM compliance" value={formatPercent(pmStats.compliance)} note={`${pmStats.overdue} overdue`} tone="navy" onClick={() => showArea("pm", "performance-pm")} /> : null}
+        <Kpi icon={AlertTriangle} label="Needs attention" value={String(exceptions.length)} note={exceptions.length === 1 ? "Open item details" : "View items needing attention"} tone={exceptions.length > 0 ? "red" : "green"} onClick={() => exceptions.length === 1 ? navigate(exceptions[0].href) : showArea(focus, "performance-exceptions")} />
       </div>
 
       <div className="performance-view-stage" key={`content-${focus}`}>
@@ -591,7 +596,7 @@ export function PerformancePage() {
                 <thead><tr><th>Section</th><th>Total work orders</th><th>WO Closure (Close)</th><th>WO Resolved (Resolved)</th><th>Not closed</th></tr></thead>
                 <tbody>{sectionAnalysis.map((row) => <tr key={row.section.id}>
                   <td><button className="performance-section-link" type="button" onClick={() => setSectionId(row.section.id)} aria-pressed={sectionId === row.section.id}>{row.section.name}</button></td>
-                  <td>{row.total}</td><td>{row.closed} ({workOrderPercent(row.closed, row.eligible)}%)</td><td>{row.resolved} ({workOrderPercent(row.resolved, row.eligible)}%)</td><td className={row.outstanding ? "performance-outstanding-count" : ""}>{row.outstanding}</td>
+                  <td>{row.total}</td><td>{row.closed} ({formatPercent(workOrderPercent(row.closed, row.eligible))})</td><td>{row.resolved} ({formatPercent(workOrderPercent(row.resolved, row.eligible))})</td><td className={row.outstanding ? "performance-outstanding-count" : ""}>{row.outstanding}</td>
                 </tr>)}</tbody>
               </table></div>
             </div>
@@ -642,14 +647,14 @@ export function PerformancePage() {
                     <RadialBarChart innerRadius="35%" outerRadius="95%" barSize={13} data={closureRings} startAngle={90} endAngle={-270}>
                       <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
                       <RadialBar background dataKey="value" cornerRadius={8} animationDuration={1100} />
-                      <Tooltip contentStyle={chartTooltipStyle()} formatter={(value) => `${value}%`} />
+                      <Tooltip contentStyle={chartTooltipStyle()} formatter={(value) => formatPercent(Number(value))} />
                     </RadialBarChart>
                   </ResponsiveContainer>
-                  <div className="radial-center"><strong>{woStats.rate}%</strong><span>overall</span></div>
+                  <div className="radial-center"><strong>{formatPercent(woStats.rate)}</strong><span>overall</span></div>
                 </div>
                 <div className="performance-legend-pills">
-                  <span><i style={{ background: colors.maroon }} />Standard <strong>{woStats.standardRate}%</strong></span>
-                  <span><i style={{ background: colors.gold }} />KAIZEN <strong>{woStats.kaizenRate}%</strong></span>
+                  <span><i style={{ background: colors.maroon }} />Standard <strong>{formatPercent(woStats.standardRate)}</strong></span>
+                  <span><i style={{ background: colors.gold }} />KAIZEN <strong>{formatPercent(woStats.kaizenRate)}</strong></span>
                 </div>
               </ChartCard>
               <ChartCard title="Not closed backlog by priority" subtitle={`${woStats.pendingMaterial} jobs waiting for material in this period`}>
@@ -739,7 +744,7 @@ export function PerformancePage() {
               <div className="performance-insight-card">
                 <span><Target size={18} /></span>
                 <small>PM quality signal</small>
-                <strong>{pmStats.failureRate}%</strong>
+                <strong>{formatPercent(pmStats.failureRate)}</strong>
                 <p>Checklist failure rate from {pmStats.failed} failed checks.</p>
                 <div><i style={{ width: `${Math.min(100, pmStats.failureRate)}%` }} /></div>
               </div>
@@ -757,7 +762,7 @@ export function PerformancePage() {
                     <PolarGrid stroke="#e6dfe0" />
                     <PolarAngleAxis dataKey="metric" tick={{ fontSize: 9, fill: "#6f636b" }} />
                     <Radar dataKey="score" stroke={colors.maroon} fill={colors.maroon} fillOpacity={0.18} strokeWidth={2.5} isAnimationActive={false} />
-                    <Tooltip contentStyle={chartTooltipStyle()} formatter={(value) => `${value}%`} />
+                    <Tooltip contentStyle={chartTooltipStyle()} formatter={(value) => formatPercent(Number(value))} />
                   </RadarChart>
                 </ResponsiveContainer>
               </ChartCard>
@@ -786,14 +791,17 @@ export function PerformancePage() {
         ) : null}
 
         <section className="performance-section performance-exceptions-section" id="performance-exceptions">
-          <SectionHeading icon={AlertTriangle} eyebrow="Exception management" title="Leave the meeting with owners and actions" note={`${exceptions.length} active items`} />
+          <SectionHeading icon={AlertTriangle} eyebrow="Maintenance follow-up" title="Items needing attention" note={`${exceptions.length} active ${exceptions.length === 1 ? "item" : "items"}`} />
           <div className="performance-table-card">
             <div className="performance-table-scroll">
               <table>
                 <thead><tr><th>Area</th><th>Exception</th><th>Priority</th><th>Owner</th><th>Next action</th></tr></thead>
                 <tbody>
                   {exceptions.length > 0 ? exceptions.map((row, index) => (
-                    <tr key={`${row.item}-${index}`}><td>{row.area}</td><td><strong>{row.item}</strong></td><td><span className={`severity-pill ${row.severity.toLowerCase()}`}>{row.severity}</span></td><td>{row.owner}</td><td>{row.action}</td></tr>
+                    <tr className="performance-order-row" key={`${row.item}-${index}`} title="Open item details" onClick={(event) => {
+                      if ((event.target as HTMLElement).closest("a, button")) return;
+                      if (event.ctrlKey || event.metaKey) window.open(row.href, "_blank", "noopener,noreferrer"); else navigate(row.href);
+                    }}><td>{row.area}</td><td><Link to={row.href}><strong>{row.item}</strong></Link></td><td><span className={`severity-pill ${row.severity.toLowerCase()}`}>{row.severity}</span></td><td>{row.owner}</td><td>{row.action}</td></tr>
                   )) : <tr><td colSpan={5}><div className="performance-clear-state"><CheckCircle2 size={18} /> No active exceptions in this view.</div></td></tr>}
                 </tbody>
               </table>
