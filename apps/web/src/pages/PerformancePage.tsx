@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { workOrderDepartments, workOrderStatusLabels } from "@sugi-cmms/shared";
+import { workOrderDepartments, workOrderStatusLabels, workOrderTypeLabels } from "@sugi-cmms/shared";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
 import {
   Area,
@@ -159,6 +159,18 @@ function closureRate(records: WorkOrder[], type: WorkOrder["type"]) {
 function deliveryOrders(records: WorkOrder[]) {
   return records.filter((item) => item.status !== "cancelled" &&
     (item.responsibleDepartment !== "Production" || item.type === "maintenance"));
+}
+
+function excludedOrderSummary(records: WorkOrder[]) {
+  const reasons = new Map<string, number>();
+  for (const item of records) {
+    // Assign one reason per order so counted + excluded always equals total.
+    const reason = item.status === "cancelled" ? "Cancelled"
+      : item.responsibleDepartment === "Production" && item.type !== "maintenance" ? workOrderTypeLabels[item.type]
+      : item.status === "on_hold" ? "On hold" : null;
+    if (reason) reasons.set(reason, (reasons.get(reason) || 0) + 1);
+  }
+  return [...reasons].map(([reason, count]) => `${count} ${reason}`).join(" · ") || "None";
 }
 
 function chartTooltipStyle() {
@@ -317,6 +329,7 @@ export function PerformancePage() {
     const records = periodWorkOrders.filter((item) => item.sectionId === section.id);
     const delivery = deliveryOrders(records);
     return { section, total: records.length, eligible: delivery.filter((item) => item.status !== "on_hold").length, closed: delivery.filter((item) => item.status === "closed").length,
+      excludedSummary: excludedOrderSummary(records),
       resolved: delivery.filter((item) => item.status === "resolved").length,
       outstanding: records.filter((item) => !["closed", "cancelled"].includes(item.status)).length };
   }), [departmentSections, periodWorkOrders]);
@@ -600,12 +613,13 @@ export function PerformancePage() {
             <div className="performance-table-card">
               <div className="performance-card-heading"><div><strong>Work order analysis by section · {reportingLabel}</strong><span>Select a section to view its work orders.</span></div></div>
               <div className="performance-table-scroll" role="region" aria-label="Work order analysis by section" tabIndex={0}><table>
-                <thead><tr><th>Section</th><th>Total work orders</th><th>WO Closure (Close)</th><th>WO Resolved (Resolved)</th><th>Not closed</th></tr></thead>
+                <thead><tr><th>Section</th><th>Total work orders</th><th>Counted for %</th><th>Excluded from %</th><th>WO Closure (Close)</th><th>WO Resolved (Resolved)</th><th>Not closed · all types</th></tr></thead>
                 <tbody>{sectionAnalysis.map((row) => <tr key={row.section.id}>
                   <td><button className="performance-section-link" type="button" onClick={() => setSectionId(row.section.id)} aria-pressed={sectionId === row.section.id}>{row.section.name}</button></td>
-                  <td>{row.total}</td><td>{row.closed} ({formatPercent(workOrderPercent(row.closed, row.eligible))})</td><td>{row.resolved} ({formatPercent(workOrderPercent(row.resolved, row.eligible))})</td><td className={row.outstanding ? "performance-outstanding-count" : ""}>{row.outstanding}</td>
+                  <td>{row.total}</td><td>{row.eligible}</td><td className="performance-excluded-count"><strong>{row.total - row.eligible}</strong><small>{row.excludedSummary}</small></td><td>{row.closed} ({formatPercent(workOrderPercent(row.closed, row.eligible))})</td><td>{row.resolved} ({formatPercent(workOrderPercent(row.resolved, row.eligible))})</td><td className={row.outstanding ? "performance-outstanding-count" : ""}>{row.outstanding}</td>
                 </tr>)}</tbody>
               </table></div>
+              <p className="performance-calculation-note">Closure % = closed ÷ counted for % × 100. Counted + excluded = total. “Not closed” includes active orders of every work type, including on-hold orders. Deleted orders are outside this report.</p>
             </div>
             <div className="performance-table-card" id="performance-work-orders">
               <div className="performance-card-heading"><div><strong>{orderView === "not-closed" ? "Not closed work orders" : orderView === "closed" ? "Closed work orders" : "Work order details"}</strong><span>{tableOrders.length} work orders · {reportingLabel} · oldest first</span><span>Click a work order row to open its details. Scroll the table horizontally to see all columns.</span></div></div>
@@ -632,13 +646,13 @@ export function PerformancePage() {
               </table></div>
             </div>
             <div className="performance-chart-grid performance-chart-grid-wide">
-              <ChartCard title="Work orders vs closed" subtitle="Work order date and current status" className="chart-wide">
+              <ChartCard title="Work orders vs closed" subtitle="Bars show all work types. Close rate uses eligible orders (standard maintenance for Production)." className="chart-wide">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={throughputData} margin={{ top: 8, right: 8, left: -22, bottom: 0 }}>
                     <CartesianGrid stroke="#eee6e7" strokeDasharray="3 5" vertical={false} />
                     <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "#7d7078" }} />
                     <YAxis yAxisId="count" allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "#7d7078" }} />
-                    <YAxis yAxisId="rate" orientation="right" domain={[0, 100]} hide />
+                    <YAxis yAxisId="rate" orientation="right" domain={[0, 100]} tickFormatter={(value) => `${value}%`} tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: colors.green }} width={44} />
                     <Tooltip contentStyle={chartTooltipStyle()} />
                     <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
                     <Bar yAxisId="count" dataKey="standard" name="Standard" stackId="created" fill={colors.maroon} radius={[4, 4, 0, 0]} animationDuration={850} />
@@ -657,7 +671,7 @@ export function PerformancePage() {
                       <Tooltip contentStyle={chartTooltipStyle()} formatter={(value) => formatPercent(Number(value))} />
                     </RadialBarChart>
                   </ResponsiveContainer>
-                  <div className="radial-center"><strong>{formatPercent(woStats.rate)}</strong><span>overall</span></div>
+                  <div className="radial-center"><strong>{formatPercent(woStats.rate)}</strong><span>{department === "Production" ? "standard closure" : "delivery closure"}</span></div>
                 </div>
                 <div className="performance-legend-pills">
                   <span><i style={{ background: colors.maroon }} />Standard <strong>{formatPercent(woStats.standardRate)}</strong></span>

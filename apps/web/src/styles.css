@@ -10194,7 +10194,7 @@ button.attachment-tile {
 }
 
 .performance-chart-grid-wide {
-  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.6fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .performance-chart-card,
@@ -10213,8 +10213,12 @@ button.attachment-tile {
 }
 
 .performance-chart-grid-wide > .chart-wide {
-  grid-row: span 2;
+  grid-column: 1 / -1;
+  grid-row: auto;
 }
+
+.performance-excluded-count small { display: block; margin-top: 4px; max-width: 240px; color: var(--performance-muted); font-size: 11px; line-height: 1.5; }
+.performance-calculation-note { margin: 0; padding: 12px 20px; border-top: 1px solid var(--performance-line); color: var(--performance-muted); font-size: 12px; line-height: 1.6; }
 
 .performance-card-heading {
   display: flex;
