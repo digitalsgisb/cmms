@@ -1,3 +1,4 @@
+import { PageSkeleton } from "../components/Skeleton";
 import type {
   PmDashboardResponse,
   Section,
@@ -154,6 +155,12 @@ function closureRate(records: WorkOrder[], type: WorkOrder["type"]) {
   return workOrderPercent(matching.filter((item) => item.status === "closed").length, matching.length);
 }
 
+// Production's delivery KPI tracks standard work; KAIZEN has its own KPI.
+function deliveryOrders(records: WorkOrder[]) {
+  return records.filter((item) => item.status !== "cancelled" &&
+    (item.responsibleDepartment !== "Production" || item.type === "maintenance"));
+}
+
 function chartTooltipStyle() {
   return {
     border: "1px solid #eadbdd",
@@ -277,10 +284,11 @@ export function PerformancePage() {
 
   const woStats = useMemo(() => {
     const valid = scopedWorkOrders;
-    const eligible = valid.filter((item) => item.status !== "on_hold");
-    const closed = valid.filter((item) => item.status === "closed");
-    const open = valid.filter((item) => item.status !== "closed");
-    const resolved = valid.filter((item) => item.status === "resolved");
+    const delivery = deliveryOrders(valid);
+    const eligible = delivery.filter((item) => item.status !== "on_hold");
+    const closed = delivery.filter((item) => item.status === "closed");
+    const open = valid.filter((item) => !["closed", "cancelled"].includes(item.status));
+    const resolved = delivery.filter((item) => item.status === "resolved");
     return {
       total: valid.length,
       eligible: eligible.length,
@@ -298,7 +306,7 @@ export function PerformancePage() {
 
   const tableOrders = useMemo(() => {
     return scopedWorkOrders.filter((item) => {
-      if (orderView === "not-closed") return item.status !== "closed";
+      if (orderView === "not-closed") return !["closed", "cancelled"].includes(item.status);
       if (orderView === "closed" || orderView === "resolved") return item.status === orderView;
       if (orderView === "maintenance" || orderView === "kaizen") return item.type === orderView;
       return true;
@@ -307,9 +315,10 @@ export function PerformancePage() {
 
   const sectionAnalysis = useMemo(() => departmentSections.map((section) => {
     const records = periodWorkOrders.filter((item) => item.sectionId === section.id);
-    return { section, total: records.length, eligible: records.filter((item) => item.status !== "on_hold").length, closed: records.filter((item) => item.status === "closed").length,
-      resolved: records.filter((item) => item.status === "resolved").length,
-      outstanding: records.filter((item) => item.status !== "closed").length };
+    const delivery = deliveryOrders(records);
+    return { section, total: records.length, eligible: delivery.filter((item) => item.status !== "on_hold").length, closed: delivery.filter((item) => item.status === "closed").length,
+      resolved: delivery.filter((item) => item.status === "resolved").length,
+      outstanding: records.filter((item) => !["closed", "cancelled"].includes(item.status)).length };
   }), [departmentSections, periodWorkOrders]);
 
   function showOrders(view: OrderView) {
@@ -349,7 +358,7 @@ export function PerformancePage() {
         standard: created.filter((item) => item.type === "maintenance").length,
         kaizen: created.filter((item) => item.type === "kaizen").length,
         closed: closed.length,
-        closeRate: workOrderPercent(closed.length, created.filter((item) => item.status !== "on_hold").length)
+        closeRate: workOrderPercent(deliveryOrders(created).filter((item) => item.status === "closed").length, deliveryOrders(created).filter((item) => item.status !== "on_hold").length)
       };
     });
   }, [scopedWorkOrders, period, now]);
@@ -498,7 +507,7 @@ export function PerformancePage() {
   const activeHeader = focusHeaders[focus];
   const HeaderIcon = activeHeader.icon;
 
-  if (loading && !lastUpdated) return <div className="ux-recovery" role="status"><h1>Performance</h1><p>Loading performance data…</p></div>;
+  if (loading && !lastUpdated) return <PageSkeleton label="Loading performance" />;
 
   return (
     <section className="performance-page page-stack">
@@ -514,10 +523,8 @@ export function PerformancePage() {
           </div>
           <div className="performance-report-label" key={reportingLabel} aria-live="polite">{reportingLabel}</div>
           <p>{activeHeader.subtitle}</p>
-          <div className="performance-header-signal" aria-hidden="true"><span /><span /><span /><span /><span /></div>
           <div className="performance-header-controls">
           {showWorkOrders ? <div className="performance-department-picker">
-            <div><strong>Work order department</strong></div>
             <label htmlFor="performance-department"><span>Department</span>
               <select id="performance-department" value={department} onChange={(event) => updateReport({ department: event.target.value, section: "all", view: "all" })}>
                 <option value="Production">Production</option>
@@ -588,7 +595,7 @@ export function PerformancePage() {
                   {departmentSections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
                 </select>
               </label>
-              <p>{departmentLabel} · {reportingLabel} · Based on work order date. On-hold orders remain visible and are excluded from percentages.</p>
+              <p>Production percentages use standard maintenance orders. Cancelled, deleted and on-hold orders are excluded. KAIZEN is measured separately.</p>
             </div>
             <div className="performance-table-card">
               <div className="performance-card-heading"><div><strong>Work order analysis by section · {reportingLabel}</strong><span>Select a section to view its work orders.</span></div></div>
@@ -605,13 +612,13 @@ export function PerformancePage() {
               <div className="performance-order-controls">
                 <label htmlFor="performance-order-status">Show
                   <select id="performance-order-status" value={orderView} onChange={(event) => setOrderView(event.target.value as OrderView)}>
-                    <option value="not-closed">Not closed · all other statuses</option><option value="all">All work orders</option><option value="closed">WO Closure (Close)</option><option value="resolved">WO Resolved (Resolved)</option><option value="maintenance">Standard maintenance</option><option value="kaizen">KAIZEN</option>
+                    <option value="not-closed">Not closed · active orders</option><option value="all">All work orders</option><option value="closed">WO Closure (Close)</option><option value="resolved">WO Resolved (Resolved)</option><option value="maintenance">Standard maintenance</option><option value="kaizen">KAIZEN</option>
                   </select>
                 </label>
               </div>
               <div className="performance-table-scroll" role="region" aria-label="Work order details; scroll horizontally to see all columns" tabIndex={0}><table>
                 <thead><tr><th>Work order ID</th><th>Work order date</th><th>Closed date</th><th>Section</th><th>Issue</th><th>Status</th></tr></thead>
-                <tbody>{tableOrders.length ? tableOrders.map((item) => <tr key={item.id} className={`performance-order-row ${item.status !== "closed" ? "performance-unclosed-row" : ""}`} title={`Open work order ${item.number}`} onClick={(event) => {
+                <tbody>{tableOrders.length ? tableOrders.map((item) => <tr key={item.id} className={`performance-order-row ${!["closed", "cancelled"].includes(item.status) ? "performance-unclosed-row" : ""}`} title={`Open work order ${item.number}`} onClick={(event) => {
                   if ((event.target as HTMLElement).closest("a, button") || window.getSelection()?.toString()) return;
                   const path = `/work-orders/${item.id}`;
                   if (event.ctrlKey || event.metaKey) window.open(path, "_blank", "noopener,noreferrer"); else navigate(path);
@@ -620,7 +627,7 @@ export function PerformancePage() {
                   <td>{new Date(item.workDate || item.createdAt).toLocaleDateString("en-MY", { day: "2-digit", month: "short", year: "numeric" })}</td>
                   <td>{item.status === "closed" ? item.closedAt ? new Date(item.closedAt).toLocaleDateString("en-MY", { day: "2-digit", month: "short", year: "numeric" }) : "Not recorded" : "—"}</td>
                   <td>{sections.find((section) => section.id === item.sectionId)?.name || item.area || "Unassigned"}</td>
-                  <td>{item.issueDescription || item.description || item.title}</td><td>{workOrderStatusLabels[item.status]}{item.status !== "closed" ? <small className="performance-not-closed-label">Not closed</small> : null}</td>
+                  <td>{item.issueDescription || item.description || item.title}</td><td>{workOrderStatusLabels[item.status]}</td>
                 </tr>) : <tr><td colSpan={6}><div className="performance-clear-state"><CheckCircle2 size={18} />No work orders match this view.</div></td></tr>}</tbody>
               </table></div>
             </div>
@@ -822,7 +829,7 @@ function SectionHeading({ icon: Icon, eyebrow, title, note }: { icon: typeof Clo
 }
 
 function ChartCard({ title, subtitle, className = "", children }: { title: string; subtitle: string; className?: string; children: React.ReactNode }) {
-  return <article className={`performance-chart-card ${className}`}><div className="performance-card-heading"><div><strong>{title}</strong><span>{subtitle}</span></div><TrendingUp size={18} /></div><div className="performance-chart-canvas">{children}</div></article>;
+  return <article className={`performance-chart-card ${className}`}><div className="performance-card-heading"><div><strong>{title}</strong><span>{subtitle}</span></div></div><div className="performance-chart-canvas">{children}</div></article>;
 }
 
 function LiveClock() {

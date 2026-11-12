@@ -1,3 +1,4 @@
+import { PageSkeleton } from "../components/Skeleton";
 import { downtimeWindow } from "@sugi-cmms/shared";
 import { AlertCircle, ArrowLeft, Check, CheckCircle2, ClipboardCopy, Clock3, ExternalLink, ImagePlus, MessageSquare, PackageOpen, PauseCircle, Pencil, RotateCcw, Save, ShieldCheck, TimerReset, Trash2, UsersRound, Wrench, X } from "lucide-react";
 import { FormEvent, useEffect, useRef, useState } from "react";
@@ -533,7 +534,7 @@ export function WorkOrderDetailPage() {
   }
 
   if (!detail) {
-    return loadError ? <section className="ux-recovery" role="alert"><h1>Work order unavailable</h1><p>{loadError}</p><button className="primary-action" type="button" onClick={() => void loadDetail()}>Try again</button><button className="secondary-action" type="button" onClick={goBack}>Back</button></section> : <p className="quiet-line" role="status">Loading work order...</p>;
+    return loadError ? <section className="ux-recovery" role="alert"><h1>Work order unavailable</h1><p>{loadError}</p><button className="primary-action" type="button" onClick={() => void loadDetail()}>Try again</button><button className="secondary-action" type="button" onClick={goBack}>Back</button></section> : <PageSkeleton label="Loading work order" />;
   }
 
   const displayWorkflow =

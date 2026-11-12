@@ -29,6 +29,7 @@ function renderPage(focus, pageSource = source, fixture = {}) {
     "react-router-dom": { Link: placeholder, useNavigate: () => (path) => fixture.onNavigate?.(path), useSearchParams: () => [params, (update) => fixture.onParams?.(update(params))] },
     "@sugi-cmms/shared": shared,
     "../api/client": { api: {} },
+    "../components/Skeleton": { PageSkeleton: placeholder },
     "../state/UserContext": { useCurrentUser: () => ({ currentUser: { id: "test-user" } }) },
     "../hooks/useLiveRefresh": { useLiveRefresh: () => {} }
   };
@@ -233,6 +234,33 @@ test("percentage displays preserve two decimal places without whole-number round
   assert.equal(findElements(page, (element) => element.props.label === "WO Resolved (Resolved)")[0].props.value, "0.00%");
   const conversion = findElements(page, (element) => element.type === "tr" && element.key === "conversion")[0];
   assert.equal(conversion.props.children[2].props.children.join(""), "33 (97.06%)");
+});
+
+test("production closure excludes KAIZEN and cancelled orders in KPIs, sections and trends", () => {
+  const workOrders = [departmentOrders[0], departmentOrders[1],
+    { ...departmentOrders[0], id: "cancelled", status: "cancelled" },
+    { ...departmentOrders[1], id: "kaizen-closed", type: "kaizen" },
+    { ...departmentOrders[0], id: "kaizen-open", type: "kaizen" }];
+  const page = renderPage("work-orders", source, { workOrders, sections: departmentSections });
+  assert.equal(findElements(page, (e) => e.props.label === "WO Closure (Close)")[0].props.value, "50.00%");
+  assert.equal(findElements(page, (e) => e.props.label === "KAIZEN")[0].props.value, "50.00%");
+  const row = findElements(page, (e) => e.type === "tr" && e.key === "conversion")[0];
+  assert.equal(row.props.children[2].props.children.join(""), "1 (50.00%)");
+  assert.equal(row.props.children[4].props.children, 2);
+  const chart = findElements(page, (e) => e.props.data?.[0]?.label === "Week 1" && "closeRate" in e.props.data[0])[0];
+  assert.equal(chart.props.data[0].closeRate, 50);
+  const backlog = renderPage("work-orders", source, { params: { view: "not-closed" }, workOrders });
+  assert.deepEqual(findElements(backlog, (e) => e.props.className?.includes("performance-order-row")).map((e) => e.key), ["production-open", "kaizen-open"]);
+});
+
+test("report closure excludes cancelled production orders and measures KAIZEN separately", () => {
+  const reportSource = readFileSync(new URL("../src/pages/ReportsPage.tsx", import.meta.url), "utf8");
+  const helpers = reportSource.slice(reportSource.indexOf("function percent"), reportSource.indexOf("function money"));
+  const javascript = ts.transpileModule(helpers, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const calculate = vm.runInNewContext(`${javascript}; closurePercent`);
+  const orders = [departmentOrders[0], departmentOrders[1], { ...departmentOrders[0], status: "cancelled" }, { ...departmentOrders[1], type: "kaizen" }];
+  assert.equal(calculate(orders), 50);
+  assert.equal(calculate(orders.filter((item) => item.type === "kaizen"), false), 100);
 });
 
 test("a single attention item opens work order details from its card or row", () => {

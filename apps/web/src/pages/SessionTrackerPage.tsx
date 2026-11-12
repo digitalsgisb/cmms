@@ -1,3 +1,4 @@
+import { PageSkeleton } from "../components/Skeleton";
 import type { UsageDashboard } from "@sugi-cmms/shared";
 import { Activity, CalendarDays, RefreshCw, Search, ShieldCheck, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -49,7 +50,7 @@ export function SessionTrackerPage() {
       </section>
 
       {error ? <div className="ux-load-error" role="alert"><span>{error}</span><button type="button" onClick={() => void loadDashboard()}>Try again</button></div> : null}
-      {loading ? <p className="quiet-line" role="status">Loading user sessions…</p> : null}
+      {loading ? <PageSkeleton label="Loading user sessions" compact /> : null}
 
       {dashboard ? (
         <>

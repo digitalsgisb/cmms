@@ -1,3 +1,4 @@
+import { PageSkeleton } from "../components/Skeleton";
 import {
   Activity,
   AlertTriangle,
@@ -206,6 +207,8 @@ export function SparePartsPage() {
     vibratingNavigator.vibrate?.(pattern);
   }
 
+  const [inventoryLoading, setInventoryLoading] = useState(true);
+
   async function loadInventory() {
     const inventory = await api.spareInventory();
     setParts(inventory.parts);
@@ -236,7 +239,7 @@ export function SparePartsPage() {
   useLiveRefresh(["work-orders"], async () => setWorkOrders(await api.workOrders()));
 
   useEffect(() => {
-    loadInventory().catch((error) => setError(error instanceof Error ? error.message : "Couldn’t load inventory. Please reload this page."));
+    loadInventory().catch((error) => setError(error instanceof Error ? error.message : "Couldn’t load inventory. Please reload this page.")).finally(() => setInventoryLoading(false));
     api.workOrders().then(setWorkOrders).catch(console.error);
     api.spareSyncSettings().then(setSyncSettings).catch(console.error);
   }, []);
@@ -742,6 +745,7 @@ export function SparePartsPage() {
   }
 
   function renderMetrics() {
+    if (inventoryLoading) return <PageSkeleton label="Loading spare parts" compact />;
     return (
       <div className="spare-metrics">
         <article>
@@ -1253,7 +1257,7 @@ export function SparePartsPage() {
 
   function renderDetailPanel() {
     if (!detail) {
-      return <p className="quiet-panel">Select a spare part from the inventory register.</p>;
+      return inventoryLoading ? <PageSkeleton label="Loading spare part" compact /> : <p className="quiet-panel">Select a spare part from the inventory register.</p>;
     }
 
     return (

@@ -1,3 +1,4 @@
+import { PageSkeleton } from "../components/Skeleton";
 import { downtimeWindow } from "@sugi-cmms/shared";
 import {
   Activity, AlertTriangle, ArrowLeft, Bell, Building2, CalendarDays, CheckCircle2, ClipboardList, Clock3, Eye, Factory,
@@ -427,7 +428,7 @@ export function PublicRequesterPage() {
     finally { setDetailLoading(false); }
   }
 
-  if (loadingUsers) return <div className="requester-app-loading">Preparing requester app...</div>;
+  if (loadingUsers) return <PageSkeleton label="Loading requester app" />;
 
   if (signedRequester && accountDepartment === "Production" && view === "production-tv") {
     return <ProductionTvDashboard workOrders={workOrders} sections={masterData.sections} now={timerNow} lastUpdated={lastWorkOrderUpdate} loadError={workOrderLoadError} onBack={() => { setView("account"); if (requestedView === "production-tv") { const params = new URLSearchParams(searchParams); params.delete("view"); navigate(`/report-issue?${params}`, { replace: true }); } }} onRefresh={loadAccountWorkOrders} currentUser={currentUser} onOpenInApp={(id) => { const params = new URLSearchParams(searchParams); params.set("view", "tracking"); params.set("workOrder", id); setDetail(null); setView("tracking"); navigate(`/report-issue?${params}`); }} />;

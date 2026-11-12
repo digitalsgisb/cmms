@@ -1,3 +1,4 @@
+import { PageSkeleton } from "../components/Skeleton";
 import { AlertCircle, ArrowLeft, CalendarDays, Factory, Save, ShieldCheck, UserRound } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
@@ -145,7 +146,7 @@ export function EditWorkOrderPage() {
     return <Navigate to={id ? `/work-orders/${id}` : "/work-orders"} replace />;
   }
   if (loading) {
-    return <p className="quiet-line">Loading work order editor...</p>;
+    return <PageSkeleton label="Loading work order editor" compact />;
   }
 
   return (

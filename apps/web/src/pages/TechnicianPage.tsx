@@ -1,3 +1,4 @@
+import { PageSkeleton } from "../components/Skeleton";
 import { BellRing, CheckCircle2, ChevronRight, History, ImagePlus, PackageOpen, PauseCircle, Search, ShieldCheck, UsersRound, Wrench } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent } from "react";
@@ -506,6 +507,7 @@ export function TechnicianPage() {
       </div>
 
       {queueError ? <p className="error-line" role="alert">{queueError}</p> : null}
+      {!workOrdersReady ? <PageSkeleton label="Loading work queue" compact /> : null}
 
       <div className={`technician-queue-tabs active-${activeQueueTab}`} role="tablist" aria-label="Job queues">
         <button type="button" role="tab" aria-selected={activeQueueTab === "new"} className={activeQueueTab === "new" ? "active" : ""} onClick={() => setActiveQueueTab("new")}><span>New Jobs</span><strong>{availableJobs.length}</strong></button>
@@ -541,7 +543,7 @@ export function TechnicianPage() {
                 <option value="project">Projects</option>
               </select>
             </div>
-            {!workOrdersReady ? <p className="quiet-panel">Loading team history…</p> : filteredHistory.length > 0 ? (
+            {!workOrdersReady ? <PageSkeleton label="Loading team history" compact /> : filteredHistory.length > 0 ? (
               <div className="technician-history-table">
                 {filteredHistory.map((workOrder) => {
                   const owner = users.find((user) => user.id === workOrder.assignedToId)?.name || "Unassigned";

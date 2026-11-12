@@ -1,3 +1,4 @@
+import { PageSkeleton } from "../components/Skeleton";
 import { downtimeWindow } from "@sugi-cmms/shared";
 import {
   AlertTriangle, Check, CheckCircle2, ClipboardCopy, Clock3, Home, Image, RefreshCcw,
@@ -146,7 +147,7 @@ export function GuestTrackingPage() {
     finally { setAction(""); }
   }
 
-  if (loading) return <div className="guest-tracker-loading"><Clock3 size={22} />Opening your tracker…</div>;
+  if (loading) return <PageSkeleton label="Opening your tracker" />;
   if (!tracking) {
     return <main className="guest-tracker-error"><AlertTriangle size={30} /><h1>Tracking link unavailable</h1><p>{error}</p><Link to="/report-issue"><Send size={17} />Create a new request</Link></main>;
   }

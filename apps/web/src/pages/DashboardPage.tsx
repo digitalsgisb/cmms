@@ -1,3 +1,4 @@
+import { PageSkeleton } from "../components/Skeleton";
 import type { AssetDashboardResponse, DashboardSummary, PmDashboardResponse, SpareInventoryResponse, WorkOrder } from "@sugi-cmms/shared";
 import { workOrderDepartmentForUser } from "@sugi-cmms/shared";
 import {
@@ -161,7 +162,7 @@ export function DashboardPage() {
     [assets]
   );
 
-  if (loading && !summary) return <div className="ux-recovery" role="status"><h1>Dashboard</h1><p>Loading maintenance activity…</p></div>;
+  if (loading && !summary) return <PageSkeleton label="Loading maintenance activity" />;
 
   return (
     <section className={`page-stack dashboard-page dashboard-command-page ${currentUser?.role === "executive" ? "executive-dashboard" : ""}`}>

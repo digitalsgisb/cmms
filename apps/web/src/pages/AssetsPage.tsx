@@ -1,3 +1,4 @@
+import { PageSkeleton } from "../components/Skeleton";
 import type { AssetCondition, AssetCriticality, AssetDashboardResponse, AssetLifecycleBand, AssetRecord } from "@sugi-cmms/shared";
 import {
   AlertTriangle,
@@ -149,6 +150,7 @@ export function AssetsPage() {
         </div>
       </div>
 
+      {loading && !dashboard ? <PageSkeleton label="Loading assets" /> : null}
       <div className="asset-metric-grid" aria-busy={loading}>
         <article><span><Factory size={19} /></span><div><small>Total registered</small><strong>{summary?.totalAssets ?? 0}</strong><p>Production machines</p></div></article>
         <article className="risk"><span><ShieldAlert size={19} /></span><div><small>High-risk assets</small><strong>{summary?.highRisk ?? 0}</strong><p>Lifecycle review priority</p></div></article>

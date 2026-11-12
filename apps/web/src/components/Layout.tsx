@@ -1,3 +1,4 @@
+import { PageSkeleton } from "./Skeleton";
 import {
   Activity,
   Bell,
@@ -264,15 +265,18 @@ export function Layout() {
 
     setMarkingRead(true);
     setNotificationError("");
+    const previous = notifications;
+    const readAt = new Date().toISOString();
+    setNotifications((items) => items.map((item) => ({ ...item, readAt: item.readAt || readAt })));
     try {
       await api.markAllNotificationsRead(currentUser.id);
       await loadNotifications();
-    } catch { setNotificationError("Couldn’t mark notifications as read. Please try again."); }
+    } catch { setNotifications(previous); setNotificationError("Couldn’t mark notifications as read. Please try again."); }
     finally { setMarkingRead(false); }
   }
 
   if (loadingUsers) {
-    return <div className="auth-loading">Loading SUGI CMMS...</div>;
+    return <PageSkeleton label="Loading SUGI CMMS" />;
   }
 
   if (!currentUser) {

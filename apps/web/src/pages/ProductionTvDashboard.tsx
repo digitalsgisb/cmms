@@ -31,7 +31,7 @@ export function ProductionTvDashboard({ workOrders, sections, now, lastUpdated, 
   const peak = Math.max(1, ...summary.trend.flatMap((day) => [day.resolved, day.closed]));
   const openOrders = (title: string, ids: string[]) => setSelection({ title, ids });
   const openOrder = (order: WorkOrder) => setSelection({ title: order.number, ids: [order.id], initialId: order.id });
-  const metricOrders = [summary.production, summary.active, summary.attention.map(({ order }) => order), summary.production.filter((order) => order.status === "resolved"), summary.production.filter((order) => order.status === "closed"), summary.production.filter((order) => order.status !== "cancelled")];
+  const metricOrders = [summary.production, summary.active, summary.attention.map(({ order }) => order), summary.production.filter((order) => order.status === "resolved"), summary.production.filter((order) => order.status === "closed"), summary.production.filter((order) => order.type === "maintenance" && !["cancelled", "on_hold"].includes(order.status))];
 
   useEffect(() => {
     const listener = () => setFullscreen(document.fullscreenElement === boardRef.current);
@@ -80,7 +80,7 @@ export function ProductionTvDashboard({ workOrders, sections, now, lastUpdated, 
         ["Need attention", summary.attention.length, "See action queue below", "amber"],
         ["Resolved · verify", summary.awaitingVerification, "Repair done · awaiting closure", "teal"],
         ["Closed", summary.closed, "Verified and completed", "green"],
-        ["Closure rate", `${summary.closureRate}%`, "Closed / total excluding cancelled", ""]
+        ["Closure rate", `${summary.closureRate}%`, "Standard maintenance closure; cancelled, deleted and on-hold orders excluded", ""]
       ].map(([label, value, help, tone], index) => <button type="button" key={label} className={`production-tv-metric ${tone}`} title={String(help)} onClick={() => openOrders(String(label), metricOrders[index].map((order) => order.id))} aria-label={`View ${label}`}><span>{label}</span><strong key={lastUpdated ? value : "loading"}>{lastUpdated ? value : "—"}</strong></button>)}
     </section>
     <div className="production-tv-table-heading">{summary.otherActive ? <button className="production-tv-other" type="button" onClick={() => openOrders("Other production sections", summary.active.filter((order) => !filterProductionSection([order], sections, "conversion").length && !filterProductionSection([order], sections, "roll-making").length).map((order) => order.id))}>Other sections · {summary.otherActive} →</button> : null}<div role="group" aria-label="Table status scope"><button type="button" aria-pressed={!allStatuses} onClick={() => setAllStatuses(false)}>Active only</button><button type="button" aria-pressed={allStatuses} onClick={() => setAllStatuses(true)}>All statuses</button></div></div>

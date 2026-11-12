@@ -32,6 +32,15 @@ test("production totals separate resolved, closed, cancelled and other departmen
   assert.equal(summary.otherActive, 1);
 });
 
+test("production TV closure counts standard maintenance and excludes cancelled and held orders", () => {
+  const summary = productionDashboardSummary([
+    order({ status: "closed" }), order(), order({ status: "cancelled" }), order({ status: "on_hold" }),
+    order({ type: "kaizen", status: "closed" }), order({ type: "project", status: "closed" })
+  ], sections, now);
+  assert.equal(summary.closureRate, 50);
+  assert.equal(summary.production.length, 6);
+});
+
 test("attention includes blocked, critical, returned and verification jobs but excludes finished orders", () => {
   for (const status of ["returned", "on_hold", "pending_material", "resolved"]) assert.ok(productionAttentionReasons(order({ status }), now).length);
   assert.ok(productionAttentionReasons(order({ priority: "critical" }), now).includes("Critical priority"));

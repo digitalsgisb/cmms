@@ -1,3 +1,4 @@
+import { PageSkeleton } from "../components/Skeleton";
 import { CheckCircle2, History, Search, UsersRound } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
@@ -39,7 +40,7 @@ export function TechnicianHistoryPage() {
         </select>
       </div>
 
-      {!workOrdersReady ? <p className="quiet-panel">Loading team history…</p> : history.length > 0 ? (
+      {!workOrdersReady ? <PageSkeleton label="Loading team history" compact /> : history.length > 0 ? (
         <div className="technician-history-table">
           {history.map((workOrder) => {
             const owner = users.find((user) => user.id === workOrder.assignedToId)?.name || "Unassigned";

@@ -1,3 +1,4 @@
+import { PageSkeleton } from "../components/Skeleton";
 import { plantLabels, type PlantId } from "@sugi-cmms/shared";
 import { selectedPlant } from "../api/client";
 import type { PmDashboardResponse, SpareInventoryResponse, WorkOrder } from "@sugi-cmms/shared";
@@ -91,8 +92,8 @@ function percent(value: number, total: number) {
   return total > 0 ? Math.round((value / total) * 100) : 0;
 }
 
-function closurePercent(records: WorkOrder[]) {
-  const eligible = records.filter((item) => item.status !== "on_hold");
+function closurePercent(records: WorkOrder[], standardProduction = true) {
+  const eligible = records.filter((item) => !["on_hold", "cancelled"].includes(item.status) && (!standardProduction || item.responsibleDepartment !== "Production" || item.type === "maintenance"));
   return eligible.length ? percent(eligible.filter((item) => item.status === "closed").length, eligible.length) : 100;
 }
 
@@ -223,7 +224,7 @@ export function ReportsPage() {
   const kaizenOrders = validOrders.filter((item) => item.type === "kaizen");
   const closure = closurePercent(validOrders);
   const standardClosure = closurePercent(standardOrders);
-  const kaizenClosure = closurePercent(kaizenOrders);
+  const kaizenClosure = closurePercent(kaizenOrders, false);
   const completedPm = scopedPm.filter((item) => ["submitted", "verified"].includes(item.status)).length;
   const pmCompliance = percent(completedPm, scopedPm.length);
   const partsAvailability = inventory ? percent(inventory.summary.totalParts - inventory.summary.outOfStock, inventory.summary.totalParts) : 0;
@@ -238,8 +239,7 @@ export function ReportsPage() {
   const trendData = useMemo(() => buckets.map((bucket) => {
     const created = scopedWorkOrders.filter((item) => inBucket(item.createdAt, bucket));
     const closed = scopedWorkOrders.filter((item) => item.status === "closed" && inBucket(item.updatedAt, bucket));
-    const eligible = created.filter((item) => item.status !== "on_hold");
-    return { label: bucket.label, created: created.length, closed: closed.length, closeRate: eligible.length ? percent(closed.length, eligible.length) : 100 };
+    return { label: bucket.label, created: created.length, closed: closed.length, closeRate: closurePercent(created) };
   }), [buckets, scopedWorkOrders]);
 
   const pmTrendData = useMemo(() => buckets.map((bucket) => {
@@ -322,7 +322,7 @@ export function ReportsPage() {
     URL.revokeObjectURL(url);
   };
 
-  if (loading && !generatedAt) return <div className="ux-recovery" role="status"><h1>Reports</h1><p>Preparing report data…</p></div>;
+  if (loading && !generatedAt) return <PageSkeleton label="Loading report data" />;
 
   return (
     <section className="reports-page page-stack">
@@ -378,7 +378,7 @@ export function ReportsPage() {
         </header>
 
         <section className="report-kpi-grid">
-          <ReportKpi icon={Gauge} label="WO closure" value={`${closure}%`} detail={`${closedOrders.length}/${validOrders.length} closed`} tone={closure >= 90 ? "good" : "risk"} />
+          <ReportKpi icon={Gauge} label="WO closure" value={`${closure}%`} detail="Production: standard orders only; excludes cancelled and on-hold" tone={closure >= 90 ? "good" : "risk"} />
           <ReportKpi icon={Wrench} label="Standard" value={`${standardClosure}%`} detail="maintenance closure" tone={standardClosure >= 90 ? "good" : "watch"} />
           <ReportKpi icon={Sparkles} label="KAIZEN" value={`${kaizenClosure}%`} detail="improvement closure" tone={kaizenClosure >= 85 ? "good" : "watch"} />
           <ReportKpi icon={ShieldCheck} label="PM compliance" value={`${pmCompliance}%`} detail={`${scopedPm.filter((item) => item.overdue).length} overdue`} tone={pmCompliance >= 95 ? "good" : "risk"} />

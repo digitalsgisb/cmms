@@ -1,3 +1,4 @@
+import { PageSkeleton } from "../components/Skeleton";
 import { downtimeWindow } from "@sugi-cmms/shared";
 import { AlertTriangle, CheckCircle2, Clock3, Eye, Layers3, Pencil, Plus, Search, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -241,6 +242,7 @@ export function WorkOrdersPage() {
         </div>
       </div>
 
+      {loading && !workOrders.length ? <PageSkeleton label="Loading work orders" /> : null}
       <div className="ux-results-bar">
         <span role="status">{loading ? "Loading work orders…" : filtered.length + " of " + workOrders.length + " work orders"}</span>
         <button className="secondary-action" type="button" onClick={() => { setSearch(""); setStatus("all"); setMonth(""); setSectionId("all"); setMachineId("all"); setScope("all"); }}>Reset filters</button>

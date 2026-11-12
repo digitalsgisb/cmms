@@ -1,3 +1,4 @@
+import { PageSkeleton } from "./components/Skeleton";
 import { lazy, Suspense, useEffect } from "react";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { LockKeyhole } from "lucide-react";
@@ -66,9 +67,9 @@ export function App() {
         <Route path="/spare-parts/issue/:itemNo" element={<SparePartsPage />} />
         <Route path="/spare-parts/:itemNo" element={<SparePartsPage />} />
         <Route path="/preventive-maintenance/*" element={<RestrictedFeature name="Preventive Maintenance"><PreventiveMaintenancePage /></RestrictedFeature>} />
-        <Route path="/performance" element={<RestrictedFeature name="Performance"><Suspense fallback={<div className="performance-loading">Preparing live performance view...</div>}><PerformancePage /></Suspense></RestrictedFeature>} />
-        <Route path="/reports" element={<RestrictedFeature name="Reports"><Suspense fallback={<div className="performance-loading">Building live report...</div>}><ReportsPage /></Suspense></RestrictedFeature>} />
-        <Route path="/reports/email" element={<RestrictedFeature name="Reports"><Suspense fallback={<div className="performance-loading">Loading email reports...</div>}><EmailReportsPage /></Suspense></RestrictedFeature>} />
+        <Route path="/performance" element={<RestrictedFeature name="Performance"><Suspense fallback={<PageSkeleton label="Loading performance" />}><PerformancePage /></Suspense></RestrictedFeature>} />
+        <Route path="/reports" element={<RestrictedFeature name="Reports"><Suspense fallback={<PageSkeleton label="Loading reports" />}><ReportsPage /></Suspense></RestrictedFeature>} />
+        <Route path="/reports/email" element={<RestrictedFeature name="Reports"><Suspense fallback={<PageSkeleton label="Loading email reports" />}><EmailReportsPage /></Suspense></RestrictedFeature>} />
         <Route path="/users" element={<RestrictedFeature name="Users"><AdminPage /></RestrictedFeature>} />
         <Route path="/profile" element={<TechnicianProfilePage />} />
         <Route path="/settings" element={<RestrictedFeature name="Settings"><SettingsPage /></RestrictedFeature>} />
@@ -105,6 +106,6 @@ function RestrictedFeature({ name, children }: { name: string; children: React.R
 
 function AuthenticatedTv() {
   const { currentUser, loadingUsers } = useCurrentUser();
-  if (loadingUsers) return <div className="auth-loading">Loading...</div>;
+  if (loadingUsers) return <PageSkeleton label="Loading dashboard" />;
   return currentUser ? <TvDashboardPage /> : <Navigate to="/login" replace />;
 }

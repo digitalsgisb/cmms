@@ -45,6 +45,7 @@ export function productionDashboardSummary(orders: WorkOrder[], sections: Sectio
   const active = production.filter(isActiveProductionOrder);
   const closed = production.filter((order) => order.status === "closed").length;
   const cancelled = production.filter((order) => order.status === "cancelled").length;
+  const closureOrders = production.filter((order) => order.type === "maintenance" && !["cancelled", "on_hold"].includes(order.status));
   const attention = active.map((order) => ({ order, reasons: productionAttentionReasons(order, now) }))
     .filter((item) => item.reasons.length)
     .sort((a, b) => Number(b.order.priority === "critical") - Number(a.order.priority === "critical") ||
@@ -61,6 +62,6 @@ export function productionDashboardSummary(orders: WorkOrder[], sections: Sectio
   });
   return { production, active, closed, cancelled, attention, trend,
     awaitingVerification: production.filter((order) => order.status === "resolved").length,
-    closureRate: production.length - cancelled ? Math.round(closed / (production.length - cancelled) * 100) : 0,
+    closureRate: closureOrders.length ? Math.round(closureOrders.filter((order) => order.status === "closed").length / closureOrders.length * 100) : 0,
     otherActive: active.filter((order) => productionSection(order, sections) === "other").length };
 }

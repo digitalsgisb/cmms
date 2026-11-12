@@ -1,3 +1,4 @@
+import { PageSkeleton } from "../components/Skeleton";
 import {
   AlertCircle,
   ArrowLeft,
@@ -981,5 +982,5 @@ function PmChecklistExecution({ scheduleId }: { scheduleId: string }) {
 }
 
 function PmLoading() {
-  return <div className="pm-loading"><span /><strong>Preparing PM command center</strong><small>Connecting schedules, technicians and checklists...</small></div>;
+  return <PageSkeleton label="Loading preventive maintenance" />;
 }

@@ -1,3 +1,4 @@
+import { PageSkeleton } from "../components/Skeleton";
 import { CalendarClock, CheckCircle2, FolderKanban, UserRoundCheck, UsersRound } from "lucide-react";
 import { useMemo } from "react";
 import { Link, Navigate } from "react-router-dom";
@@ -43,7 +44,7 @@ export function TechnicianProjectsPage() {
         <div className="technician-project-meta">
           <PriorityBadge priority={project.priority} />
           <span><CalendarClock size={14} />{project.dueDate ? `Due ${project.dueDate}` : "Schedule not set"}</span>
-          <span>{workOrderStatusLabels[project.status]}</span>
+
         </div>
         {!project.assignedToId && !isComplete(project) ? <p className="technician-project-note">Projects are assigned by a coordinator. Accepting is not used and working time starts only when the assigned lead selects Start Work.</p> : null}
         <Link to={`/work-orders/${project.id}`}>{isMine ? "Open my project" : "View project"}</Link>
@@ -55,7 +56,7 @@ export function TechnicianProjectsPage() {
     <section className="page-stack technician-page technician-projects-page">
       <div className="page-title-row">
         <div><p className="eyebrow">Planned collaboration</p><h1>Projects</h1></div>
-        <span className="technician-live-version"><i />Live Sync</span>
+
       </div>
 
       <div className="technician-project-summary">
@@ -64,7 +65,7 @@ export function TechnicianProjectsPage() {
         <article><CheckCircle2 size={19} /><span>Completed</span><strong>{completedProjects.length}</strong></article>
       </div>
 
-      {!workOrdersReady ? <p className="quiet-panel">Loading projects…</p> : activeProjects.length > 0 ? <div className="technician-project-grid">{activeProjects.map(projectCard)}</div> : <EmptyState icon={FolderKanban} title="No active projects" text="Projects visible to Maintenance and Kaizen will appear here after they are issued." />}
+      {!workOrdersReady ? <PageSkeleton label="Loading projects" compact /> : activeProjects.length > 0 ? <div className="technician-project-grid">{activeProjects.map(projectCard)}</div> : <EmptyState icon={FolderKanban} title="No active projects" text="Projects visible to Maintenance and Kaizen will appear here after they are issued." />}
 
       {completedProjects.length > 0 ? (
         <section className="technician-job-section">

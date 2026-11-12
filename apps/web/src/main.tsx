@@ -8,6 +8,7 @@ import { UserProvider } from "./state/UserContext";
 import { initInstallPromptListener } from "./pwa/installPrompt";
 import { registerServiceWorker } from "./pwa/registerServiceWorker";
 import "./styles.css";
+import "./design-system.css";
 
 initInstallPromptListener();
 
