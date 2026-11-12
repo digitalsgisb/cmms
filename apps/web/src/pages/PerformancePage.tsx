@@ -329,6 +329,7 @@ export function PerformancePage() {
     const records = periodWorkOrders.filter((item) => item.sectionId === section.id);
     const delivery = deliveryOrders(records);
     return { section, total: records.length, eligible: delivery.filter((item) => item.status !== "on_hold").length, closed: delivery.filter((item) => item.status === "closed").length,
+      standard: records.filter((item) => item.type === "maintenance").length,
       excludedSummary: excludedOrderSummary(records),
       resolved: delivery.filter((item) => item.status === "resolved").length,
       outstanding: records.filter((item) => !["closed", "cancelled"].includes(item.status)).length };
@@ -613,13 +614,13 @@ export function PerformancePage() {
             <div className="performance-table-card">
               <div className="performance-card-heading"><div><strong>Work order analysis by section · {reportingLabel}</strong><span>Select a section to view its work orders.</span></div></div>
               <div className="performance-table-scroll" role="region" aria-label="Work order analysis by section" tabIndex={0}><table>
-                <thead><tr><th>Section</th><th>Total work orders</th><th>Counted for %</th><th>Excluded from %</th><th>WO Closure (Close)</th><th>WO Resolved (Resolved)</th><th>Not closed · all types</th></tr></thead>
+                <thead><tr><th>Section</th><th>Total work orders</th><th>Standard work orders</th><th>Counted for %</th><th>Excluded from %</th><th>WO Closure (Close)</th><th>WO Resolved (Resolved)</th><th>Not closed · all types</th></tr></thead>
                 <tbody>{sectionAnalysis.map((row) => <tr key={row.section.id}>
                   <td><button className="performance-section-link" type="button" onClick={() => setSectionId(row.section.id)} aria-pressed={sectionId === row.section.id}>{row.section.name}</button></td>
-                  <td>{row.total}</td><td>{row.eligible}</td><td className="performance-excluded-count"><strong>{row.total - row.eligible}</strong><small>{row.excludedSummary}</small></td><td>{row.closed} ({formatPercent(workOrderPercent(row.closed, row.eligible))})</td><td>{row.resolved} ({formatPercent(workOrderPercent(row.resolved, row.eligible))})</td><td className={row.outstanding ? "performance-outstanding-count" : ""}>{row.outstanding}</td>
+                  <td>{row.total}</td><td>{row.standard}</td><td>{row.eligible}</td><td className="performance-excluded-count"><strong>{row.total - row.eligible}</strong><small>{row.excludedSummary}</small></td><td>{row.closed} ({formatPercent(workOrderPercent(row.closed, row.eligible))})</td><td>{row.resolved} ({formatPercent(workOrderPercent(row.resolved, row.eligible))})</td><td className={row.outstanding ? "performance-outstanding-count" : ""}>{row.outstanding}</td>
                 </tr>)}</tbody>
               </table></div>
-              <p className="performance-calculation-note">Closure % = closed ÷ counted for % × 100. Counted + excluded = total. “Not closed” includes active orders of every work type, including on-hold orders. Deleted orders are outside this report.</p>
+              <p className="performance-calculation-note">Standard work orders includes all standard maintenance orders, including cancelled and on-hold orders. Closure % = closed ÷ counted for % × 100. Counted + excluded = total. “Not closed” includes active orders of every work type, including on-hold orders. Deleted orders are outside this report.</p>
             </div>
             <div className="performance-table-card" id="performance-work-orders">
               <div className="performance-card-heading"><div><strong>{orderView === "not-closed" ? "Not closed work orders" : orderView === "closed" ? "Closed work orders" : "Work order details"}</strong><span>{tableOrders.length} work orders · {reportingLabel} · oldest first</span><span>Click a work order row to open its details. Scroll the table horizontally to see all columns.</span></div></div>

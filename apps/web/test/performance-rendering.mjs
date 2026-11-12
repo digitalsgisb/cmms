@@ -158,7 +158,7 @@ test("Not closed table and section backlog use the same selected month", () => {
   const october = renderPage("work-orders", source, { params: { view: "not-closed" }, workOrders: crossMonthOrders, sections: departmentSections });
   assert.deepEqual(findElements(october, (element) => element.props.className?.includes("performance-order-row")).map((row) => row.key), ["october-work"]);
   const conversion = findElements(october, (element) => element.type === "tr" && element.key === "conversion")[0];
-  assert.equal(conversion.props.children[6].props.children, 1);
+  assert.equal(conversion.props.children[7].props.children, 1);
 });
 
 test("closed orders without a closed date remain visible by their work order date", () => {
@@ -174,9 +174,9 @@ test("empty work order percentages are 100% while counts remain zero", () => {
   assert.equal(findElements(page, (element) => element.props.label === "Total work orders")[0].props.value, "0");
   const conversion = findElements(page, (element) => element.type === "tr" && element.key === "conversion")[0];
   assert.equal(conversion.props.children[1].props.children, 0);
-  assert.equal(conversion.props.children[4].props.children.join(""), "0 (100.00%)");
   assert.equal(conversion.props.children[5].props.children.join(""), "0 (100.00%)");
-  assert.equal(conversion.props.children[6].props.children, 0);
+  assert.equal(conversion.props.children[6].props.children.join(""), "0 (100.00%)");
+  assert.equal(conversion.props.children[7].props.children, 0);
   assert.equal(findElements(page, (element) => element.props.label === "PM compliance")[0].props.value, "0.00%");
 });
 
@@ -195,7 +195,7 @@ test("on-hold work remains in totals and tables without reducing closure percent
   assert.equal(findElements(page, (element) => element.props.className?.includes("performance-order-row")).length, 4);
   const conversion = findElements(page, (element) => element.type === "tr" && element.key === "conversion")[0];
   assert.equal(conversion.props.children[1].props.children, 4);
-  assert.equal(conversion.props.children[4].props.children.join(""), "1 (50.00%)");
+  assert.equal(conversion.props.children[5].props.children.join(""), "1 (50.00%)");
   const chart = findElements(page, (element) => element.props.data?.[0]?.label === "Week 1" && "closeRate" in element.props.data[0])[0];
   assert.equal(chart.props.data[0].closeRate, 50);
 });
@@ -233,7 +233,7 @@ test("percentage displays preserve two decimal places without whole-number round
   assert.equal(findElements(page, (element) => element.props.label === "WO Closure (Close)")[0].props.value, "97.06%");
   assert.equal(findElements(page, (element) => element.props.label === "WO Resolved (Resolved)")[0].props.value, "0.00%");
   const conversion = findElements(page, (element) => element.type === "tr" && element.key === "conversion")[0];
-  assert.equal(conversion.props.children[4].props.children.join(""), "33 (97.06%)");
+  assert.equal(conversion.props.children[5].props.children.join(""), "33 (97.06%)");
 });
 
 test("production closure excludes KAIZEN and cancelled orders in KPIs, sections and trends", () => {
@@ -245,8 +245,8 @@ test("production closure excludes KAIZEN and cancelled orders in KPIs, sections 
   assert.equal(findElements(page, (e) => e.props.label === "WO Closure (Close)")[0].props.value, "50.00%");
   assert.equal(findElements(page, (e) => e.props.label === "KAIZEN")[0].props.value, "50.00%");
   const row = findElements(page, (e) => e.type === "tr" && e.key === "conversion")[0];
-  assert.equal(row.props.children[4].props.children.join(""), "1 (50.00%)");
-  assert.equal(row.props.children[6].props.children, 2);
+  assert.equal(row.props.children[5].props.children.join(""), "1 (50.00%)");
+  assert.equal(row.props.children[7].props.children, 2);
   const chart = findElements(page, (e) => e.props.data?.[0]?.label === "Week 1" && "closeRate" in e.props.data[0])[0];
   assert.equal(chart.props.data[0].closeRate, 50);
   const backlog = renderPage("work-orders", source, { params: { view: "not-closed" }, workOrders });
@@ -260,20 +260,21 @@ test("section figures reconcile 43 total orders with 29 of 30 eligible orders cl
     ...Array.from({ length: 8 }, (_, i) => ({ ...departmentOrders[1], id: `kaizen-${i}`, type: "kaizen" })),
     { ...departmentOrders[0], id: "held", status: "on_hold" },
     { ...departmentOrders[0], id: "held-kaizen", type: "kaizen", status: "on_hold" },
-    ...Array.from({ length: 3 }, (_, i) => ({ ...departmentOrders[0], id: `cancelled-${i}`, type: "kaizen", status: "cancelled" }))
+    ...Array.from({ length: 3 }, (_, i) => ({ ...departmentOrders[0], id: `cancelled-${i}`, type: i === 0 ? "maintenance" : "kaizen", status: "cancelled" }))
   ];
   const page = renderPage("work-orders", source, { workOrders, sections: departmentSections });
   const row = findElements(page, (e) => e.type === "tr" && e.key === "conversion")[0];
   const cells = row.props.children;
   assert.equal(cells[1].props.children, 43);
-  assert.equal(cells[2].props.children, 30);
-  assert.equal(cells[3].props.children[0].props.children, 13);
-  const breakdown = cells[3].props.children[1].props.children;
+  assert.equal(cells[2].props.children, 32);
+  assert.equal(cells[3].props.children, 30);
+  assert.equal(cells[4].props.children[0].props.children, 13);
+  const breakdown = cells[4].props.children[1].props.children;
   assert.ok(breakdown.includes("9 Kaizen"));
   assert.ok(breakdown.includes("3 Cancelled"));
   assert.ok(breakdown.includes("1 On hold"));
-  assert.equal(cells[4].props.children.join(""), "29 (96.67%)");
-  assert.equal(cells[6].props.children, 3);
+  assert.equal(cells[5].props.children.join(""), "29 (96.67%)");
+  assert.equal(cells[7].props.children, 3);
 });
 
 test("report closure excludes cancelled production orders and measures KAIZEN separately", () => {
